@@ -7,8 +7,9 @@ from flax import nnx
 
 from probjax.nn import GaussianFourierEmbedding, Transformer
 from probjax.nn.loss_fn.denoising import build_time_dependent_denoising_loss
-from probjax.nn.nets.diffusion_model import EDM
+from probjax.nn.nets.denoising_diffusion_model import EDM
 from probjax.nn import MLP
+from probjax.nn.utils import AffineFuse
 
 
 def random_split_like_tree(rng_key, target=None, treedef=None):
@@ -89,8 +90,9 @@ class PyTreeTokenizer(nnx.Module, experimental_pytree=True):
         self.context_net = context_net
 
     def __call__(self, x, node_ids, condition_mask=None, **kwargs):
-        dims = np.asarray([self.dims_by_id[i] for i in node_ids])
+        dims = np.asarray([self.dims_by_id[i] for i in node_ids], dtype=np.int32)
         split_dims = np.cumsum(dims)[:-1]
+        print(split_dims)
         x_split = jnp.split(x, split_dims, axis=-1)
         net_subs = [self.encode_nets[i] for i in node_ids]
         val_embeddings = jax.tree_util.tree_map(
@@ -170,16 +172,18 @@ class Simformer(nnx.Module, experimental_pytree=True):
     ):
         time_embed = self.time_embedding(t)
         input_embed = self.tokenizer(x, node_ids, condition_mask)
-
+        print(input_embed.shape)
         while time_embed.ndim < input_embed.ndim:
             time_embed = time_embed[..., None, :]
 
+        print(context.shape)
         context = (
             self.context_embed(context) if self.context_embed is not None else None
         )
         context = context[..., None, :]
         print(time_embed.shape, context.shape)
         context = jnp.concatenate([time_embed, context], axis=-1)
+        print(context.shape)
         output = self.transformer(input_embed, context=context, mask=attention_mask)
         output = self.tokenizer.decode(output, node_ids)
         return output
@@ -211,6 +215,7 @@ class ModelIdentificationDecoder(nnx.Module, experimental_pytree=True):
         self.attn_size = attn_size
 
         self.embed = nnx.Embed(2, model_dim, rngs=rngs)
+        self.start_token = nnx.Param(jnp.zeros((1, model_dim)))
         self.transformer = Transformer(
             model_dim,
             self.num_heads,
@@ -235,7 +240,9 @@ class ModelIdentificationDecoder(nnx.Module, experimental_pytree=True):
         # Autoregressive mask
         x = self.embed(x.astype(jnp.int32))
         context = self.context_embedding(context)
-        start_token = jnp.ones_like(x[..., :1, :])
+        start_token = self.start_token.value
+        if x.ndim > 2:
+            start_token = jnp.repeat(start_token[None, ...], x.shape[0], axis=0)
         x = jnp.concatenate([start_token, x], axis=-2)
         mask = jnp.tril(jnp.ones((x.shape[-2], x.shape[-2])))
         context = context[..., None, :]
