@@ -2,6 +2,10 @@ import jax.numpy as jnp
 import jax
 from abc import ABC, abstractmethod
 
+def normal_to_beta(x, a, b):
+    u = jax.scipy.stats.norm.cdf(x)
+    return jax.scipy.stats.beta.ppf(u, a, b)
+
 
 class Compartment(ABC):
     theta_dim: int

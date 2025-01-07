@@ -92,7 +92,6 @@ class PyTreeTokenizer(nnx.Module, experimental_pytree=True):
     def __call__(self, x, node_ids, condition_mask=None, **kwargs):
         dims = np.asarray([self.dims_by_id[i] for i in node_ids], dtype=np.int32)
         split_dims = np.cumsum(dims)[:-1]
-        print(split_dims)
         x_split = jnp.split(x, split_dims, axis=-1)
         net_subs = [self.encode_nets[i] for i in node_ids]
         val_embeddings = jax.tree_util.tree_map(
@@ -172,11 +171,10 @@ class Simformer(nnx.Module, experimental_pytree=True):
     ):
         time_embed = self.time_embedding(t)
         input_embed = self.tokenizer(x, node_ids, condition_mask)
-        print(input_embed.shape)
         while time_embed.ndim < input_embed.ndim:
             time_embed = time_embed[..., None, :]
 
-        print(context.shape)
+
         context = (
             self.context_embed(context) if self.context_embed is not None else None
         )
