@@ -4,13 +4,20 @@ import jax.numpy as jnp
 import numpy as np
 
 import dmri
-from dmri.dmri_models.local_models.gaussian_models import Ball, Stick, Dti
+from dmri.simulators.local_models import (
+    Ball,
+    Stick,
+    Dti,
+    Zeppelin,
+    C2Cylinder,
+    S2Sphere,
+)
 
 
 import pytest
 
 
-@pytest.fixture(params=[Ball, Stick, Dti])
+@pytest.fixture(params=[Ball, Stick, Dti, Zeppelin, C2Cylinder, S2Sphere])
 def compartment_model(request):
     model_class = request.param
     theta = np.random.randn(model_class.theta_dim)
@@ -29,8 +36,14 @@ def test_base_function(compartment_model):
     assert signal.shape == (10,), f"Expected shape (10,) but got {signal.shape}"
     assert log_signal.shape == (10,), f"Expected shape (10,) but got {log_signal.shape}"
     assert jnp.all(jnp.isfinite(signal)), "Signal is not finite"
-    
-    # Fitting
-    
-    
-    
+
+    # Pytree
+    compartment_model_old = compartment_model
+    flat, tree = jax.tree_util.tree_flatten(compartment_model)
+    compartment_model = jax.tree_util.tree_unflatten(tree, flat)
+    assert isinstance(compartment_model, type(compartment_model_old)), (
+        "Failed to reconstruct the compartment model"
+    )
+    assert jnp.allclose(compartment_model.theta, compartment_model_old.theta), (
+        "Failed to reconstruct the compartment model"
+    )
