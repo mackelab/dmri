@@ -5,14 +5,18 @@ from abc import ABC, abstractmethod
 
 from jax.typing import ArrayLike
 
-from dmri.dmri_models.local_models.base import Compartment
-from dmri.dmri_models.local_models.utils import fit_diffusion_tensor_linearized
+from dmri.simulators.base import ModelCompartment
+from dmri.simulators.local_models.utils import (
+    fit_diffusion_tensor_linearized,
+    cartesian_to_unitsphere,
+    unitsphere_to_cartesian,
+)
 
 
-class Ball(Compartment):
-    theta_dim = 1
-    lam_min = 0.0
-    lam_max = 0.05
+class Ball(ModelCompartment):
+    theta_dim: int = 1
+    lam_min: float = 0.0
+    lam_max: float = 0.05
 
     def __init__(self, lam: float) -> None:
         """Initialize the Ball model with a lambda value."""
@@ -36,7 +40,7 @@ class Ball(Compartment):
         return (lam,)
 
     @classmethod
-    def to_theta(cls, lam: float) -> ArrayLike:
+    def to_theta(cls, lam: ArrayLike) -> ArrayLike:
         """Convert the lambda value to the parameter space theta."""
         lam = (lam - cls.lam_min) / (cls.lam_max - cls.lam_min)
         theta = jnp.array([lam])
@@ -44,7 +48,7 @@ class Ball(Compartment):
         return theta
 
 
-class Stick(Compartment):
+class Stick(ModelCompartment):
     theta_dim = 3
     min_lam = 0.0
     max_lam = 0.05
@@ -99,23 +103,23 @@ class Stick(Compartment):
         return lam, eigvec
 
 
-class Zeppelin(Compartment):
-    def __init__(
-        self, lam_parallel: float, lam_orthogonal: float, eigenvecs: ArrayLike
-    ) -> None:
-        """Initialize the Zeppelin model with parallel and orthogonal lambda values and eigenvectors."""
-        self.lam_parallel = lam_parallel
-        self.lam_orthogonal = lam_orthogonal
-        self.eigenvecs = eigenvecs
+class Zeppelin(ModelCompartment):
+    theta_dim = 4
+    min_lam = 0.1
+    max_lam = 3.0
+
+    def __init__(self, mu: ArrayLike, lambda_par: float, lambda_perp: float) -> None:
+        """Initialize the Zeppelin model with orientation and diffusivity parameters."""
+        self.mu = mu
+        self.lambda_par = lambda_par
+        self.lambda_perp = lambda_perp
 
     def log_signal(self, bvals: ArrayLike, bvecs: ArrayLike) -> ArrayLike:
         """Compute the log signal for given b-values and b-vectors."""
-        Lam = jnp.diag(
-            jnp.concatenate(
-                [self.lam_parallel, self.lam_orthogonal, self.lam_orthogonal]
-            )
-        )
-        D = self.eigenvecs @ Lam @ jnp.linalg.inv(self.eigenvecs)
+        mu_cartesian = unitsphere_to_cartesian(self.mu)
+        D = self.lambda_par * jnp.outer(
+            mu_cartesian, mu_cartesian
+        ) + self.lambda_perp * (jnp.eye(3) - jnp.outer(mu_cartesian, mu_cartesian))
         logS = -bvals * jnp.einsum("bi,ij,bj->b", bvecs, D, bvecs)
         return logS
 
@@ -124,13 +128,44 @@ class Zeppelin(Compartment):
         D = fit_diffusion_tensor_linearized(logS, bvals, bvecs)
         eigvals, eigvecs = jnp.linalg.eigh(D)
         idx = jnp.argmax(eigvals)
-        lam_parallel = eigvals[idx]
-        lam_orthogonal = jnp.mean(jnp.delete(eigvals, idx))
-        eigenvecs = eigvecs
-        return lam_parallel, lam_orthogonal, eigenvecs
+        lambda_par = eigvals[idx]
+        lambda_perp = jnp.mean(jnp.delete(eigvals, idx))
+        mu_cartesian = eigvecs[:, idx]
+        mu = self._cartesian_to_unitsphere(mu_cartesian)
+        return mu, lambda_par, lambda_perp
+
+    @classmethod
+    def to_theta(
+        cls, mu: ArrayLike, lambda_par: float, lambda_perp: float
+    ) -> ArrayLike:
+        """Convert the parameters to the parameter space theta."""
+        lambda_par = (lambda_par - cls.min_lam) / (cls.max_lam - cls.min_lam)
+        lambda_perp = (lambda_perp - cls.min_lam) / (cls.max_lam - cls.min_lam)
+        mu_normalized = (mu + jnp.pi) / (2 * jnp.pi)
+        theta = jnp.concatenate([jnp.array([lambda_par, lambda_perp]), mu_normalized])
+        theta = jax.scipy.stats.norm.ppf(theta)
+        return theta
+
+    @classmethod
+    def to_params(cls, theta: ArrayLike) -> tuple:
+        """Convert the parameter space theta to the model parameters."""
+        theta = jax.scipy.stats.norm.cdf(theta)
+        lambda_par = theta[0] * (cls.max_lam - cls.min_lam) + cls.min_lam
+        lambda_perp = theta[1] * (cls.max_lam - cls.min_lam) + cls.min_lam
+        mu_normalized = theta[2:] * 2 * jnp.pi - jnp.pi
+        return mu_normalized, lambda_par, lambda_perp
+
+    @staticmethod
+    def _unitsphere_to_cartesian(mu: ArrayLike) -> ArrayLike:
+        """Convert spherical coordinates to Cartesian coordinates."""
+        theta, phi = mu
+        x = jnp.sin(theta) * jnp.cos(phi)
+        y = jnp.sin(theta) * jnp.sin(phi)
+        z = jnp.cos(theta)
+        return jnp.array([x, y, z])
 
 
-class Dti(Compartment):
+class Dti(ModelCompartment):
     theta_dim: int = 6
     theta_scale = 0.05
 
@@ -163,6 +198,5 @@ class Dti(Compartment):
         theta = cls.theta_scale * theta
         D = jnp.zeros((3, 3))
         D = D.at[jnp.tril_indices(3)].set(theta)
-        D = D + jnp.tril(D, -1).T
         D = D @ D.T + cls.theta_scale**2 * jnp.eye(3)
         return (D,)

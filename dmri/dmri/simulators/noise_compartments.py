@@ -1,8 +1,26 @@
 import jax
 import jax.numpy as jnp
 
+from simulators.base import NoiseCompartment
 
-def add_mri_noise(rng, signal, sigma_g):
+
+class RicianNoise(NoiseCompartment):
+    def __init__(self, sigma_g):
+        self.sigma_g = sigma_g
+
+    def noise(self, rng, signal):
+        return add_rician_noise(rng, signal, self.sigma_g)
+
+
+class GaussianNoise(NoiseCompartment):
+    def __init__(self, sigma_g):
+        self.sigma_g = sigma_g
+
+    def noise(self, rng, signal):
+        return add_gaussian_noise(rng, signal, self.sigma_g)
+
+
+def add_rician_noise(rng, signal, sigma_g):
     """
     Adds Rician noise to an MRI signal.
 
@@ -88,4 +106,3 @@ def add_noncentral_chi_noise(rng, signal, sigma_g, num_coils):
     noisy_signal = jnp.sqrt(jnp.sum(jnp.abs(noisy_complex) ** 2, axis=0))
 
     return noisy_signal
-
