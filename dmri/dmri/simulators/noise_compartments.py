@@ -1,22 +1,28 @@
 import jax
 import jax.numpy as jnp
 
-from simulators.base import NoiseCompartment
+from dmri.simulators.base import NoiseCompartment
 
+# NOTE: Review on noise models in MRI:
+# https://www.lpi.tel.uva.es/~santi/personal/docus/noise_survey_tec_report.pdf
 
 class RicianNoise(NoiseCompartment):
+    theta_dim = 1
+
     def __init__(self, sigma_g):
         self.sigma_g = sigma_g
 
-    def noise(self, rng, signal):
+    def noise(self, signal, rng):
         return add_rician_noise(rng, signal, self.sigma_g)
 
 
 class GaussianNoise(NoiseCompartment):
+    theta_dim = 1
+
     def __init__(self, sigma_g):
         self.sigma_g = sigma_g
 
-    def noise(self, rng, signal):
+    def noise(self, signal, rng):
         return add_gaussian_noise(rng, signal, self.sigma_g)
 
 

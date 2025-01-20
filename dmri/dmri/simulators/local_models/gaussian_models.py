@@ -46,6 +46,11 @@ class Ball(ModelCompartment):
         theta = jnp.array([lam])
         theta = jax.scipy.stats.norm.ppf(theta)
         return theta
+    
+    
+    def to_odf(self):
+        """Convert the Ball model to the Orientation Distribution Function (ODF)."""
+        # Function that return 1/lam
 
 
 class Stick(ModelCompartment):
@@ -88,6 +93,11 @@ class Stick(ModelCompartment):
         theta = jnp.stack([lam, angle1, angle2])
         theta = jax.scipy.stats.norm.ppf(theta)
         return theta
+    
+    def to_odf(self):
+        """Convert the Stick model to the Orientation Distribution Function (ODF)."""
+        # Function that return 1/(lam * (mu * x)^2)
+        
 
     @classmethod
     def to_params(cls, theta: ArrayLike) -> tuple:
@@ -98,15 +108,15 @@ class Stick(ModelCompartment):
         angle2 = theta[2] * 2 * jnp.pi - jnp.pi
         x = jnp.sin(angle1) * jnp.cos(angle2)
         y = jnp.sin(angle1) * jnp.sin(angle2)
-        z = jnp.cos(angle1)
+        z = jnp.cos(angle1) 
         eigvec = jnp.array([x, y, z])
         return lam, eigvec
 
 
 class Zeppelin(ModelCompartment):
     theta_dim = 4
-    min_lam = 0.1
-    max_lam = 3.0
+    min_lam = 0.0
+    max_lam = 0.05
 
     def __init__(self, mu: ArrayLike, lambda_par: float, lambda_perp: float) -> None:
         """Initialize the Zeppelin model with orientation and diffusivity parameters."""
