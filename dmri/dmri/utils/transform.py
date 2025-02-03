@@ -16,7 +16,7 @@ def normal_to_dirichlet(alpha, eps, mask=None):
         def new_phi(alpha, u, i):
             a = alpha[i]
             larger_i = jnp.arange(len(alpha)) > i
-            b = jnp.sum(alpha * larger_i)
+            b = jnp.sum(alpha * mask * larger_i)
             phi_i = betaincinv(a, b, u[i])
             return phi_i
 
@@ -40,6 +40,9 @@ def normal_to_dirichlet(alpha, eps, mask=None):
         last_entry = jnp.argmax(jnp.flip(mask)) - 1
         pis = pis.at[-1].set(0.0)
         pis = pis.at[last_entry].set(pi_K)
+        pis = jnp.where(~mask, 0.0, pis)
+        pis /= jnp.sum(pis)
+        pis = jnp.nan_to_num(pis)
     return pis
 
 
@@ -56,7 +59,8 @@ def dirichlet_to_normal(alpha, pi, mask=None):
         eps   (array): Shape (K - 1,), the Normal samples that would map
                        back to `pi` under `normal_to_dirichlet(alpha, eps)`.
     """
-    alpha = jnp.where(mask, alpha, 0.0)
+    if mask is not None:
+        alpha = jnp.where(mask, alpha, 0.0)
 
     def scan_fn(carry, i):
         pi_sum = carry

@@ -7,6 +7,8 @@ from dmri.utils.transform import normal_to_dirichlet, dirichlet_to_normal
 
 import jax
 import jax.numpy as jnp
+import numpy as np
+from jax import tree_util as jtu
 
 from jax.typing import ArrayLike
 
@@ -32,6 +34,8 @@ class MultiCompartment(ModelCompartment):
             + sum([n.theta_dim for n in cls.noise_types])
         )
 
+        jtu.register_pytree_node_class(cls)
+
     def __init__(
         self,
         model_fractions: ArrayLike,
@@ -50,7 +54,7 @@ class MultiCompartment(ModelCompartment):
         assert [type(m) for m in model_compartments] == self.model_types, "Wrong model"
         assert [type(m) for m in noise_compartments] == self.noise_types, "Wrong noise"
 
-    def signal(self, bvals, bvecs, rng):
+    def signal(self, bvals, bvecs, rng=None):
         # Compute the signal for each compartment
         signals = jnp.stack(
             [m.signal(bvals, bvecs) for m in self.model_compartments], axis=0
@@ -78,11 +82,32 @@ class MultiCompartment(ModelCompartment):
                     signal = noise.noise(signal, rng)
         return signal
 
-    def log_signal(self, bvals, bvecs, rng):
+    def log_signal(self, bvals, bvecs, rng=None):
         return jnp.log(self.signal(bvals, bvecs, rng))
 
     def fit(self, logS, bvals, bvecs):
         raise NotImplementedError("Fitting not implemented")
+
+    @classmethod
+    def split_idx(cls):
+        theta_dims_fractions = [len(cls.model_types) - 1]
+        theta_dims_model = [m.theta_dim for m in cls.model_types]
+        theta_dims_noise = [m.theta_dim for m in cls.noise_types]
+        total_dims = theta_dims_fractions + theta_dims_model + theta_dims_noise
+        total_dims = np.array(total_dims)
+
+        return total_dims
+
+    @classmethod
+    def split_theta(cls, theta):
+        total_dims = cls.split_idx()
+        # Calculate the cumulative sum of total_dims to get the split indices
+        split_indices = np.cumsum(total_dims)[:-1]
+
+        # Split theta into fractions, model, and noise
+        thetas_split = jnp.split(theta, split_indices)
+
+        return thetas_split
 
     @classmethod
     def to_theta(
@@ -93,13 +118,21 @@ class MultiCompartment(ModelCompartment):
         model_mask: Optional[ArrayLike] = None,
     ):
         theta_fraction = model_fractions
-        if model_mask:
+        if model_mask is not None:
             component_mask = model_mask[: len(model_compartments)]
+        else:
+            component_mask = None
         theta_fraction = dirichlet_to_normal(
             cls.fraction_prior, theta_fraction, component_mask
         )
-        theta_model = jnp.concatenate([m.to_theta() for m in model_compartments])
-        theta_noise = jnp.concatenate([m.to_theta() for m in noise_compartments])
+        if len(model_compartments) > 0:
+            theta_model = jnp.concatenate([m.theta for m in model_compartments])
+        else:
+            theta_model = jnp.array([])
+        if len(noise_compartments) > 0:
+            theta_noise = jnp.concatenate([m.theta for m in noise_compartments])
+        else:
+            theta_noise = jnp.array([])
         return jnp.concatenate([theta_fraction, theta_model, theta_noise])
 
     @classmethod
@@ -108,24 +141,16 @@ class MultiCompartment(ModelCompartment):
         theta: ArrayLike,
         model_mask: Optional[ArrayLike] = None,
     ):
-        theta_dims_fractions = [len(cls.model_types) - 1]
-        theta_dims_model = [m.theta_dim for m in cls.model_types]
-        theta_dims_noise = [m.theta_dim for m in cls.noise_types]
-        total_dims = theta_dims_fractions + theta_dims_model + theta_dims_noise
-        total_dims = jnp.array(total_dims)
-
-        # Calculate the cumulative sum of total_dims to get the split indices
-        split_indices = jnp.cumsum(total_dims)[:-1]
-
-        # Split theta into fractions, model, and noise
-        thetas_split = jnp.split(theta, split_indices)
+        thetas_split = cls.split_theta(theta)
         fractions = thetas_split[0]
         model_thetas = thetas_split[1 : len(cls.model_types) + 1]
         noise_thetas = thetas_split[len(cls.model_types) + 1 :]
 
         # Model fractions should sum to 1 and follow a Dirichlet distribution
-        if model_mask:
+        if model_mask is not None:
             component_mask = model_mask[: len(cls.model_types)]
+        else:
+            component_mask = None
         fractions = normal_to_dirichlet(cls.fraction_prior, fractions, component_mask)
 
         # Create model compartments
@@ -135,7 +160,7 @@ class MultiCompartment(ModelCompartment):
         noise_compartments = [
             m.from_theta(t) for m, t in zip(cls.noise_types, noise_thetas)
         ]
-        return fractions, model_compartments, noise_compartments
+        return fractions, model_compartments, noise_compartments, model_mask
 
 
 class BallStick(MultiCompartment):
