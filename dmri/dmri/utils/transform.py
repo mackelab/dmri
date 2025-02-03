@@ -16,8 +16,11 @@ def normal_to_dirichlet(alpha, eps, mask=None):
         def new_phi(alpha, u, i):
             a = alpha[i]
             larger_i = jnp.arange(len(alpha)) > i
-            b = jnp.sum(alpha * mask * larger_i)
+            _alpha = alpha if mask is None else jnp.where(mask, alpha, 0.0)
+            # jax.debug.print("{a}", a=a)
+            b = jnp.sum(_alpha * larger_i)
             phi_i = betaincinv(a, b, u[i])
+            phi_i = jnp.nan_to_num(phi_i)  # If b is 0
             return phi_i
 
         def masked_phi(alpha, u, i):
@@ -27,6 +30,7 @@ def normal_to_dirichlet(alpha, eps, mask=None):
             phi_i = new_phi(alpha, u, i)
         else:
             phi_i = jax.lax.cond(mask[i], new_phi, masked_phi, alpha, u, i)
+            # jax.debug.print("{phi_i}", phi_i=phi_i)
 
         pi_i = phi_i * (1 - pi_sum)
         pi_sum += pi_i
@@ -34,13 +38,15 @@ def normal_to_dirichlet(alpha, eps, mask=None):
 
     pi_sum = 0.0
     pi_sum, pis = lax.scan(scan_fn, pi_sum, jnp.arange(len(alpha) - 1))
-    pi_K = 1 - pi_sum
+    pi_K = 1.0 - pi_sum
     pis = jnp.append(pis, pi_K)
     if mask is not None:
-        last_entry = jnp.argmax(jnp.flip(mask)) - 1
+        last_entry = -jnp.argmax(mask[::-1]) - 1
+        # jax.debug.print("{last_entry}", last_entry=last_entry)
         pis = pis.at[-1].set(0.0)
         pis = pis.at[last_entry].set(pi_K)
         pis = jnp.where(~mask, 0.0, pis)
+        # jax.debug.print("{pis}", pis=pis)
         pis /= jnp.sum(pis)
         pis = jnp.nan_to_num(pis)
     return pis
