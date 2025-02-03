@@ -46,11 +46,16 @@ class Ball(ModelCompartment):
         theta = jnp.array([lam])
         theta = jax.scipy.stats.norm.ppf(theta)
         return theta
-    
-    
-    def to_odf(self):
+
+    def odf_logpdf(self):
         """Convert the Ball model to the Orientation Distribution Function (ODF)."""
-        # Function that return 1/lam
+        return 1 / (4 * jnp.pi)
+
+    def odf_sample(self, rng: Any):
+        """Sample from the Orientation Distribution Function (ODF)."""
+        u = jax.random.normal(rng, (3,))
+        u = u / jnp.linalg.norm(u)
+        return u
 
 
 class Stick(ModelCompartment):
@@ -93,11 +98,25 @@ class Stick(ModelCompartment):
         theta = jnp.stack([lam, angle1, angle2])
         theta = jax.scipy.stats.norm.ppf(theta)
         return theta
-    
-    def to_odf(self):
+
+    def odf_logpdf(self, u, kappa: float = 1e3):
         """Convert the Stick model to the Orientation Distribution Function (ODF)."""
-        # Function that return 1/(lam * (mu * x)^2)
-        
+        # Compute the ODF for a given direction u
+        dot_product = jnp.dot(self.eigvec, u)
+
+        # Compute the normalization constant for the vMF distribution in 3D.
+        # Note: sinh(kappa) = (exp(kappa) - exp(-kappa))/2.
+        c = kappa / (4 * jnp.pi * jnp.sinh(kappa))
+        log_pdf1 = kappa * dot_product + jnp.log(c) + jnp.log(0.5)
+        log_pdf2 = -kappa * dot_product + jnp.log(c) + jnp.log(0.5)
+        log_prob = jax.scipy.special.logsumexp(jnp.stack([log_pdf1, log_pdf2]), axis=0)
+        return log_prob
+
+    def odf_sample(self, rng: Any, tol: float = 1e-6):
+        """Sample from the Orientation Distribution Function (ODF)."""
+        # Sample a direction from the ODF
+        del rng, tol
+        return self.eigvec
 
     @classmethod
     def to_params(cls, theta: ArrayLike) -> tuple:

@@ -12,12 +12,31 @@ from dmri.simulators.local_models import (
     C2Cylinder,
     S2Sphere,
 )
+from dmri.simulators.multi_compartment import (
+    BallStick,
+    Ball2Stick,
+    Ball3Stick,
+    BallStickZeppelin,
+)
 
 
 import pytest
 
 
-@pytest.fixture(params=[Ball, Stick, Dti, Zeppelin, C2Cylinder, S2Sphere])
+@pytest.fixture(
+    params=[
+        Ball,
+        Stick,
+        Dti,
+        Zeppelin,
+        C2Cylinder,
+        S2Sphere,
+        BallStick,
+        Ball2Stick,
+        Ball3Stick,
+        BallStickZeppelin,
+    ]
+)
 def compartment_model(request):
     model_class = request.param
     theta = np.random.randn(model_class.theta_dim)

@@ -14,6 +14,7 @@ class Compartment(ABC):
         super().__init_subclass__(**kwargs)
         jtu.register_pytree_node_class(cls)
 
+    @property
     def params(self):
         return self.__dict__
 
@@ -36,9 +37,9 @@ class Compartment(ABC):
         pass
 
     @classmethod
-    def from_theta(cls, theta: ArrayLike) -> "ModelCompartment":
+    def from_theta(cls, theta: ArrayLike, **kwargs) -> "ModelCompartment":
         """Creates a compartment from the optimization parameters."""
-        args = cls.to_params(theta)
+        args = cls.to_params(theta, **kwargs)
         return cls(*args)
 
     def tree_flatten(self) -> tuple:
