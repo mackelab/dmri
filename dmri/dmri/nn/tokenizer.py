@@ -73,11 +73,17 @@ class StructuredTokenizer(nnx.Module, experimental_pytree=True):
         if encode_nets is None:
             encode_nets = [nnx.Linear(d, value_dim, rngs=rngs) for d in dims_by_id]
         if decode_nets is None:
-            decode_nets = [nnx.Linear(value_dim, d, rngs=rngs) for d in dims_by_id]
+            dim_token = id_dim + value_dim + cond_dim
+            decode_nets = [nnx.Linear(dim_token, d, rngs=rngs) for d in dims_by_id]
 
         self.encode_nets = encode_nets
         self.decode_nets = decode_nets
-        self.embed_id = nnx.Embed(self.num_nodes, id_dim, rngs=rngs)
+        self.embed_id = nnx.Embed(
+            self.num_nodes,
+            id_dim,
+            rngs=rngs,
+            embedding_init=nnx.initializers.orthogonal(),
+        )
 
         if cond_dim > 0:
             self.condition_token = nnx.Param(
