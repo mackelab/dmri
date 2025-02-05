@@ -11,114 +11,35 @@ from probjax.nn.nets.denoising_diffusion_model import EDM
 from probjax.nn import MLP
 from probjax.nn.utils import AffineFuse
 
+from probjax.utils.odeint import odeint
 
-class Simformer(nnx.Module, experimental_pytree=True):
-    model_dim: int = 50
-    condition_dim: int = 10
-    num_heads: int = 4
-    num_layers: int = 4
-    widening_factor: int = 2
-    attn_size: int = 10
+
+class DiffusionTransformer(nnx.Module, experimental_pytree=True):
 
     def __init__(
         self,
         tokenizer,
         rngs,
         model_dim=64,
-        condition_dim=10,
+        context_dim=64,
         num_heads=4,
         num_layers=4,
-        attn_size=64,
-        widening_factor=2,
-        context_embed=None,
+        attn_size=16,
+        widening_factor=3,
+        enable_cross_attention=True,
     ) -> None:
-        self.model_dim = model_dim
-        self.condition_dim = condition_dim
-        self.num_heads = num_heads
-        self.num_layers = num_layers
-        self.attn_size = attn_size
-        self.widening_factor = widening_factor
-
         self.tokenizer = tokenizer
-        self.time_embedding = GaussianFourierEmbedding(1, self.model_dim, rngs=rngs)
+        self.time_embedding = GaussianFourierEmbedding(1, model_dim, rngs=rngs)
         self.transformer = Transformer(
-            self.model_dim,
-            num_heads=self.num_heads,
-            num_layers=self.num_layers,
-            attn_size=self.attn_size,
+            model_dim,
+            num_heads=num_heads,
+            num_layers=num_layers,
+            attn_size=attn_size,
+            widening_factor=widening_factor,
+            enable_cross_attention=enable_cross_attention,
             rngs=rngs,
-            context_dim=self.model_dim * 2,
+            context_dim=model_dim + context_dim,
         )
-        self.context_embed = context_embed
-
-    def __call__(
-        self,
-        t,
-        x,
-        node_ids,
-        condition_mask,
-        *args,
-        context=None,
-        attention_mask=None,
-        **kwargs,
-    ):
-        time_embed = self.time_embedding(t)
-        input_embed = self.tokenizer(x, node_ids, condition_mask)
-        while time_embed.ndim < input_embed.ndim:
-            time_embed = time_embed[..., None, :]
-
-        if context is not None:
-            context = (
-                self.context_embed(context) if self.context_embed is not None else None
-            )
-            context = context[..., None, :] if context is not None else None
-            # print(time_embed.shape, context.shape)
-            context = jnp.concatenate([time_embed, context], axis=-1)
-        # print(context.shape)
-        output = self.transformer(input_embed, context=context, mask=attention_mask)
-        output = self.tokenizer.decode(output, node_ids)
-        return output
-
-
-class Simformer2(nnx.Module, experimental_pytree=True):
-    model_dim: int = 50
-    condition_dim: int = 10
-    num_heads: int = 4
-    num_layers: int = 4
-    widening_factor: int = 2
-    attn_size: int = 10
-
-    def __init__(
-        self,
-        tokenizer,
-        rngs,
-        model_dim=64,
-        condition_dim=10,
-        num_heads=4,
-        num_layers=4,
-        attn_size=64,
-        widening_factor=2,
-        context_embed=None,
-    ) -> None:
-        self.model_dim = model_dim
-        self.condition_dim = condition_dim
-        self.num_heads = num_heads
-        self.num_layers = num_layers
-        self.attn_size = attn_size
-        self.widening_factor = widening_factor
-
-        self.tokenizer = tokenizer
-        self.time_embedding = GaussianFourierEmbedding(1, self.model_dim, rngs=rngs)
-        self.transformer = Transformer(
-            self.model_dim,
-            num_heads=self.num_heads,
-            num_layers=self.num_layers,
-            attn_size=self.attn_size,
-            enable_cross_attention=True,
-            rngs=rngs,
-            context_dim=self.model_dim,
-        )
-        self.context_embed = context_embed
 
     def __call__(
         self,
@@ -136,9 +57,58 @@ class Simformer2(nnx.Module, experimental_pytree=True):
         input_embed = self.tokenizer(x, node_ids, condition_mask)
         while time_embed.ndim < input_embed.ndim:
             time_embed = time_embed[..., None, :]
+        _context = time_embed
+
+        if context is not None:
+            while context.ndim < input_embed.ndim:
+                context = context[..., None, :]
+            _context = jnp.concatenate([_context, context], axis=-1)
 
         output = self.transformer(
-            input_embed, y, y, context=context, mask=attention_mask
+            input_embed, y, y, context=_context, mask=attention_mask
         )
         output = self.tokenizer.decode(output, node_ids)
         return output
+
+
+class EDMSimformer(EDM):
+    def __init__(
+        self,
+        tokenizer,
+        rngs,
+        model_dim=64,
+        context_dim=64,
+        num_heads=4,
+        num_layers=4,
+        attn_size=16,
+        widening_factor=3,
+        endable_cross_attention=True,
+    ):
+        transformer = DiffusionTransformer(
+            tokenizer,
+            rngs,
+            model_dim=model_dim,
+            context_dim=context_dim,
+            num_heads=num_heads,
+            num_layers=num_layers,
+            attn_size=attn_size,
+            widening_factor=widening_factor,
+            enable_cross_attention=endable_cross_attention,
+        )
+        super().__init__(transformer)
+
+    def sample(self, rng, y, dim, node_ids, context=None, max_noise=None, num_steps=16):
+        if max_noise is not None:
+            self.max_noise = max_noise
+        eps = jax.random.normal(rng, dim) * self.marginal_std(self.max_noise)
+        ts = self.solve_schedule(num_steps)
+
+
+        def drift(t, x):
+            t = jnp.atleast_1d(t)
+            f = self.drift(t, x)
+            g = self.diffusion(t, x)
+            score = self.score(t, x, node_ids=node_ids, y=y, context=context)
+            return (f - 0.5 * g**2 * score).reshape(x.shape)
+
+        return odeint(drift, eps, ts, method="heun")[-1]
