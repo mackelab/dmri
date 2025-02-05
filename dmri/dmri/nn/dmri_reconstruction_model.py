@@ -100,7 +100,17 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         model_mask = self.model_decoder.sample(rng, y, self.num_nodes - 1)
         return model_mask
 
-    def sample_theta(self, rng, bvals, bvecs, signals, model_mask, node_ids=None):
+    def sample_theta(
+        self,
+        rng,
+        bvals,
+        bvecs,
+        signals,
+        model_mask,
+        node_ids=None,
+        num_steps=16,
+        max_noise=None,
+    ):
         y = self.encoder(bvals, bvecs, signals)
 
         if node_ids is None:
@@ -112,7 +122,13 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
 
         # diffusion sampling
         theta = self.inference_decoder.sample(
-            rng, y, self.cfg.simulator.theta_dim, node_ids, context=model_mask_repeated
+            rng,
+            y,
+            self.cfg.simulator.theta_dim,
+            node_ids,
+            context=model_mask_repeated,
+            num_steps=num_steps,
+            max_noise=max_noise,
         )
 
         return theta
