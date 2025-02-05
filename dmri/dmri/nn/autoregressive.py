@@ -13,7 +13,7 @@ from probjax.nn import MLP
 from probjax.nn.utils import AffineFuse
 
 
-class ModelIdentificationDecoder(nnx.Module, experimental_pytree=True):
+class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
     model_dim: int = 64
     num_heads: int = 4
     num_layers: int = 4
@@ -30,6 +30,7 @@ class ModelIdentificationDecoder(nnx.Module, experimental_pytree=True):
         attn_size: int = 16,
         dropout_rate: int = None,
         context_dim: Optional[int] = None,
+        enable_cross_attention: bool = True,
     ):
         self.model_dim = model_dim
         self.num_heads = num_heads
@@ -48,6 +49,7 @@ class ModelIdentificationDecoder(nnx.Module, experimental_pytree=True):
             widening_factor=self.widening_factor,
             rngs=rngs,
             dropout_rate=dropout_rate,
+            enable_cross_attention=enable_cross_attention,
         )
         self.output = nnx.Linear(model_dim, 1, rngs=rngs)
         self.embed_mask = nnx.Embed(2, model_dim, rngs=rngs)
@@ -56,6 +58,7 @@ class ModelIdentificationDecoder(nnx.Module, experimental_pytree=True):
         self,
         model_mask,
         context=None,
+        y=None,
         mask=None,
         decode=False,
         deterministic=False,
@@ -81,6 +84,8 @@ class ModelIdentificationDecoder(nnx.Module, experimental_pytree=True):
 
         x = self.transformer(
             inputs_padded,
+            y,
+            y,
             context=context,
             mask=base_mask,
             deterministic=deterministic,
@@ -91,8 +96,8 @@ class ModelIdentificationDecoder(nnx.Module, experimental_pytree=True):
             return logits[..., :-1, 0], inputs_padded[..., :-1, :]
         return logits[..., :-1, 0]
 
-    def sample(self, key, context, dim):
-        return naive_autoregressive_decoding(self, key, context, dim)
+    def sample(self, key, y, dim):
+        return naive_autoregressive_decoding(self, key, y, dim)
 
 
 # OLD
@@ -166,12 +171,12 @@ class ModelIdentificationDecoder_old(nnx.Module, experimental_pytree=True):
 
 
 @partial(jax.jit, static_argnums=(3,))
-def naive_autoregressive_decoding(model, key, context, dim):
+def naive_autoregressive_decoding(model, key, y, dim):
     x = jnp.zeros((dim,), dtype=jnp.bool_)
 
     def scan_fn(carry, k):
         x, i = carry
-        logits = model(x.astype(jnp.int32), context)
+        logits = model(x.astype(jnp.int32), y=y)
         p_i = jax.nn.sigmoid(logits[i])
 
         x_i = jax.random.bernoulli(k, p_i)
