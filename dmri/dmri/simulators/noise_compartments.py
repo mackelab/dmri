@@ -1,5 +1,7 @@
+from typing import Any
 import jax
 import jax.numpy as jnp
+from jax.typing import ArrayLike
 
 from dmri.simulators.base import NoiseCompartment
 
@@ -14,6 +16,19 @@ class RicianNoise(NoiseCompartment):
 
     def noise(self, signal, rng):
         return add_rician_noise(rng, signal, self.sigma_g)
+    
+    @classmethod
+    def to_theta(cls, *args) -> ArrayLike:
+        """Transforms the natural parameters to the optimization parameters which are
+        assumed to be normally distributed.
+        """
+        return jnp.log(args[0])
+
+    @classmethod
+    def to_params(cls, theta: ArrayLike) -> Any:
+        """Transforms the optimization parameters to the natural parameters."""
+        return jnp.exp(theta),        
+
 
 
 class GaussianNoise(NoiseCompartment):
@@ -24,6 +39,109 @@ class GaussianNoise(NoiseCompartment):
 
     def noise(self, signal, rng):
         return add_gaussian_noise(rng, signal, self.sigma_g)
+    
+    @classmethod
+    def to_theta(cls, *args) -> ArrayLike:
+        """Transforms the natural parameters to the optimization parameters which are
+        assumed to be normally distributed.
+        """
+        return jnp.log(args[0])
+
+    @classmethod
+    def to_params(cls, theta: ArrayLike) -> Any:
+        """Transforms the optimization parameters to the natural parameters."""
+        return jnp.exp(theta),   
+    
+    
+class BoundedRicianNoise(NoiseCompartment):
+    theta_dim = 1
+    min_sigma_g = 0.
+    max_sigma_g = 0.5
+
+    def __init__(self, sigma_g):
+        self.sigma_g = sigma_g
+
+    def noise(self, signal, rng):
+        return add_rician_noise(rng, signal, self.sigma_g)
+    
+    @classmethod
+    def to_theta(cls, *args) -> ArrayLike:
+        """Transforms the natural parameters to the optimization parameters which are
+        assumed to be normally distributed.
+        """
+        # Invert scaling
+        theta_sig = (args[0] - cls.min_sigma_g) / (cls.max_sigma_g - cls.min_sigma_g)
+        # Apply inverse sigmoid
+        return jnp.log(theta_sig / (1 - theta_sig))
+        
+
+    @classmethod
+    def to_params(cls, theta: ArrayLike) -> Any:
+        """Transforms the optimization parameters to the natural parameters."""
+        return jax.nn.sigmoid(theta) * (cls.max_sigma_g - cls.min_sigma_g) + cls.min_sigma_g,
+    
+class BoundedGaussianNoise(NoiseCompartment):
+    theta_dim = 1
+    min_sigma_g = 0.
+    max_sigma_g = 0.5
+
+    def __init__(self, sigma_g):
+        self.sigma_g = sigma_g
+
+    def noise(self, signal, rng):
+        return add_gaussian_noise(rng, signal, self.sigma_g)
+    
+    @classmethod
+    def to_theta(cls, *args) -> ArrayLike:
+        """Transforms the natural parameters to the optimization parameters which are
+        assumed to be normally distributed.
+        """
+        # Invert scaling
+        theta_sig = (args[0] - cls.min_sigma_g) / (cls.max_sigma_g - cls.min_sigma_g)
+        # Apply inverse sigmoid
+        return jnp.log(theta_sig / (1 - theta_sig))
+        
+
+    @classmethod
+    def to_params(cls, theta: ArrayLike) -> Any:
+        """Transforms the optimization parameters to the natural parameters."""
+        return jax.nn.sigmoid(theta) * (cls.max_sigma_g - cls.min_sigma_g) + cls.min_sigma_g,
+    
+class LowRicianNoise(BoundedRicianNoise):
+    min_sigma_g = 0.
+    max_sigma_g = 0.05
+    
+class MediumRicianNoise(BoundedRicianNoise):
+    min_sigma_g = 0.05
+    max_sigma_g = 0.1
+
+class LargeRicianNoise(BoundedRicianNoise):
+    min_sigma_g = 0.1
+    max_sigma_g = 0.2
+    
+class VeryLargeRicianNoise(BoundedRicianNoise):
+    min_sigma_g = 0.2
+    max_sigma_g = 0.5
+    
+    
+class LowGaussianNoise(BoundedGaussianNoise):
+    min_sigma_g = 0.
+    max_sigma_g = 0.05
+    
+class MediumGaussianNoise(BoundedGaussianNoise):
+    min_sigma_g = 0.05
+    max_sigma_g = 0.1
+
+class LargeGaussianNoise(BoundedGaussianNoise):
+    min_sigma_g = 0.1
+    max_sigma_g = 0.2
+
+class VeryLargeGaussianNoise(BoundedGaussianNoise):
+    min_sigma_g = 0.2
+    max_sigma_g = 0.5
+
+
+
 
 
 def add_rician_noise(rng, signal, sigma_g):
