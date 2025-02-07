@@ -62,12 +62,19 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         model_mask_repeated = jnp.tile(model_mask, (1, 64 // model_mask.shape[-1] + 1))[
             :, :64
         ]
+        
+        # Add first "true" to the model
+        model_mask_first = jnp.ones((model_mask.shape[0], 1), dtype=bool)
+        _model_mask = jnp.concatenate([model_mask_first, model_mask], axis=-1)
+        attention_mask = _model_mask[:, None, :] & _model_mask[:, :, None]  # [B, N, N]
+        attention_mask = attention_mask | jnp.eye(_model_mask.shape[-1], dtype=bool)[None, :, :]
         loss = self.inference_decoder.loss(
             params_inference,
             rng=rng,
             data=x,
             node_ids=node_ids,
             y=y,
+            attention_mask=attention_mask,
             context=model_mask_repeated,
         )
         return loss
@@ -119,6 +126,9 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         model_mask_repeated = jnp.tile(model_mask, (1, 64 // model_mask.shape[-1] + 1))[
             :, :64
         ]
+        _model_mask_extended = jnp.concatenate([jnp.array([True]), model_mask])
+        attention_mask = _model_mask_extended[None, :] & _model_mask_extended[:, None]
+        attention_mask = attention_mask | jnp.eye(_model_mask_extended.shape[-1], dtype=bool)
 
         # diffusion sampling
         theta = self.inference_decoder.sample(
@@ -129,6 +139,7 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
             context=model_mask_repeated,
             num_steps=num_steps,
             max_noise=max_noise,
+            attention_mask=attention_mask,
         )
 
         return theta
