@@ -300,15 +300,9 @@ def sample_splines(
 
     end_face = jax.lax.cond(rand_prob < p_opposite_face, pick_opposite, pick_random)
 
-    x_points = jax.random.logistic(
-        rng_x, shape=(degree - 1,)
-    ) * (x_max - x_min) / 6 + (x_max + x_min) / 2
-    y_points = jax.random.logistic(
-        rng_y, shape=(degree - 1,)
-    ) * (y_max - y_min) / 6 + (y_max + y_min) / 2
-    z_points = jax.random.logistic(
-        rng_z, shape=(degree - 1,)
-    ) * (z_max - z_min) / 6 + (z_max + z_min) / 2
+    x_points = jax.nn.sigmoid(jax.random.normal(rng_x, shape=(degree - 1)) * 0.5)
+    y_points = jax.nn.sigmoid(jax.random.normal(rng_y, shape=(degree - 1)) * 0.5)
+    z_points = jax.nn.sigmoid(jax.random.normal(rng_z, shape=(degree - 1)) * 0.5)
 
     x_start, y_start, z_start = random_surface_point_for_face(
         rng_surface_start, start_face, x_min, x_max, y_min, y_max, z_min, z_max
