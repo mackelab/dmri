@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from jax.typing import ArrayLike
 
 from dmri.simulators.base import ModelCompartment
-from dmri.simulators.local_models.utils import (
+from dmri.simulators.local_signal_models.utils import (
     fit_diffusion_tensor_linearized,
     cartesian_to_unitsphere,
     unitsphere_to_cartesian,
@@ -127,7 +127,7 @@ class Stick(ModelCompartment):
         angle2 = theta[2] * 2 * jnp.pi - jnp.pi
         x = jnp.sin(angle1) * jnp.cos(angle2)
         y = jnp.sin(angle1) * jnp.sin(angle2)
-        z = jnp.cos(angle1) 
+        z = jnp.cos(angle1)
         eigvec = jnp.array([x, y, z])
         return lam, eigvec
 

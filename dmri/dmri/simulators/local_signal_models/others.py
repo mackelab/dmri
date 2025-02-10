@@ -1,4 +1,4 @@
-from dmri.simulators.local_models.utils import fit_diffusion_tensor_linearized
+from dmri.simulators.local_signal_models.utils import fit_diffusion_tensor_linearized
 import jax.numpy as jnp
 import jax
 
