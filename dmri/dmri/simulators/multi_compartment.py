@@ -1,5 +1,5 @@
 from typing import Optional
-from dmri.simulators.local_models.gaussian_models import Ball, Stick, Zeppelin
+from dmri.simulators.local_signal_models.gaussian_models import Ball, Stick, Zeppelin
 from dmri.simulators.noise_compartments import GaussianNoise
 from dmri.simulators.base import ModelCompartment, NoiseCompartment
 from dmri.utils.transform import normal_to_dirichlet, dirichlet_to_normal
