@@ -7,7 +7,7 @@ from jax.typing import ArrayLike
 import scipy.special as sp_special  # Add this import for special functions
 
 from dmri.simulators.base import ModelCompartment
-from dmri.simulators.local_models.utils import (
+from dmri.simulators.local_signal_models.utils import (
     fit_diffusion_tensor_linearized,
     unitsphere_to_cartesian,
 )

@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import numpy as np
 
 import dmri
-from dmri.simulators.local_models import (
+from dmri.simulators.local_signal_models import (
     Ball,
     Stick,
     Dti,
