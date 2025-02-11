@@ -68,6 +68,14 @@ class ModelCompartment(Compartment):
         """Fits the compartment to the signal deterministically."""
         pass
 
+    def fod_logpdf(self, mu: ArrayLike) -> float:
+        """Computes the log-probability of the orientation distribution function."""
+        pass
+
+    def fod_sample(self, rng: jax.random.key) -> ArrayLike:
+        """Samples the fiber orientation distribution."""
+        raise NotImplementedError("FOD sampling not implemented")
+
 
 class NoiseCompartment(Compartment):
     @abstractmethod

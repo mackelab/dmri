@@ -1,6 +1,21 @@
 from typing import Optional
-from dmri.simulators.local_models.gaussian_models import Ball, Stick, Zeppelin, Dti
-from dmri.simulators.noise_compartments import LowGaussianNoise, LowRicianNoise, MediumGaussianNoise, MediumRicianNoise, LargeGaussianNoise, LargeRicianNoise, VeryLargeGaussianNoise, VeryLargeRicianNoise
+
+from dmri.simulators.noise_compartments import (
+    LowGaussianNoise,
+    LowRicianNoise,
+    MediumGaussianNoise,
+    MediumRicianNoise,
+    LargeGaussianNoise,
+    LargeRicianNoise,
+    VeryLargeGaussianNoise,
+    VeryLargeRicianNoise,
+)
+from dmri.simulators.local_signal_models.gaussian_models import (
+    Ball,
+    Stick,
+    Zeppelin,
+    Dti,
+)
 from dmri.simulators.base import ModelCompartment, NoiseCompartment
 from dmri.utils.transform import normal_to_dirichlet, dirichlet_to_normal
 
@@ -162,6 +177,18 @@ class MultiCompartment(ModelCompartment):
         ]
         return fractions, model_compartments, noise_compartments, model_mask
 
+    def fod_logpdf(self, mu):
+        pass
+
+    def fod_sample(self, rng):
+        rng1, rng2 = jax.random.split(rng)
+        idx = jax.random.choice(
+            rng1, len(self.model_compartments), p=self.model_fractions
+        )
+        return jax.lax.switch(
+            idx, [m.fod_sample for m in self.model_compartments], rng2
+        )
+
 
 class BallStick(MultiCompartment):
     model_types = [Ball, Stick]
@@ -173,7 +200,6 @@ class Ball2Stick(MultiCompartment):
     model_types = [Ball, Stick, Stick]
     noise_types = []
     fraction_prior = jnp.ones(3)
-
 
 
 class Ball3Stick(MultiCompartment):
@@ -200,10 +226,14 @@ class Ball2Stick2Zeppelin2Dti(MultiCompartment):
     ]
     noise_types = []
     fraction_prior = jnp.ones(7)
-    
-    
+
 
 class AllGaussianModels(MultiCompartment):
-    model_types = [Ball] + 3 * [Stick] + 3*[Zeppelin] + 3*[Dti]
-    noise_types = [LowGaussianNoise, MediumGaussianNoise, LargeGaussianNoise, VeryLargeGaussianNoise] + [LowRicianNoise, MediumRicianNoise, LargeRicianNoise, VeryLargeRicianNoise]
+    model_types = [Ball] + 3 * [Stick] + 3 * [Zeppelin] + 3 * [Dti]
+    noise_types = [
+        LowGaussianNoise,
+        MediumGaussianNoise,
+        LargeGaussianNoise,
+        VeryLargeGaussianNoise,
+    ] + [LowRicianNoise, MediumRicianNoise, LargeRicianNoise, VeryLargeRicianNoise]
     fraction_prior = jnp.ones(1 + 3 + 3 + 3)
