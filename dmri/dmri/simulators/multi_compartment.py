@@ -162,6 +162,17 @@ class MultiCompartment(ModelCompartment):
         ]
         return fractions, model_compartments, noise_compartments, model_mask
 
+    def fod_logpdf(self, mu):
+        pass
+
+    def fod_sample(self, rng):
+        rng1, rng2 = jax.random.split(rng)
+        idx = jax.random.choice(
+            rng1, len(self.model_compartments), p=self.model_fractions
+        )
+        return jax.lax.switch(
+            idx, [m.fod_sample for m in self.model_compartments], rng2
+        )
 
 class BallStick(MultiCompartment):
     model_types = [Ball, Stick]

@@ -47,11 +47,11 @@ class Ball(ModelCompartment):
         theta = jax.scipy.stats.norm.ppf(theta)
         return theta
 
-    def odf_logpdf(self):
+    def fod_logpdf(self, mu):
         """Convert the Ball model to the Orientation Distribution Function (ODF)."""
         return 1 / (4 * jnp.pi)
 
-    def odf_sample(self, rng: Any):
+    def fod_sample(self, rng: Any):
         """Sample from the Orientation Distribution Function (ODF)."""
         u = jax.random.normal(rng, (3,))
         u = u / jnp.linalg.norm(u)
@@ -99,7 +99,7 @@ class Stick(ModelCompartment):
         theta = jax.scipy.stats.norm.ppf(theta)
         return theta
 
-    def odf_logpdf(self, u, kappa: float = 1e3):
+    def fod_logpdf(self, u, kappa: float = 100):
         """Convert the Stick model to the Orientation Distribution Function (ODF)."""
         # Compute the ODF for a given direction u
         dot_product = jnp.dot(self.eigvec, u)
@@ -112,7 +112,7 @@ class Stick(ModelCompartment):
         log_prob = jax.scipy.special.logsumexp(jnp.stack([log_pdf1, log_pdf2]), axis=0)
         return log_prob
 
-    def odf_sample(self, rng: Any, tol: float = 1e-6):
+    def fod_sample(self, rng: Any, tol: float = 1e-6):
         """Sample from the Orientation Distribution Function (ODF)."""
         # Sample a direction from the ODF
         del rng, tol
@@ -192,6 +192,9 @@ class Zeppelin(ModelCompartment):
         y = jnp.sin(theta) * jnp.sin(phi)
         z = jnp.cos(theta)
         return jnp.array([x, y, z])
+
+    def fod_logpdf(self, mu):
+        return super().fod_logpdf(mu)
 
 
 class Dti(ModelCompartment):
