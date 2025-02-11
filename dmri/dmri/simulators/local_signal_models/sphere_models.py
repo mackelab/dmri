@@ -20,10 +20,22 @@ class S2Sphere(ModelCompartment):
 
     def sphere_attenuation(self, q, diameter):
         """The signal attenuation for the sphere model."""
-        radius = diameter / 2
-        factor = 2 * jnp.pi * q * radius
-        E = (3 / (factor**2) * (lax.sin(factor) / factor - jnp.cos(factor))) ** 2
-        return E
+        radius = diameter / 2.0
+        q_argument = 2 * jnp.pi * q * radius
+        q_argument_2 = q_argument ** 2
+        res = jnp.zeros_like(q)
+
+        # J = special.spherical_jn(q_argument)
+        Jder = lax.spherical_bessel_j1(q_argument)  # Using JAX's spherical Bessel function derivative
+        for k in range(0, self.alpha.shape[0]):
+            for n in range(0, self.alpha.shape[1]):
+                a_nk2 = self.alpha[k, n] ** 2
+                update = jnp.exp(-a_nk2 * self.Dintra * tau / radius ** 2)
+                update *= ((2 * n + 1) * a_nk2) / (a_nk2 - (n - 0.5) ** 2 + 0.25)
+                update *= q_argument * Jder
+                update /= (q_argument_2 - a_nk2) ** 2
+                res += update
+        return res
 
     def log_signal(self, bvals, bvecs, **kwargs):
         """Calculates the log signal attenuation."""
@@ -44,13 +56,13 @@ class S2Sphere(ModelCompartment):
         )
 
     @classmethod
-    def to_theta(cls, diameter: float) -> ArrayLike:
+    def to_theta(cls, diameter: ArrayLike) -> ArrayLike:
         """Convert the diameter to the parameter space theta."""
-        scaled_diameter = diameter * DIAMETER_SCALING
-        return jnp.array([scaled_diameter])
+        scaled_diameter = diameter
+        return jnp.log(scaled_diameter)
 
     @classmethod
     def to_params(cls, theta: ArrayLike) -> float:
         """Convert the parameter space theta to the diameter."""
-        diameter = theta[0] / DIAMETER_SCALING
+        diameter = jnp.exp(theta) 
         return (diameter,)

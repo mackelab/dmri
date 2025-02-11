@@ -28,7 +28,7 @@ class BvalBvecSignalEmbeddingNet(nnx.Module, experimental_pytree=True):
         max_bval: float,
         model_dim: int = 64,
         num_heads: int = 4,
-        num_layers: int = 2,
+        num_layers: int = 3,
         widening_factor: int = 2,
         attn_size: int = 16,
         dropout_rate: int = None,
@@ -57,6 +57,7 @@ class BvalBvecSignalEmbeddingNet(nnx.Module, experimental_pytree=True):
         bvecs: ArrayLike,  # B, T, 3
         signals: ArrayLike,  # B, T
     ):
+        # Very naive
         bvals = bvals[..., None] / self.max_bval
         signals = signals[..., None]
         data = jnp.concatenate([bvals, bvecs, signals], axis=-1)
@@ -64,11 +65,3 @@ class BvalBvecSignalEmbeddingNet(nnx.Module, experimental_pytree=True):
         out_tokens = self.transformer(tokens)
         return out_tokens
 
-    def embed_bvals(self, bvals: ArrayLike):
-        pass
-
-    def embed_bvecs(self, bvecs: ArrayLike):
-        pass
-
-    def embed_signals(self, signals: ArrayLike):
-        pass
