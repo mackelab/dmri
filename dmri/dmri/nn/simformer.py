@@ -23,7 +23,7 @@ class DiffusionTransformer(nnx.Module, experimental_pytree=True):
         model_dim=64,
         context_dim=64,
         num_heads=4,
-        num_layers=4,
+        num_layers=6,
         attn_size=16,
         widening_factor=3,
         enable_cross_attention=True,
@@ -51,7 +51,6 @@ class DiffusionTransformer(nnx.Module, experimental_pytree=True):
         condition_mask=None,
         context=None,
         attention_mask=None,
-        **kwargs,
     ):
         time_embed = self.time_embedding(t)
         input_embed = self.tokenizer(x, node_ids, condition_mask)
@@ -97,7 +96,7 @@ class EDMSimformer(EDM):
         )
         super().__init__(transformer)
 
-    def sample(self, rng, y, dim, node_ids, context=None, max_noise=None, num_steps=16):
+    def sample(self, rng, y, dim, node_ids, context=None, max_noise=None, num_steps=16, attention_mask=None):
         if max_noise is not None:
             self.max_noise = max_noise
         eps = jax.random.normal(rng, dim) * self.marginal_std(self.max_noise)
@@ -108,7 +107,7 @@ class EDMSimformer(EDM):
             t = jnp.atleast_1d(t)
             f = self.drift(t, x)
             g = self.diffusion(t, x)
-            score = self.score(t, x, node_ids=node_ids, y=y, context=context)
+            score = self.score(t, x, node_ids=node_ids, y=y, context=context, attention_mask=attention_mask)
             return (f - 0.5 * g**2 * score).reshape(x.shape)
 
         return odeint(drift, eps, ts, method="heun")[-1]

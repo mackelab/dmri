@@ -12,6 +12,7 @@ from dmri.simulators.local_signal_models.utils import (
     unitsphere_to_cartesian,
 )
 
+# NOTE: This requires more information on acquistion!
 
 DIFFUSIVITY_SCALING = 1e-9
 DIAMETER_SCALING = 1e-6

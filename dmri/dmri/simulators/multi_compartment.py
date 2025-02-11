@@ -1,6 +1,21 @@
 from typing import Optional
-from dmri.simulators.local_signal_models.gaussian_models import Ball, Stick, Zeppelin
-from dmri.simulators.noise_compartments import GaussianNoise
+
+from dmri.simulators.noise_compartments import (
+    LowGaussianNoise,
+    LowRicianNoise,
+    MediumGaussianNoise,
+    MediumRicianNoise,
+    LargeGaussianNoise,
+    LargeRicianNoise,
+    VeryLargeGaussianNoise,
+    VeryLargeRicianNoise,
+)
+from dmri.simulators.local_signal_models.gaussian_models import (
+    Ball,
+    Stick,
+    Zeppelin,
+    Dti,
+)
 from dmri.simulators.base import ModelCompartment, NoiseCompartment
 from dmri.utils.transform import normal_to_dirichlet, dirichlet_to_normal
 
@@ -65,10 +80,10 @@ class MultiCompartment(ModelCompartment):
 
         # Add noise
         if len(self.noise_compartments) > 0:
-            assert rng, "rng key  must be provided for noise"
+            assert rng is not None, "rng key  must be provided for noise"
             rngs = jax.random.split(rng, len(self.noise_compartments))
             for i, (noise, rng) in enumerate(zip(self.noise_compartments, rngs)):
-                if self.model_mask:
+                if self.model_mask is not None:
                     idx = len(self.model_compartments) + i
                     mask = self.model_mask[idx]
                     signal = jax.lax.cond(
@@ -174,6 +189,7 @@ class MultiCompartment(ModelCompartment):
             idx, [m.fod_sample for m in self.model_compartments], rng2
         )
 
+
 class BallStick(MultiCompartment):
     model_types = [Ball, Stick]
     noise_types = []
@@ -186,7 +202,6 @@ class Ball2Stick(MultiCompartment):
     fraction_prior = jnp.ones(3)
 
 
-
 class Ball3Stick(MultiCompartment):
     model_types = [Ball, Stick, Stick, Stick]
     noise_types = []
@@ -197,3 +212,28 @@ class BallStickZeppelin(MultiCompartment):
     model_types = [Ball, Stick, Zeppelin]
     noise_types = []
     fraction_prior = jnp.ones(3)
+
+
+class Ball2Stick2Zeppelin2Dti(MultiCompartment):
+    model_types = [
+        Ball,
+        Stick,
+        Stick,
+        Zeppelin,
+        Zeppelin,
+        Dti,
+        Dti,
+    ]
+    noise_types = []
+    fraction_prior = jnp.ones(7)
+
+
+class AllGaussianModels(MultiCompartment):
+    model_types = [Ball] + 3 * [Stick] + 3 * [Zeppelin] + 3 * [Dti]
+    noise_types = [
+        LowGaussianNoise,
+        MediumGaussianNoise,
+        LargeGaussianNoise,
+        VeryLargeGaussianNoise,
+    ] + [LowRicianNoise, MediumRicianNoise, LargeRicianNoise, VeryLargeRicianNoise]
+    fraction_prior = jnp.ones(1 + 3 + 3 + 3)
