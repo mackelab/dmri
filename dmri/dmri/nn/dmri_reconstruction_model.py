@@ -24,15 +24,22 @@ class DMRIInferenceModelConfig:
     simulator: MultiCompartment
     max_bval: float = 2000
     model_dim: int = 64
+    num_layers_encoder: int = 3
+    num_heads_encoder: int = 4
+    num_layers_model_decoder: int = 3
+    num_heads_model_decoder: int = 4
+    num_layers_inference_decoder: int = 6
+    num_heads_inference_decoder: int = 8
+
 
 
 class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
     def __init__(self, cfg: DMRIInferenceModelConfig, rngs):
         self.cfg = cfg
         self.encoder = BvalBvecSignalEmbeddingNet(
-            rngs, cfg.max_bval, model_dim=cfg.model_dim
+            rngs, cfg.max_bval, model_dim=cfg.model_dim, num_layers=cfg.num_layers_encoder, num_heads=cfg.num_heads_encoder
         )
-        self.model_decoder = BinaryAutoregressiveDecoder(rngs, model_dim=cfg.model_dim)
+        self.model_decoder = BinaryAutoregressiveDecoder(rngs, model_dim=cfg.model_dim, num_layers=cfg.num_layers_model_decoder, num_heads=cfg.num_heads_model_decoder)
 
         # Inference
         simulator = cfg.simulator
@@ -42,6 +49,8 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
             tokenizer=StructuredTokenizer(dims_per_component, rngs=rngs),
             rngs=rngs,
             model_dim=cfg.model_dim,
+            num_layers=cfg.num_layers_inference_decoder,
+            num_heads=cfg.num_heads_inference_decoder,
         )
         self.inference_decoder = simformer
 
