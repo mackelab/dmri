@@ -99,17 +99,17 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
             optax.sigmoid_binary_cross_entropy(model_mask_logits, model_mask).sum(-1)
         )
 
-    def sample(self, key, y, dim):
-        return naive_autoregressive_decoding(self, key, y, dim)
+    def sample(self, key, tokenizer, y, dim):
+        return naive_autoregressive_decoding(self, key, tokenizer, y, dim)
 
 
 @partial(jax.jit, static_argnums=(3,))
-def naive_autoregressive_decoding(model, key, y, dim):
+def naive_autoregressive_decoding(model, key, tokenizer, y, dim):
     x = jnp.zeros((dim,), dtype=jnp.bool_)
 
     def scan_fn(carry, k):
         x, i = carry
-        logits = model(x.astype(jnp.int32), y=y)
+        logits = model(x.astype(jnp.int32), tokenizer, y=y)
         p_i = jax.nn.sigmoid(logits[i])
 
         x_i = jax.random.bernoulli(k, p_i)
