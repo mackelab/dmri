@@ -253,7 +253,7 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         # diffusion sampling
         theta = self.inference_decoder.sample(
             rng,
-            y,
+            y=y,
             tokenizer=self.tokenizer,
             dim=self.cfg.simulator.theta_dim,
             tokens_cfg=tokens_cfg,
