@@ -1,7 +1,9 @@
-from functools import partial
-from typing import List, Optional
+from abc import abstractmethod
+from functools import cache, partial
+from typing import Any, List, Optional
 import jax
 import jax.numpy as jnp
+from jax.typing import ArrayLike
 import numpy as np
 
 from flax import nnx
@@ -11,9 +13,40 @@ from probjax.nn.loss_fn.denoising import build_time_dependent_denoising_loss
 from probjax.nn.nets.denoising_diffusion_model import EDM
 from probjax.nn import MLP
 from probjax.nn.utils import AffineFuse
+from dmri.simulators import MultiCompartment
+from copy import deepcopy
+from collections import defaultdict
 
 
-class ScalarTokenizer(nnx.Module, experimental_pytree=True):
+def map_classes_to_indices(class_list: list, start_idx: int = 0):
+    """
+    Returns a dictionary mapping each class object in `class_list`
+    to a list of distinct integer indices corresponding to all of
+    its occurrences in `class_list`.
+    """
+    mapping = defaultdict(list)
+
+    for idx, cls in enumerate(class_list):
+        # Classes make problems with tree_flatten
+        mapping[cls.__name__].append(idx + start_idx)
+
+    return dict(mapping)  # convert defaultdict back to a normal dict
+
+
+class Tokenizer(nnx.Module, experimental_pytree=True):
+    def __call__(self, *args, **kwds):
+        return self.encode(*args, **kwds)
+
+    @abstractmethod
+    def encode(self, *args, **kwargs):
+        pass
+
+    @abstractmethod
+    def decode(self, *args, **kwargs):
+        pass
+
+
+class ScalarTokenizer(Tokenizer):
     def __init__(
         self, num_nodes, rngs, value_dim=20, id_dim=20, cond_dim=10, context_dim=None
     ):
@@ -35,7 +68,7 @@ class ScalarTokenizer(nnx.Module, experimental_pytree=True):
 
         self.outlayer = nnx.Linear(self.model_dim, 1, rngs=rngs)
 
-    def __call__(self, x, node_ids, condition_mask, context=None):
+    def encode(self, x, node_ids, condition_mask, context=None):
         node_embed = self.embed_id(node_ids)
         value_embed = self.embed_value(x)
 
@@ -53,16 +86,16 @@ class ScalarTokenizer(nnx.Module, experimental_pytree=True):
 
         return input_embed
 
-    def decode(self, h, node_ids):
+    def decode(self, h, node_ids, condition_mask, context=None):
         return self.outlayer(h)
 
 
-class StructuredTokenizer(nnx.Module, experimental_pytree=True):
+class StructuredTokenizer(Tokenizer):
     def __init__(
         self,
         dims_by_id: List[int],
-        id_dim: int = 32,
         value_dim: int = 32,
+        id_dim: int = 32,
         cond_dim: int = 0,
         encode_nets: Optional[List[nnx.Module]] = None,
         decode_nets: Optional[List[nnx.Module]] = None,
@@ -115,6 +148,286 @@ class StructuredTokenizer(nnx.Module, experimental_pytree=True):
         hs = jnp.split(h, h.shape[-2], axis=-2)
         net_subs = [self.decode_nets[i] for i in node_ids]
         x = jax.tree_util.tree_map(lambda x, net: net(x), hs, net_subs)
+        out = jnp.concatenate(x, axis=-1)
+        out = jnp.squeeze(out, axis=-2)
+        return out
+
+
+class DMRITokenizer(Tokenizer, experimental_pytree=True):
+    """
+    A tokenizer for dMRI multi-compartment model configurations. It handles embedding
+    and decoding of model types, noise types, and associated parameters.
+    """
+
+    def __init__(
+        self,
+        simulator: type[MultiCompartment],
+        rngs: Any,
+        token_dim: int = 64,
+        theta_encode_nets: Optional[List[nnx.Module]] = None,
+        theta_decode_nets: Optional[List[nnx.Module]] = None,
+    ) -> None:
+        """
+        Initializes a DMRITokenizer instance.
+
+        Args:
+            simulator (type[MultiCompartment]): The multi-compartment simulator class which
+                defines model_types, noise_types, etc.
+            rngs (Any): Random number generator(s) used for parameter initialization.
+            token_dim (int, optional): Dimension of tokens for embedding. Defaults to 64.
+            theta_encode_nets (Optional[List[nnx.Module]], optional): Encoding modules for parameters. Defaults to None.
+            theta_decode_nets (Optional[List[nnx.Module]], optional): Decoding modules for parameters. Defaults to None.
+        """
+        self.simulator = nnx.Variable(simulator)
+        self.num_models = len(simulator.model_types)
+        self.num_noises = len(simulator.noise_types)
+        self.params_dims = tuple(simulator.split_idx())
+
+        self.model_types_to_idx = nnx.Variable(
+            map_classes_to_indices(self.simulator.value.model_types)
+        )
+        self.noise_types_to_idx = nnx.Variable(
+            map_classes_to_indices(
+                self.simulator.value.noise_types,
+                start_idx=len(self.simulator.value.model_types),
+            )
+        )
+        self.embed_idx = nnx.Embed(
+            rngs=rngs,
+            num_embeddings=len(simulator.model_types) + len(simulator.noise_types),
+            features=token_dim,
+        )
+        self.embed_fraction = nnx.Linear(
+            len(simulator.model_types), token_dim, rngs=rngs
+        )
+
+        # Default to linear layers
+        if theta_encode_nets is None:
+            theta_encode_nets = [
+                nnx.Linear(d, token_dim, rngs=rngs) for d in self.params_dims
+            ]
+        if theta_decode_nets is None:
+            theta_decode_nets = [
+                nnx.Linear(token_dim, d, rngs=rngs) for d in self.params_dims
+            ]
+        self.theta_encode_nets = theta_encode_nets
+        self.theta_decode_nets = theta_decode_nets
+
+    def encode(
+        self,
+        theta: Optional[ArrayLike] = None,
+        model_mask: Optional[ArrayLike] = None,
+        tokens_cfg: Optional[ArrayLike] = None,
+        alpha_prior: Optional[ArrayLike] = None,
+        model_types: Optional[List[type]] = None,
+        noise_types: Optional[List[type]] = None,
+    ):
+        if model_types is None:
+            model_types = tuple(self.simulator.value.model_types)
+        if noise_types is None:
+            noise_types = tuple(self.simulator.value.noise_types)
+
+        if model_mask is None:
+            assert tokens_cfg is not None, "model_mask or tokens_cfg must be provided"
+
+        if tokens_cfg is None:
+            tokens_cfg = self.embed_cfgs(
+                model_mask,
+                alpha_prior,
+                model_types=model_types,
+                noise_types=noise_types,
+            )
+        # We assume that the provided tokens_cfg is already in the correct shape
+        if theta is not None:
+            tokens = self.embed_theta(theta, tokens_cfg, model_types, noise_types)
+        else:
+            tokens = tokens_cfg
+        return tokens
+
+    def decode(
+        self,
+        tokens: ArrayLike,
+        model_types: Optional[List[type]] = None,
+        noise_types: Optional[List[type]] = None,
+        **kwargs,
+    ):
+        if model_types is None:
+            model_types = tuple(self.simulator.value.model_types)
+        if noise_types is None:
+            noise_types = tuple(self.simulator.value.noise_types)
+
+        theta = self.decode_theta(tokens, model_types, noise_types)
+        return theta
+
+    @cache
+    def get_model_idx(self, model_types: List[type]) -> List[int]:
+        """
+        Returns a list of model indices corresponding to the provided model types.
+        """
+        model_types_to_idx = deepcopy(self.model_types_to_idx.value)
+        return tuple(
+            [model_types_to_idx[model.__name__].pop(0) for model in model_types]
+        )
+
+    @cache
+    def get_noise_idx(self, noise_types: List[type]) -> List[int]:
+        """
+        Returns a list of noise indices corresponding to the provided noise types.
+        """
+        noise_types_to_idx = deepcopy(self.noise_types_to_idx.value)
+        return tuple(
+            [noise_types_to_idx[noise.__name__].pop(0) for noise in noise_types]
+        )
+
+    @cache
+    def get_idx(self, model_types: List[type], noise_types: List[type]) -> List[int]:
+        """
+        Returns a list of model and noise indices corresponding to the provided model and noise types.
+        """
+        model_idx = self.get_model_idx(model_types)
+        noise_idx = self.get_noise_idx(noise_types)
+        return model_idx + noise_idx
+
+    def embed_cfgs(
+        self,
+        model_mask: ArrayLike,
+        alpha_prior: Optional[ArrayLike] = None,
+        model_types: Optional[List[type]] = None,
+        noise_types: Optional[List[type]] = None,
+    ) -> ArrayLike:
+        """
+        Embeds the configuration of model and noise types into tokens.
+
+        Args:
+            model_mask (ArrayLike): A binary mask indicating active model components.
+            alpha_prior (Optional[ArrayLike]): Prior fractions for model components.
+            model_types (Optional[List[type]]): List of model types.
+            noise_types (Optional[List[type]]): List of noise types.
+
+        Returns:
+            ArrayLike: The embedded tokens for each model/noise component.
+        """
+        if model_types is None:
+            model_types = tuple(self.simulator.value.model_types)
+        if noise_types is None:
+            noise_types = tuple(self.simulator.value.noise_types)
+        if alpha_prior is None:
+            alpha_prior = self.simulator.value.fraction_prior
+
+        idx = self.get_idx(model_types, noise_types)
+        print(idx)
+        assert len(idx) == model_mask.shape[-1], (
+            f"model_mask shape last axis {model_mask.shape} does not match the number of model components {len(idx)}"
+        )
+
+        *batch_dims, T = model_mask.shape
+        # Broadcast alpha_prior to the batch dims
+        alpha_prior = jnp.broadcast_to(
+            alpha_prior, batch_dims + [len(self.simulator.model_types)]
+        )
+
+        # Get the fraction prior token, which will always be in the beginning
+        alpha_token = self.embed_fraction(alpha_prior)[
+            ..., None, :
+        ]  # (B, 1, token_dim)
+        # Get the component tokens
+        idx = jnp.array(idx, dtype=jnp.int32)
+        idx_tokens = self.embed_idx(idx)  # (T, token_dim)
+        for _ in range(len(batch_dims)):
+            idx_tokens = idx_tokens[None, ...]  # (1, T, token_dim)
+        # Components that are not active will have zero token
+        idx_tokens = idx_tokens * model_mask[..., None]  # (B, T, token_dim)
+        # Combine the tokens
+        tokens = jnp.concatenate([alpha_token, idx_tokens], axis=1)
+        return tokens
+
+    def embed_theta(
+        self,
+        theta: ArrayLike,
+        tokens_cfg: ArrayLike,
+        model_types: Optional[List[type]] = None,
+        noise_types: Optional[List[type]] = None,
+    ) -> ArrayLike:
+        """
+        Embeds the continuous parameter vector theta into token representation.
+
+        Args:
+            theta (ArrayLike): The parameters of each model/noise component.
+            tokens_cfg (ArrayLike): Configuration tokens returned by embed_cfgs.
+            model_types (Optional[List[type]]): List of model types.
+            noise_types (Optional[List[type]]): List of noise types.
+
+        Returns:
+            ArrayLike: The token representation augmented with encoded parameters.
+        """
+        if model_types is None:
+            model_types = tuple(self.simulator.value.model_types)
+        if noise_types is None:
+            noise_types = tuple(self.simulator.value.noise_types)
+
+        model_idx = self.get_model_idx(model_types)
+        noise_idx = self.get_noise_idx(noise_types)
+        idx = model_idx + noise_idx
+
+        # First dim -> Model fractions
+        # Other dims -> Component parameters
+        dims_per_component = [self.params_dims[0]]
+        dims_per_component += [
+            self.params_dims[i + 1]
+            for i in idx  # 0 is the fraction prior
+        ]
+
+        assert sum(dims_per_component) == theta.shape[-1], (
+            f"theta shape last axis {theta.shape} does not match the number of model components {sum(dims_per_component)}"
+        )
+
+        # Split theta into components
+        dims = np.asarray(dims_per_component, dtype=np.int32)
+        split_dims = np.cumsum(dims)[:-1]
+        theta_split = jnp.split(theta, split_dims, axis=-1)
+        # Get the val embeddings
+        val_embeddings = jax.tree_util.tree_map(
+            lambda x, net: net(x)[..., None, :], theta_split, self.theta_encode_nets
+        )
+        val_tokens = jnp.concatenate(val_embeddings, axis=-2)
+
+        # Combine the tokens
+        tokens = val_tokens + tokens_cfg
+
+        return tokens
+
+    def decode_theta(
+        self,
+        tokens: ArrayLike,
+        model_types: Optional[List[type]] = None,
+        noise_types: Optional[List[type]] = None,
+        **kwargs,
+    ) -> ArrayLike:
+        """
+        Decodes the tokens back into the continuous parameter vector theta.
+
+        Args:
+            tokens (ArrayLike): The token representation that includes the embedded parameters.
+            model_types (Optional[List[type]]): List of model types.
+            noise_types (Optional[List[type]]): List of noise types.
+
+        Returns:
+            ArrayLike: The decoded parameter vector.
+        """
+        if model_types is None:
+            model_types = tuple(self.simulator.value.model_types)
+        if noise_types is None:
+            noise_types = tuple(self.simulator.value.noise_types)
+
+        model_idx = self.get_model_idx(model_types)
+        noise_idx = self.get_noise_idx(noise_types)
+        idx = model_idx + noise_idx
+
+        tokens_split = jnp.split(tokens, tokens.shape[-2], axis=-2)
+        net_subs = [self.theta_decode_nets[0]] + [
+            self.theta_decode_nets[i + 1] for i in idx
+        ]
+        x = jax.tree_util.tree_map(lambda x, net: net(x), tokens_split, net_subs)
         out = jnp.concatenate(x, axis=-1)
         out = jnp.squeeze(out, axis=-2)
         return out
