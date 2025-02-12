@@ -102,7 +102,8 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         )
         # Embed observatiosn
         y = self.encoder(bvals, bvecs, x)
-        y = y[..., None, :]
+        if y.ndim == 2:
+            y = y[..., None, :]
 
         print("y", y.shape)
         print("tokens_cfg", tokens_cfg.shape)
