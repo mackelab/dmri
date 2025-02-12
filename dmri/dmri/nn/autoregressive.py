@@ -103,7 +103,7 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
         return naive_autoregressive_decoding(self, key, tokenizer, y, dim)
 
 
-@partial(jax.jit, static_argnums=(4,))
+@partial(jax.jit, static_argnums=(2,4,))
 def naive_autoregressive_decoding(model, key, tokenizer, y, dim):
     x = jnp.zeros((dim,), dtype=jnp.bool_)
 
