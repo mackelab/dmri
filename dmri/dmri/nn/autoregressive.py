@@ -1,5 +1,6 @@
 from functools import partial
 from typing import Optional
+from dmri.nn.tokenizer import Tokenizer
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -11,6 +12,8 @@ from probjax.nn.loss_fn.denoising import build_time_dependent_denoising_loss
 from probjax.nn.nets.denoising_diffusion_model import EDM
 from probjax.nn import MLP
 from probjax.nn.utils import AffineFuse
+
+import optax
 
 
 class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
@@ -40,7 +43,6 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
         self.context_dim = context_dim
 
         # Why not use a shared tokenizer with the model mask?
-        self.start_token = nnx.Param(jnp.zeros((1, model_dim)))
         self.transformer = Transformer(
             model_dim,
             self.num_heads,
@@ -53,30 +55,26 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
             enable_cross_attention=enable_cross_attention,
         )
         self.output = nnx.Linear(model_dim, 1, rngs=rngs)
-        self.embed_mask = nnx.Embed(2, model_dim, rngs=rngs)
 
     def __call__(
         self,
         model_mask,
+        tokenizer: Tokenizer,
         context=None,
         y=None,
         mask=None,
         decode=False,
         deterministic=False,
-        return_latents=False,
+        **kwargs,
     ):
-        # Prepare inputs
-        *leading_dims, seq_len = model_mask.shape
-        input_embed = self.embed_mask(model_mask.astype(jnp.int32))
-        start_token = self.start_token.value
-        if input_embed.ndim > 2:
-            start_token = jnp.broadcast_to(
-                start_token, (*leading_dims, 1, self.model_dim)
-            )
-        inputs_padded = jnp.concatenate([start_token, input_embed], axis=-2)
+        input_tokens = tokenizer.encode(model_mask=model_mask, **kwargs)
+        _, seq_len, model_dim = input_tokens.shape
 
+        assert model_dim == self.model_dim, (
+            f"Token dim mismatch, is {model_dim}, expected {self.model_dim}"
+        )
         # Autoregressive mask constrained
-        base_mask = jnp.tril(jnp.ones((seq_len + 1, seq_len + 1)))
+        base_mask = jnp.tril(jnp.ones((seq_len, seq_len)))
         if mask is not None:
             base_mask = base_mask & mask
 
@@ -84,7 +82,7 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
             context = context[..., None, :]
 
         x = self.transformer(
-            inputs_padded,
+            input_tokens,
             y,
             y,
             context=context,
@@ -93,9 +91,13 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
             decode=decode,
         )
         logits = self.output(x)
-        if return_latents:
-            return logits[..., :-1, 0], inputs_padded[..., :-1, :]
         return logits[..., :-1, 0]
+
+    def loss_fn(self, params, model_mask, tokenizer, y, **kwargs):
+        model_mask_logits = self(model_mask, tokenizer, y=y, **kwargs)
+        return jnp.mean(
+            optax.sigmoid_binary_cross_entropy(model_mask_logits, model_mask).sum(-1)
+        )
 
     def sample(self, key, y, dim):
         return naive_autoregressive_decoding(self, key, y, dim)
