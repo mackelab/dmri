@@ -222,9 +222,9 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         y = self.encoder(bvals, bvecs, signals)
         model_mask = self.model_decoder.sample(
             rng,
-            self.tokenizer,
-            y,
-            self.tokenizer.num_models + self.tokenizer.num_noises,
+            tokenizer=self.tokenizer,
+            y=y,
+            dim=self.tokenizer.num_models + self.tokenizer.num_noises,
         )
         return model_mask
 
