@@ -97,6 +97,7 @@ class EDMSimformer(EDM):
     def sample(
         self,
         rng,
+        tokenizer,
         y,
         dim,
         tokens_cfg=None,
@@ -115,7 +116,15 @@ class EDMSimformer(EDM):
             t = jnp.atleast_1d(t)
             f = self.drift(t, x)
             g = self.diffusion(t, x)
-            score = self.score(t, x, tokens_cfg=tokens_cfg, y=y, context=context, attention_mask=attention_mask)
+            score = self.score(
+                t,
+                x,
+                tokenizer=tokenizer,
+                tokens_cfg=tokens_cfg,
+                y=y,
+                context=context,
+                attention_mask=attention_mask,
+            )
             return (f - 0.5 * g**2 * score).reshape(x.shape)
 
         return odeint(drift, eps, ts, method="heun")[-1]

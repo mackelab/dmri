@@ -254,7 +254,8 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         theta = self.inference_decoder.sample(
             rng,
             y,
-            self.cfg.simulator.theta_dim,
+            tokenizer=self.tokenizer,
+            dim=self.cfg.simulator.theta_dim,
             tokens_cfg=tokens_cfg,
             # context=model_mask_repeated,
             num_steps=num_steps,
