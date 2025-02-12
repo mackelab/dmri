@@ -18,7 +18,7 @@ class TemporalZeppelin(ModelCompartment):
         self.A = A
         self.eigenvecs = eigenvecs
 
-    def log_signal(self, bvals, bvecs, delta, Delta):
+    def log_signal(self, bvals, bvecs, delta, Delta, rng):
         lam_orthogonal = (
             self.D_inf + self.A * jnp.log(Delta / delta) + 3 / 2 * (Delta - delta / 3)
         )

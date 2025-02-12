@@ -22,7 +22,7 @@ class Ball(ModelCompartment):
         """Initialize the Ball model with a lambda value."""
         self.lam = lam
 
-    def log_signal(self, bvals: ArrayLike, bvecs: ArrayLike) -> ArrayLike:
+    def log_signal(self, bvals: ArrayLike, bvecs: ArrayLike, rng=None) -> ArrayLike:
         """Compute the log signal for given b-values and b-vectors."""
         logS = -bvals * self.lam
         return logS
@@ -68,12 +68,12 @@ class Stick(ModelCompartment):
         self.lam = lam
         self.eigvec = eigvec
 
-    def signal(self, bvals: ArrayLike, bvecs: ArrayLike) -> ArrayLike:
+    def signal(self, bvals: ArrayLike, bvecs: ArrayLike, rng=None) -> ArrayLike:
         """Compute the signal for given b-values and b-vectors."""
         S = jnp.exp(-bvals * self.lam * (jnp.sum(bvecs * self.eigvec, axis=-1)) ** 2)
         return S
 
-    def log_signal(self, bvals: ArrayLike, bvecs: ArrayLike) -> ArrayLike:
+    def log_signal(self, bvals: ArrayLike, bvecs: ArrayLike, rng=None) -> ArrayLike:
         """Compute the log signal for given b-values and b-vectors."""
         logS = -bvals * self.lam * (jnp.sum(bvecs * self.eigvec, axis=-1)) ** 2
         return logS
@@ -143,7 +143,7 @@ class Zeppelin(ModelCompartment):
         self.lambda_par = lambda_par
         self.lambda_perp = lambda_perp
 
-    def log_signal(self, bvals: ArrayLike, bvecs: ArrayLike) -> ArrayLike:
+    def log_signal(self, bvals: ArrayLike, bvecs: ArrayLike, rng=None) -> ArrayLike:
         """Compute the log signal for given b-values and b-vectors."""
         mu_cartesian = unitsphere_to_cartesian(self.mu)
         D = self.lambda_par * jnp.outer(
@@ -205,7 +205,7 @@ class Dti(ModelCompartment):
         """Initialize the DTI model with a diffusion tensor D."""
         self.D = D
 
-    def log_signal(self, bvals: ArrayLike, bvecs: ArrayLike) -> ArrayLike:
+    def log_signal(self, bvals: ArrayLike, bvecs: ArrayLike, rng=None) -> ArrayLike:
         """Compute the log signal for given b-values and b-vectors."""
         logS = -bvals * jnp.einsum("bi,ij,bj->b", bvecs, self.D, bvecs)
         return logS

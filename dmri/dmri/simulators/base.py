@@ -54,12 +54,12 @@ class Compartment(ABC):
 
 
 class ModelCompartment(Compartment):
-    def signal(self, bvals: ArrayLike, bvecs: ArrayLike) -> ArrayLike:
+    def signal(self, bvals: ArrayLike, bvecs: ArrayLike, rng=None) -> ArrayLike:
         """Simulates the signal for the compartment."""
-        return jnp.exp(self.log_signal(bvals, bvecs))
+        return jnp.exp(self.log_signal(bvals, bvecs, rng=rng))
 
     @abstractmethod
-    def log_signal(self, bvals: ArrayLike, bvecs: ArrayLike) -> ArrayLike:
+    def log_signal(self, bvals: ArrayLike, bvecs: ArrayLike, rng=None) -> ArrayLike:
         """Simulates the log-signal for the compartment."""
         pass
 
