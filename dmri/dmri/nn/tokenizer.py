@@ -338,7 +338,7 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
         # Components that are not active will have zero token
         idx_tokens = idx_tokens * model_mask[..., None]  # (B, T, token_dim)
         # Combine the tokens
-        tokens = jnp.concatenate([alpha_token, idx_tokens], axis=1)
+        tokens = jnp.concatenate([alpha_token, idx_tokens], axis=-2)
         return tokens
 
     def embed_theta(

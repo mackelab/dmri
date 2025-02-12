@@ -68,7 +68,7 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
         **kwargs,
     ):
         input_tokens = tokenizer.encode(model_mask=model_mask, **kwargs)
-        _, seq_len, model_dim = input_tokens.shape
+        *_, seq_len, model_dim = input_tokens.shape
 
         assert model_dim == self.model_dim, (
             f"Token dim mismatch, is {model_dim}, expected {self.model_dim}"
