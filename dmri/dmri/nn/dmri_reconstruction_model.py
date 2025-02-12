@@ -217,46 +217,46 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
     #         theta_mask.append(jnp.repeat(model_mask[:, i : i + 1], d, axis=-1))
     #     return jnp.concatenate(theta_mask, axis=-1)
 
-    # def sample_mask(self, rng, bvals, bvecs, signals):
-    #     y = self.encoder(bvals, bvecs, signals)
-    #     model_mask = self.model_decoder.sample(rng, y, self.num_nodes - 1)
-    #     return model_mask
+    def sample_mask(self, rng, bvals, bvecs, signals):
+        # Update for different model configs
+        y = self.encoder(bvals, bvecs, signals)
+        model_mask = self.model_decoder.sample(
+            rng, y, self.tokenizer.num_models + self.tokenizer.num_noises
+        )
+        return model_mask
 
-    # def sample_theta(
-    #     self,
-    #     rng,
-    #     bvals,
-    #     bvecs,
-    #     signals,
-    #     model_mask,
-    #     node_ids=None,
-    #     num_steps=16,
-    #     max_noise=None,
-    # ):
-    #     y = self.encoder(bvals, bvecs, signals)
+    def sample_theta(
+        self,
+        rng,
+        bvals,
+        bvecs,
+        signals,
+        model_mask,
+        num_steps=16,
+        max_noise=None,
+    ):
+        y = self.encoder(bvals, bvecs, signals)
+        tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
 
-    #     if node_ids is None:
-    #         node_ids = list(range(self.num_nodes))
+        # model_mask_repeated = jnp.tile(model_mask, (1, 64 // model_mask.shape[-1] + 1))[
+        #     :, :64
+        # ]
+        # _model_mask_extended = jnp.concatenate([jnp.array([True]), model_mask])
+        # attention_mask = _model_mask_extended[None, :] & _model_mask_extended[:, None]
+        # attention_mask = attention_mask | jnp.eye(
+        #     _model_mask_extended.shape[-1], dtype=bool
+        # )
 
-    #     model_mask_repeated = jnp.tile(model_mask, (1, 64 // model_mask.shape[-1] + 1))[
-    #         :, :64
-    #     ]
-    #     _model_mask_extended = jnp.concatenate([jnp.array([True]), model_mask])
-    #     attention_mask = _model_mask_extended[None, :] & _model_mask_extended[:, None]
-    #     attention_mask = attention_mask | jnp.eye(
-    #         _model_mask_extended.shape[-1], dtype=bool
-    #     )
+        # diffusion sampling
+        theta = self.inference_decoder.sample(
+            rng,
+            y,
+            self.cfg.simulator.theta_dim,
+            tokens_cfg=tokens_cfg,
+            # context=model_mask_repeated,
+            num_steps=num_steps,
+            max_noise=max_noise,
+            # attention_mask=attention_mask,
+        )
 
-    #     # diffusion sampling
-    #     theta = self.inference_decoder.sample(
-    #         rng,
-    #         y,
-    #         self.cfg.simulator.theta_dim,
-    #         node_ids,
-    #         context=model_mask_repeated,
-    #         num_steps=num_steps,
-    #         max_noise=max_noise,
-    #         attention_mask=attention_mask,
-    #     )
-
-    #     return theta
+        return theta

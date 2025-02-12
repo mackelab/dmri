@@ -94,7 +94,17 @@ class EDMSimformer(EDM):
         # Prevent automatic parameter updates
         super().__init__(transformer, loss_kwargs={"update_params": lambda m, p: None})
 
-    def sample(self, rng, y, dim, node_ids, context=None, max_noise=None, num_steps=16, attention_mask=None):
+    def sample(
+        self,
+        rng,
+        y,
+        dim,
+        tokens_cfg=None,
+        context=None,
+        max_noise=None,
+        num_steps=16,
+        attention_mask=None,
+    ):
         if max_noise is not None:
             self.max_noise = max_noise
         eps = jax.random.normal(rng, dim) * self.marginal_std(self.max_noise)
@@ -105,7 +115,7 @@ class EDMSimformer(EDM):
             t = jnp.atleast_1d(t)
             f = self.drift(t, x)
             g = self.diffusion(t, x)
-            score = self.score(t, x, node_ids=node_ids, y=y, context=context, attention_mask=attention_mask)
+            score = self.score(t, x, tokens_cfg=tokens_cfg, y=y, context=context, attention_mask=attention_mask)
             return (f - 0.5 * g**2 * score).reshape(x.shape)
 
         return odeint(drift, eps, ts, method="heun")[-1]
