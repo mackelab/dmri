@@ -141,7 +141,8 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         )
         # Embed observatiosn
         y = self.encoder(bvals, bvecs, x)
-        y = y[..., None, :]
+        if y.ndim == 2:
+            y = y[..., None, :]
 
         model_mask_loss = self.model_decoder.loss_fn(
             None, model_mask, self.tokenizer, y=y, tokens_cfg=tokens_cfg
