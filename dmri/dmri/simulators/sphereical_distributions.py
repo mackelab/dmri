@@ -3,10 +3,11 @@ from typing import Any
 import jax.numpy as jnp
 import jax
 from jax.typing import ArrayLike
-from .utils import unitsphere_to_cartesian
+from .local_signal_models.utils import unitsphere_to_cartesian
 
 from dmri.simulators.base import Compartment
 from dmri.utils.shm import real_sh
+from dmri.utils.sample_fns import sample_watson_ar_1
 from dipy.data import get_sphere, HemiSphere
 import functools
 import numpy as np
@@ -50,7 +51,7 @@ class SphericalDistribution(Compartment):
         pass
 
 
-class SD1Watson(SphericalDistribution):
+class Watson(SphericalDistribution):
     r"""The Watson spherical distribution model [1]_ [2]_.
 
     Parameters
@@ -114,7 +115,7 @@ class SD1Watson(SphericalDistribution):
             _sample_fn = jax.vmap(_sample_fn)
         return _sample_fn(keys)
 
-    def sh_coeff(self, sh_order=None, **kwargs):
+    def sh_coeff(self, sh_order=None, sphere=None, full_basis=False, **kwargs):
         r"""The Watson spherical distribution model in spherical harmonics.
         The minimum order is automatically derived from numerical experiments
         to ensure fast function executation and accurate results.
@@ -132,8 +133,13 @@ class SD1Watson(SphericalDistribution):
         if sh_order is None:
             sh_order = get_sh_order_from_odi(self.odi)
 
+        if sphere is not None:
+            hemisphere = HemiSphere.from_sphere(sphere)
+
         watson_sf = self.pdf(hemisphere.vertices)
-        sh_mat_inv = inverse_sh_matrix(sh_order)
+        sh_mat_inv = inverse_sh_matrix(
+            sh_order, sphere=hemisphere, full_basis=full_basis
+        )
         watson_sh = jnp.dot(sh_mat_inv, watson_sf)
         return watson_sh
 
@@ -143,6 +149,18 @@ class SD1Watson(SphericalDistribution):
         assumed to be normally distributed.
         """
         mu, odi = args
+
+        theta_mu = jnp.array([jnp.arctan2(mu[1], mu[0]), jnp.arccos(mu[2])])
+        # Map mu -> uniform on the hemisphere via spherical coordinates
+        u0 = jax.scipy.stats.norm.ppf(jnp.clip(jnp.sin(theta_mu[1]), 0.0, 1.0))
+        u1 = jax.scipy.stats.norm.ppf(jnp.clip(jnp.cos(theta_mu[1]), 0.0, 1.0))
+        mu_theta = jnp.array([u0, u1])
+
+        # Map odi -> uniform in [odi_min, odi_max]
+        odi_unif = (odi - cls.odi_min) / (cls.odi_max - cls.odi_min)
+        odi_theta = jax.scipy.stats.norm.ppf(odi_unif)
+
+        return jnp.concatenate([mu_theta, [odi_theta]])
 
     @classmethod
     def to_params(cls, theta: ArrayLike) -> Any:
@@ -163,44 +181,28 @@ class SD1Watson(SphericalDistribution):
 
         return mu, odi
 
+    class Bingham(SphericalDistribution):
+        odi_min = 0.02
+        odi_max = 0.99
+        psi_min = 0.0
+        psi_max = np.pi
+        beta_fraction_min = 0.0
+        beta_fraction_max = 1.0
 
-def sample_watson_ar_1(key, mu, kappa):
-    """
-    Draw a single sample from Watson(mu, kappa) on the unit sphere using
-    acceptance-rejection from the uniform distribution on S^{d-1}.
+        def __init__(self, mu, odi, psi, beta_fraction):
+            self.mu = mu
+            self.odi = odi
+            self.psi = psi
+            self.beta_fraction = beta_fraction
 
-    Arguments:
-      key:    a jax.random.PRNGKey
-      mu:     a jnp.ndarray of shape (d,) — will be normalized internally
-      kappa:  a nonnegative float (concentration parameter)
-    Returns:
-      A jnp.ndarray of shape (d,) lying on the unit sphere, distributed ~ Watson(mu,kappa).
-    """
-    mu = mu / jnp.linalg.norm(mu)  # ensure mu is a unit vector
+        def pdf(self, n):
+            kappa = odi2kappa(self.odi)
+            mu_cart = unitsphere_to_cartesian(self.mu)
+            psi = self.psi
+            beta_fraction = self.beta_fraction
+            beta = beta_fraction * kappa
 
-    def cond_fn(state):
-        # state = (key, accepted, candidate)
-        _, accepted, _ = state
-        return jnp.logical_not(accepted)
-
-    def body_fn(state):
-        key, _, _ = state
-        key, subkey1, subkey2 = jax.random.split(key, 3)
-
-        # 1) Propose x ~ Uniform(S^{d-1})
-        z = jax.random.normal(subkey1, shape=mu.shape)
-        x_proposal = z / jnp.linalg.norm(z)
-
-        # 2) Acceptance probability
-        log_accept_ratio = kappa * ((mu @ x_proposal) ** 2 - 1.0)
-        u = jax.random.uniform(subkey2)
-
-        accepted = jnp.log(u) <= log_accept_ratio
-        return (key, accepted, x_proposal)
-
-    # Initialize and run the while loop
-    init_state = (key, False, jnp.zeros_like(mu))
-    final_state = jax.lax.while_loop(cond_fn, body_fn, init_state)
-    _, _, x_accepted = final_state
-
-    return x_accepted
+            numerator = jnp.exp(kappa * jnp.dot(n, mu_cart) ** 2)
+            denominator = 4 * jnp.pi * jax.scipy.special.hyp1f1(0.5, 1.5, kappa)
+            Wn = numerator / denominator
+            return Wn
