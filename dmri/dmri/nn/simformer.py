@@ -11,6 +11,8 @@ from probjax.nn.nets.denoising_diffusion_model import EDM
 from probjax.nn import MLP
 from probjax.nn.utils import AffineFuse
 
+from dmri.nn.tokenizer import Tokenizer
+
 from probjax.utils.odeint import odeint
 
 
@@ -18,7 +20,6 @@ class DiffusionTransformer(nnx.Module, experimental_pytree=True):
 
     def __init__(
         self,
-        tokenizer,
         rngs,
         model_dim=64,
         context_dim=64,
@@ -28,8 +29,7 @@ class DiffusionTransformer(nnx.Module, experimental_pytree=True):
         widening_factor=3,
         enable_cross_attention=True,
     ) -> None:
-        self.tokenizer = tokenizer
-        self.time_embedding = GaussianFourierEmbedding(1, model_dim, rngs=rngs)
+        self.time_embedding = GaussianFourierEmbedding(1, context_dim, rngs=rngs)
         self.transformer = Transformer(
             model_dim,
             num_heads=num_heads,
@@ -38,22 +38,21 @@ class DiffusionTransformer(nnx.Module, experimental_pytree=True):
             widening_factor=widening_factor,
             enable_cross_attention=enable_cross_attention,
             rngs=rngs,
-            context_dim=model_dim + context_dim,
+            context_dim=context_dim,
         )
 
     def __call__(
         self,
         t,
         x,
-        node_ids,
-        *args,
+        tokenizer: Tokenizer,
         y=None,
-        condition_mask=None,
         context=None,
         attention_mask=None,
+        **kwargs,
     ):
         time_embed = self.time_embedding(t)
-        input_embed = self.tokenizer(x, node_ids, condition_mask)
+        input_embed = tokenizer.encode(x, **kwargs)
         while time_embed.ndim < input_embed.ndim:
             time_embed = time_embed[..., None, :]
         _context = time_embed
@@ -66,14 +65,13 @@ class DiffusionTransformer(nnx.Module, experimental_pytree=True):
         output = self.transformer(
             input_embed, y, y, context=_context, mask=attention_mask
         )
-        output = self.tokenizer.decode(output, node_ids)
+        output = tokenizer.decode(output, **kwargs)
         return output
 
 
 class EDMSimformer(EDM):
     def __init__(
         self,
-        tokenizer,
         rngs,
         model_dim=64,
         context_dim=64,
@@ -81,10 +79,9 @@ class EDMSimformer(EDM):
         num_layers=4,
         attn_size=16,
         widening_factor=3,
-        endable_cross_attention=True,
+        enable_cross_attention=True,
     ):
         transformer = DiffusionTransformer(
-            tokenizer,
             rngs,
             model_dim=model_dim,
             context_dim=context_dim,
@@ -92,11 +89,23 @@ class EDMSimformer(EDM):
             num_layers=num_layers,
             attn_size=attn_size,
             widening_factor=widening_factor,
-            enable_cross_attention=endable_cross_attention,
+            enable_cross_attention=enable_cross_attention,
         )
-        super().__init__(transformer)
+        # Prevent automatic parameter updates
+        super().__init__(transformer, loss_kwargs={"update_params": lambda m, p: None})
 
-    def sample(self, rng, y, dim, node_ids, context=None, max_noise=None, num_steps=16, attention_mask=None):
+    def sample(
+        self,
+        rng,
+        tokenizer,
+        y,
+        dim,
+        tokens_cfg=None,
+        context=None,
+        max_noise=None,
+        num_steps=16,
+        attention_mask=None,
+    ):
         if max_noise is not None:
             self.max_noise = max_noise
         eps = jax.random.normal(rng, dim) * self.marginal_std(self.max_noise)
@@ -107,7 +116,15 @@ class EDMSimformer(EDM):
             t = jnp.atleast_1d(t)
             f = self.drift(t, x)
             g = self.diffusion(t, x)
-            score = self.score(t, x, node_ids=node_ids, y=y, context=context, attention_mask=attention_mask)
+            score = self.score(
+                t,
+                x,
+                tokenizer=tokenizer,
+                tokens_cfg=tokens_cfg,
+                y=y,
+                context=context,
+                attention_mask=attention_mask,
+            )
             return (f - 0.5 * g**2 * score).reshape(x.shape)
 
         return odeint(drift, eps, ts, method="heun")[-1]
