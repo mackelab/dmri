@@ -5,15 +5,15 @@ from abc import ABC, abstractmethod
 
 from jax.typing import ArrayLike
 
-from dmri.simulators.base import ModelCompartment
-from dmri.simulators.local_signal_models.utils import (
+from dmri.simulators.base import SignalCompartment
+from dmri.utils.dmriutils import (
     fit_diffusion_tensor_linearized,
     cartesian_to_unitsphere,
     unitsphere_to_cartesian,
 )
 
 
-class Ball(ModelCompartment):
+class Ball(SignalCompartment):
     theta_dim: int = 1
     lam_min: float = 0.0
     lam_max: float = 0.05
@@ -22,15 +22,14 @@ class Ball(ModelCompartment):
         """Initialize the Ball model with a lambda value."""
         self.lam = lam
 
-    def log_signal(self, bvals: ArrayLike, bvecs: ArrayLike, rng=None) -> ArrayLike:
+    @classmethod
+    def log_signal_fn(
+        cls, bvals: ArrayLike, bvecs: ArrayLike, lam: float, rng=None
+    ) -> ArrayLike:
         """Compute the log signal for given b-values and b-vectors."""
-        logS = -bvals * self.lam
+        logS = -bvals * lam
         return logS
 
-    def fit(self, logS: ArrayLike, bvals: ArrayLike, bvecs: ArrayLike) -> tuple:
-        """Fit the Ball model to the log signal and b-values."""
-        lam = -logS / bvals
-        return (jnp.mean(lam),)
 
     @classmethod
     def to_params(cls, theta: ArrayLike) -> tuple:
@@ -47,6 +46,11 @@ class Ball(ModelCompartment):
         theta = jax.scipy.stats.norm.ppf(theta)
         return theta
 
+    def fit(self, logS: ArrayLike, bvals: ArrayLike, bvecs: ArrayLike) -> tuple:
+        """Fit the Ball model to the log signal and b-values."""
+        lam = -logS / bvals
+        return (jnp.mean(lam),)
+
     def fod_logpdf(self, mu):
         """Convert the Ball model to the Orientation Distribution Function (ODF)."""
         return 1 / (4 * jnp.pi)
@@ -58,7 +62,7 @@ class Ball(ModelCompartment):
         return u
 
 
-class Stick(ModelCompartment):
+class Stick(SignalCompartment):
     theta_dim = 3
     min_lam = 0.0
     max_lam = 0.05
@@ -68,24 +72,18 @@ class Stick(ModelCompartment):
         self.lam = lam
         self.eigvec = eigvec
 
-    def signal(self, bvals: ArrayLike, bvecs: ArrayLike, rng=None) -> ArrayLike:
-        """Compute the signal for given b-values and b-vectors."""
-        S = jnp.exp(-bvals * self.lam * (jnp.sum(bvecs * self.eigvec, axis=-1)) ** 2)
-        return S
-
-    def log_signal(self, bvals: ArrayLike, bvecs: ArrayLike, rng=None) -> ArrayLike:
+    @classmethod
+    def log_signal_fn(
+        cls,
+        bvals: ArrayLike,
+        bvecs: ArrayLike,
+        lam: float,
+        eigvec: ArrayLike,
+        rng=None,
+    ) -> ArrayLike:
         """Compute the log signal for given b-values and b-vectors."""
-        logS = -bvals * self.lam * (jnp.sum(bvecs * self.eigvec, axis=-1)) ** 2
+        logS = -bvals * lam * (jnp.sum(bvecs * eigvec, axis=-1)) ** 2
         return logS
-
-    def fit(self, logS: ArrayLike, bvals: ArrayLike, bvecs: ArrayLike) -> tuple:
-        """Fit the Stick model to the log signal, b-values, and b-vectors."""
-        D = fit_diffusion_tensor_linearized(logS, bvals, bvecs)
-        eigvals, eigvecs = jnp.linalg.eigh(D)
-        idx = jnp.argmax(eigvals)
-        lam = eigvals[idx]
-        eigvec = eigvecs[:, idx]
-        return lam, eigvec
 
     @classmethod
     def to_theta(cls, lam: float, eigvec: ArrayLike) -> ArrayLike:
@@ -98,6 +96,19 @@ class Stick(ModelCompartment):
         theta = jnp.stack([lam, angle1, angle2])
         theta = jax.scipy.stats.norm.ppf(theta)
         return theta
+
+    @classmethod
+    def to_params(cls, theta: ArrayLike) -> tuple:
+        """Convert the parameter space theta to the lambda value and eigenvector."""
+        theta = jax.scipy.stats.norm.cdf(theta)
+        lam = theta[0] * (cls.max_lam - cls.min_lam) + cls.min_lam
+        angle1 = theta[1] * jnp.pi
+        angle2 = theta[2] * 2 * jnp.pi - jnp.pi
+        x = jnp.sin(angle1) * jnp.cos(angle2)
+        y = jnp.sin(angle1) * jnp.sin(angle2)
+        z = jnp.cos(angle1)
+        eigvec = jnp.array([x, y, z])
+        return lam, eigvec
 
     def fod_logpdf(self, u, kappa: float = 100):
         """Convert the Stick model to the Orientation Distribution Function (ODF)."""
@@ -118,21 +129,17 @@ class Stick(ModelCompartment):
         del rng, tol
         return self.eigvec
 
-    @classmethod
-    def to_params(cls, theta: ArrayLike) -> tuple:
-        """Convert the parameter space theta to the lambda value and eigenvector."""
-        theta = jax.scipy.stats.norm.cdf(theta)
-        lam = theta[0] * (cls.max_lam - cls.min_lam) + cls.min_lam
-        angle1 = theta[1] * jnp.pi
-        angle2 = theta[2] * 2 * jnp.pi - jnp.pi
-        x = jnp.sin(angle1) * jnp.cos(angle2)
-        y = jnp.sin(angle1) * jnp.sin(angle2)
-        z = jnp.cos(angle1)
-        eigvec = jnp.array([x, y, z])
+    def fit(self, logS: ArrayLike, bvals: ArrayLike, bvecs: ArrayLike) -> tuple:
+        """Fit the Stick model to the log signal, b-values, and b-vectors."""
+        D = fit_diffusion_tensor_linearized(logS, bvals, bvecs)
+        eigvals, eigvecs = jnp.linalg.eigh(D)
+        idx = jnp.argmax(eigvals)
+        lam = eigvals[idx]
+        eigvec = eigvecs[:, idx]
         return lam, eigvec
 
 
-class Zeppelin(ModelCompartment):
+class Zeppelin(SignalCompartment):
     theta_dim = 4
     min_lam = 0.0
     max_lam = 0.05
@@ -143,25 +150,23 @@ class Zeppelin(ModelCompartment):
         self.lambda_par = lambda_par
         self.lambda_perp = lambda_perp
 
-    def log_signal(self, bvals: ArrayLike, bvecs: ArrayLike, rng=None) -> ArrayLike:
+    @classmethod
+    def log_signal_fn(
+        cls,
+        bvals: ArrayLike,
+        bvecs: ArrayLike,
+        mu: ArrayLike,
+        lambda_par: float,
+        lambda_perp: float,
+        rng=None,
+    ) -> ArrayLike:
         """Compute the log signal for given b-values and b-vectors."""
-        mu_cartesian = unitsphere_to_cartesian(self.mu)
-        D = self.lambda_par * jnp.outer(
-            mu_cartesian, mu_cartesian
-        ) + self.lambda_perp * (jnp.eye(3) - jnp.outer(mu_cartesian, mu_cartesian))
-        logS = -bvals * jnp.einsum("bi,ij,bj->b", bvecs, D, bvecs)
+        mu_cartesian = unitsphere_to_cartesian(mu)
+        D = lambda_par * jnp.outer(mu_cartesian, mu_cartesian) + lambda_perp * (
+            jnp.eye(3) - jnp.outer(mu_cartesian, mu_cartesian)
+        )
+        logS = -bvals * jnp.einsum("...i,ij,...j->...", bvecs, D, bvecs)
         return logS
-
-    def fit(self, logS: ArrayLike, bvals: ArrayLike, bvecs: ArrayLike) -> tuple:
-        """Fit the Zeppelin model to the log signal, b-values, and b-vectors."""
-        D = fit_diffusion_tensor_linearized(logS, bvals, bvecs)
-        eigvals, eigvecs = jnp.linalg.eigh(D)
-        idx = jnp.argmax(eigvals)
-        lambda_par = eigvals[idx]
-        lambda_perp = jnp.mean(jnp.delete(eigvals, idx))
-        mu_cartesian = eigvecs[:, idx]
-        mu = self._cartesian_to_unitsphere(mu_cartesian)
-        return mu, lambda_par, lambda_perp
 
     @classmethod
     def to_theta(
@@ -184,20 +189,20 @@ class Zeppelin(ModelCompartment):
         mu_normalized = theta[2:] * 2 * jnp.pi - jnp.pi
         return mu_normalized, lambda_par, lambda_perp
 
-    @staticmethod
-    def _unitsphere_to_cartesian(mu: ArrayLike) -> ArrayLike:
-        """Convert spherical coordinates to Cartesian coordinates."""
-        theta, phi = mu
-        x = jnp.sin(theta) * jnp.cos(phi)
-        y = jnp.sin(theta) * jnp.sin(phi)
-        z = jnp.cos(theta)
-        return jnp.array([x, y, z])
+    def fit(self, logS: ArrayLike, bvals: ArrayLike, bvecs: ArrayLike) -> tuple:
+        """Fit the Zeppelin model to the log signal, b-values, and b-vectors."""
+        D = fit_diffusion_tensor_linearized(logS, bvals, bvecs)
+        eigvals, eigvecs = jnp.linalg.eigh(D)
+        idx = jnp.argmax(eigvals)
+        lambda_par = eigvals[idx]
+        lambda_perp = jnp.mean(jnp.delete(eigvals, idx))
+        mu_cartesian = eigvecs[:, idx]
+        mu = self._cartesian_to_unitsphere(mu_cartesian)
+        return mu, lambda_par, lambda_perp
 
-    def fod_logpdf(self, mu):
-        return super().fod_logpdf(mu)
 
 
-class Dti(ModelCompartment):
+class Dti(SignalCompartment):
     theta_dim: int = 6
     theta_scale = 0.05
 
@@ -205,15 +210,14 @@ class Dti(ModelCompartment):
         """Initialize the DTI model with a diffusion tensor D."""
         self.D = D
 
-    def log_signal(self, bvals: ArrayLike, bvecs: ArrayLike, rng=None) -> ArrayLike:
+    @classmethod
+    def log_signal_fn(
+        cls, bvals: ArrayLike, bvecs: ArrayLike, D: ArrayLike, rng=None
+    ) -> ArrayLike:
         """Compute the log signal for given b-values and b-vectors."""
-        logS = -bvals * jnp.einsum("bi,ij,bj->b", bvecs, self.D, bvecs)
+        logS = -bvals * jnp.einsum("bi,ij,bj->b", bvecs, D, bvecs)
         return logS
 
-    def fit(self, logS: ArrayLike, bvals: ArrayLike, bvecs: ArrayLike) -> tuple:
-        """Fit the DTI model to the log signal, b-values, and b-vectors."""
-        D = fit_diffusion_tensor_linearized(logS, bvals, bvecs)
-        return (D,)
 
     @classmethod
     def to_theta(cls, D: ArrayLike) -> ArrayLike:
@@ -231,4 +235,9 @@ class Dti(ModelCompartment):
         D = jnp.zeros((3, 3))
         D = D.at[jnp.tril_indices(3)].set(theta)
         D = D @ D.T + cls.theta_scale**2 * jnp.eye(3)
+        return (D,)
+
+    def fit(self, logS: ArrayLike, bvals: ArrayLike, bvecs: ArrayLike) -> tuple:
+        """Fit the DTI model to the log signal, b-values, and b-vectors."""
+        D = fit_diffusion_tensor_linearized(logS, bvals, bvecs)
         return (D,)

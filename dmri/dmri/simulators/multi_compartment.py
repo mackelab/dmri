@@ -16,7 +16,7 @@ from dmri.simulators.local_signal_models.gaussian_models import (
     Zeppelin,
     Dti,
 )
-from dmri.simulators.base import ModelCompartment, NoiseCompartment
+from dmri.simulators.base import SignalCompartment, NoiseCompartment
 from dmri.utils.transform import normal_to_dirichlet, dirichlet_to_normal
 
 
@@ -28,7 +28,7 @@ from jax import tree_util as jtu
 from jax.typing import ArrayLike
 
 
-class MultiCompartment(ModelCompartment):
+class MultiCompartment(SignalCompartment):
     model_types: list
     noise_types: list
     fraction_prior: ArrayLike  # Dirichelt alpha values
@@ -69,23 +69,33 @@ class MultiCompartment(ModelCompartment):
         assert [type(m) for m in model_compartments] == self.model_types, "Wrong model"
         assert [type(m) for m in noise_compartments] == self.noise_types, "Wrong noise"
 
-    def signal(self, bvals, bvecs, rng=None):
+    @classmethod
+    def signal_fn(
+        cls,
+        bvals,
+        bvecs,
+        model_compartments,
+        noise_compartments,
+        model_fractions,
+        model_mask,
+        rng=None,
+    ):
         # Compute the signal for each compartment
         signals = jnp.stack(
-            [m.signal(bvals, bvecs) for m in self.model_compartments], axis=0
+            [m.signal(bvals, bvecs) for m in model_compartments], axis=0
         )
-        fractions = self.model_fractions[:, None]
+        fractions = model_fractions[:, None]
         # Combine signals with sum
         signal = jnp.sum(signals * fractions, axis=0)
 
         # Add noise
-        if len(self.noise_compartments) > 0:
+        if len(noise_compartments) > 0:
             assert rng is not None, "rng key  must be provided for noise"
-            rngs = jax.random.split(rng, len(self.noise_compartments))
-            for i, (noise, rng) in enumerate(zip(self.noise_compartments, rngs)):
-                if self.model_mask is not None:
-                    idx = len(self.model_compartments) + i
-                    mask = self.model_mask[idx]
+            rngs = jax.random.split(rng, len(noise_compartments))
+            for i, (noise, rng) in enumerate(zip(noise_compartments, rngs)):
+                if model_mask is not None:
+                    idx = len(model_compartments) + i
+                    mask = model_mask[idx]
                     signal = jax.lax.cond(
                         mask,
                         lambda x, rng: noise.noise(x, rng),
@@ -97,11 +107,9 @@ class MultiCompartment(ModelCompartment):
                     signal = noise.noise(signal, rng)
         return signal
 
-    def log_signal(self, bvals, bvecs, rng=None):
-        return jnp.log(self.signal(bvals, bvecs, rng))
-
-    def fit(self, logS, bvals, bvecs):
-        raise NotImplementedError("Fitting not implemented")
+    @classmethod
+    def log_signal_fn(cls, bvals, bvecs, **kwargs):
+        return jnp.log(cls.signal_fn(bvals, bvecs, **kwargs))
 
     @classmethod
     def split_idx(cls):

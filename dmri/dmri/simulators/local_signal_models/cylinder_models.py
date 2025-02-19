@@ -6,8 +6,8 @@ from abc import ABC, abstractmethod
 from jax.typing import ArrayLike
 import scipy.special as sp_special  # Add this import for special functions
 
-from dmri.simulators.base import ModelCompartment
-from dmri.simulators.local_signal_models.utils import (
+from dmri.simulators.base import SignalCompartment
+from dmri.utils.dmriutils import (
     fit_diffusion_tensor_linearized,
     unitsphere_to_cartesian,
 )
@@ -18,7 +18,7 @@ DIFFUSIVITY_SCALING = 1e-9
 DIAMETER_SCALING = 1e-6
 
 
-class C2Cylinder(ModelCompartment):
+class C2Cylinder(SignalCompartment):
     r"""
     The Stejskal-Tanner approximation of the cylinder model with finite
     radius. Assumes short gradient pulse approximation and long diffusion
