@@ -6,13 +6,13 @@ from abc import ABC, abstractmethod
 
 from jax.typing import ArrayLike
 
-from dmri.simulators.base import ModelCompartment
+from dmri.simulators.base import SignalCompartment
 from dmri.simulators import BallStick, Ball, Stick
 
 from .fiber_prior import FiberPrior
 
 
-class GlobalBallStick(ModelCompartment):
+class GlobalBallStick(SignalCompartment):
     def __init__(self, n_voxels: int = 4):
         self.fiber_prior = FiberPrior(n_voxels, 2)
         # Not any fiber vs. 1 fiber

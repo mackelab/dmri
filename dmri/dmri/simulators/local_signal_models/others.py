@@ -1,13 +1,13 @@
-from dmri.simulators.local_signal_models.utils import fit_diffusion_tensor_linearized
+from dmri.utils.dmriutils import fit_diffusion_tensor_linearized
 import jax.numpy as jnp
 import jax
 
 from jax.typing import ArrayLike
 
-from dmri.simulators.base import ModelCompartment
+from dmri.simulators.base import SignalCompartment
 
 
-class TemporalZeppelin(ModelCompartment):
+class TemporalZeppelin(SignalCompartment):
     theta_dim = 4
     min_lam = 0.1
     max_lam = 3.0

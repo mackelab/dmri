@@ -1,4 +1,4 @@
-from dmri.simulators.base import ModelCompartment
+from dmri.simulators.base import SignalCompartment
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 from jax import lax  # Add this import for special functions
@@ -6,7 +6,7 @@ from jax import lax  # Add this import for special functions
 DIAMETER_SCALING = 1e-6
 
 
-class S2Sphere(ModelCompartment):
+class S2Sphere(SignalCompartment):
     r"""
     The Stejskal Tanner signal approximation of a sphere model. It assumes
     that pulse length is infinitesimally small and diffusion time large enough
@@ -64,5 +64,5 @@ class S2Sphere(ModelCompartment):
     @classmethod
     def to_params(cls, theta: ArrayLike) -> float:
         """Convert the parameter space theta to the diameter."""
-        diameter = jnp.exp(theta) 
+        diameter = jnp.exp(theta)
         return (diameter,)

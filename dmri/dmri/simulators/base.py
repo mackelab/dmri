@@ -37,7 +37,7 @@ class Compartment(ABC):
         pass
 
     @classmethod
-    def from_theta(cls, theta: ArrayLike, **kwargs) -> "ModelCompartment":
+    def from_theta(cls, theta: ArrayLike, **kwargs) -> "SignalCompartment":
         """Creates a compartment from the optimization parameters."""
         args = cls.to_params(theta, **kwargs)
         return cls(*args)
@@ -48,25 +48,45 @@ class Compartment(ABC):
         return (theta,), (type(self),)
 
     @classmethod
-    def tree_unflatten(cls, aux_data: Any, children: list) -> "ModelCompartment":
+    def tree_unflatten(cls, aux_data: Any, children: list) -> "SignalCompartment":
         """Reconstructs the compartment from the list of children and auxiliary data."""
         return cls.from_theta(children[0])
 
 
-class ModelCompartment(Compartment):
+class SignalCompartment(Compartment):
+    @classmethod
+    def kernel_fn(mu: ArrayLike, bvals, bvecs, **kwargs) -> ArrayLike:
+        """Computes the directional kernel for the compartment."""
+        raise NotImplementedError("Directional kernel not implemented")
+
+    @classmethod
+    def signal_fn(
+        cls, bvals: ArrayLike, bvecs: ArrayLike, *args, **kwargs
+    ) -> ArrayLike:
+        """Computes the signal for the compartment."""
+        return jnp.exp(cls.log_signal_fn(bvals, bvecs, *args, **kwargs))
+
+    @classmethod
+    @abstractmethod
+    def log_signal_fn(
+        cls, bvals: ArrayLike, bvecs: ArrayLike, *args, **kwargs
+    ) -> ArrayLike:
+        """Computes the log-signal for the compartment."""
+        pass
+
     def signal(self, bvals: ArrayLike, bvecs: ArrayLike, rng=None) -> ArrayLike:
         """Simulates the signal for the compartment."""
-        return jnp.exp(self.log_signal(bvals, bvecs, rng=rng))
+        return type(self).signal_fn(bvals, bvecs, rng=rng, **self.params)
 
-    @abstractmethod
     def log_signal(self, bvals: ArrayLike, bvecs: ArrayLike, rng=None) -> ArrayLike:
         """Simulates the log-signal for the compartment."""
-        pass
+        return type(self).log_signal_fn(
+            bvals=bvals, bvecs=bvecs, rng=rng, **self.params
+        )
 
-    @abstractmethod
     def fit(self, logS: ArrayLike, bvals: ArrayLike, bvecs: ArrayLike) -> Any:
         """Fits the compartment to the signal deterministically."""
-        pass
+        raise NotImplementedError("Fitting not implemented")
 
     def fod_logpdf(self, mu: ArrayLike) -> float:
         """Computes the log-probability of the orientation distribution function."""

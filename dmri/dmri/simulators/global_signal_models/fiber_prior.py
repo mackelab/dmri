@@ -5,8 +5,8 @@ from abc import ABC, abstractmethod
 
 from jax.typing import ArrayLike
 
-from dmri.simulators.base import ModelCompartment
-from dmri.simulators.local_signal_models.utils import (
+from dmri.simulators.base import SignalCompartment
+from dmri.utils.dmriutils import (
     fit_diffusion_tensor_linearized,
     cartesian_to_unitsphere,
     unitsphere_to_cartesian,
