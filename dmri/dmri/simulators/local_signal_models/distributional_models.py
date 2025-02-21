@@ -19,7 +19,10 @@ from dmri.utils.dmriutils import cartesian_to_unitsphere
 from dmri.simulators.local_signal_models.gaussian_models import Stick, Zeppelin
 
 
+
 class SignalKernel(Compartment):
+    vmap_on_sphere: bool = False
+
     @classmethod
     @abstractmethod
     def kernel_fn(
@@ -28,12 +31,24 @@ class SignalKernel(Compartment):
         pass
 
     def sh_coeff(self, aquisition_scheme, sh_order):
-        inverse_real_sh = inverse_sh_matrix(sh_order, sphere=hemisphere_default)
+        with jax.ensure_compile_time_eval():
+            inverse_real_sh = inverse_sh_matrix(sh_order, sphere=hemisphere_default)
+
+        inverse_real_sh = jnp.array(inverse_real_sh)
         kernel = partial(self.kernel_fn, **self.params)
-        signal = jax.vmap(kernel, in_axes=(0, None))(
-            hemisphere_default.vertices, aquisition_scheme
-        )
-        sh_coeff = inverse_real_sh @ signal.squeeze()
+        # This her can be quite memory intensive so might be better to use a for loop
+        if type(self).vmap_on_sphere:
+            signal = jax.vmap(kernel, in_axes=(0, None))(
+                hemisphere_default.vertices, aquisition_scheme
+            )
+            sh_coeff = inverse_real_sh @ signal.squeeze()
+        else:
+            signal = jax.lax.map(
+                partial(kernel, aquisition_scheme=aquisition_scheme),
+                hemisphere_default.vertices,
+            )
+            sh_coeff = inverse_real_sh @ signal.squeeze()
+
         return sh_coeff
 
 
