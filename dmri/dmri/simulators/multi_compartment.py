@@ -1,5 +1,6 @@
 from typing import Optional
 
+from dmri.simulators import acquisition_scheme
 from dmri.simulators.noise_compartments import (
     LowGaussianNoise,
     LowRicianNoise,
@@ -15,6 +16,16 @@ from dmri.simulators.local_signal_models.gaussian_models import (
     Stick,
     Zeppelin,
     Dti,
+)
+from dmri.simulators.local_signal_models.distributional_models import (
+    WatsonStick,
+    WatsonZeppelin,
+    BinghamStick,
+    BinghamZeppelin,
+    NoddiB,
+    NoddiW,
+    SandiB,
+    SandiW,
 )
 from dmri.simulators.base import SignalCompartment, NoiseCompartment
 from dmri.utils.transform import normal_to_dirichlet, dirichlet_to_normal
@@ -72,8 +83,7 @@ class MultiCompartment(SignalCompartment):
     @classmethod
     def signal_fn(
         cls,
-        bvals,
-        bvecs,
+        aquisition_scheme: acquisition_scheme,
         model_compartments,
         noise_compartments,
         model_fractions,
@@ -82,7 +92,7 @@ class MultiCompartment(SignalCompartment):
     ):
         # Compute the signal for each compartment
         signals = jnp.stack(
-            [m.signal(bvals, bvecs) for m in model_compartments], axis=0
+            [m.signal(aquisition_scheme) for m in model_compartments], axis=0
         )
         fractions = model_fractions[:, None]
         # Combine signals with sum
@@ -108,8 +118,8 @@ class MultiCompartment(SignalCompartment):
         return signal
 
     @classmethod
-    def log_signal_fn(cls, bvals, bvecs, **kwargs):
-        return jnp.log(cls.signal_fn(bvals, bvecs, **kwargs))
+    def log_signal_fn(cls, aquisition_scheme, **kwargs):
+        return jnp.log(cls.signal_fn(aquisition_scheme, **kwargs))
 
     @classmethod
     def split_idx(cls):
@@ -245,3 +255,27 @@ class AllGaussianModels(MultiCompartment):
         VeryLargeGaussianNoise,
     ] + [LowRicianNoise, MediumRicianNoise, LargeRicianNoise, VeryLargeRicianNoise]
     fraction_prior = jnp.ones(1 + 3 + 3 + 3)
+
+
+class AllGaussianAndConvolvedModels(MultiCompartment):
+    model_types = (
+        [Ball]
+        + 3 * [Stick]
+        + 3 * [Zeppelin]
+        + 3 * [Dti]
+        + 3 * [WatsonStick]
+        + 3 * [WatsonZeppelin]
+        + 3 * [BinghamStick]
+        + 3 * [BinghamZeppelin]
+        + 3 * [NoddiB]
+        + 3 * [NoddiW]
+        + 3 * [SandiB]
+        + 3 * [SandiW]
+    )
+    noise_types = [
+        LowGaussianNoise,
+        MediumGaussianNoise,
+        LargeGaussianNoise,
+        VeryLargeGaussianNoise,
+    ] + [LowRicianNoise, MediumRicianNoise, LargeRicianNoise, VeryLargeRicianNoise]
+    fraction_prior = jnp.ones(1 + 3 + 3 + 3 + 3 + 3 + 3 + 3 + 3 + 3 + 3 + 3)

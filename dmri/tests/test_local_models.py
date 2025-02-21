@@ -4,13 +4,23 @@ import jax.numpy as jnp
 import numpy as np
 
 import dmri
-from dmri.simulators.local_signal_models import (
+from dmri.simulators import (
+    acquisition_scheme,
+    Dot,
     Ball,
     Stick,
     Dti,
     Zeppelin,
-    C2Cylinder,
-    S2Sphere,
+    WatsonStick,
+    WatsonZeppelin,
+    BinghamStick,
+    BinghamZeppelin,
+    NoddiB,
+    NoddiW,
+    SandiB,
+    SandiW,
+    Sphere,
+    Cylinder,
 )
 from dmri.simulators.multi_compartment import (
     BallStick,
@@ -25,12 +35,21 @@ import pytest
 
 @pytest.fixture(
     params=[
+        Dot,
         Ball,
         Stick,
-        Dti,
         Zeppelin,
-        C2Cylinder,
-        S2Sphere,
+        Dti,
+        Sphere,
+        Cylinder,
+        WatsonStick,
+        WatsonZeppelin,
+        BinghamStick,
+        BinghamZeppelin,
+        NoddiB,
+        NoddiW,
+        SandiB,
+        SandiW,
         BallStick,
         Ball2Stick,
         Ball3Stick,
@@ -44,13 +63,15 @@ def compartment_model(request):
 
 
 def test_base_function(compartment_model):
-    bvals = np.random.uniform(size=(10,)) * 5000
+    bvals = np.random.uniform(size=(10,)) * 1000
     bvecs = np.random.randn(10, 3)
     bvecs = bvecs / np.linalg.norm(bvecs, axis=-1, keepdims=True)
 
+    acq = acquisition_scheme(bvals, bvecs)
+
     # Signal emulation
-    signal = compartment_model.signal(bvals, bvecs)
-    log_signal = compartment_model.log_signal(bvals, bvecs)
+    signal = compartment_model.signal(acq)
+    log_signal = compartment_model.log_signal(acq)
 
     assert signal.shape == (10,), f"Expected shape (10,) but got {signal.shape}"
     assert log_signal.shape == (10,), f"Expected shape (10,) but got {log_signal.shape}"
