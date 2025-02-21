@@ -26,7 +26,7 @@ class SignalKernel(Compartment):
     @classmethod
     @abstractmethod
     def kernel_fn(
-        cls, mu: ArrayLike, aquisition_scheme: acquisition_scheme
+        cls, mu: ArrayLike, aquisition_scheme: acquisition_scheme, **kwargs
     ) -> ArrayLike:
         pass
 
@@ -279,8 +279,8 @@ class DistributionalModel(SignalCompartment):
         rng=None,
     ) -> ArrayLike:
         """Compute the log signal for given b-values and b-vectors."""
-        sh_coeff_fod = fod.sh_coeff(sh_order=22)
-        sh_coeff_signal = signal_kernel.sh_coeff(aquisition_scheme, sh_order=22)
+        sh_coeff_fod = fod.sh_coeff(sh_order=14)
+        sh_coeff_signal = signal_kernel.sh_coeff(aquisition_scheme, sh_order=14)
         return jnp.dot(sh_coeff_fod, sh_coeff_signal)
 
     @classmethod

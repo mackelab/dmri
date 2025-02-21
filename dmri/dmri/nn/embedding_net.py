@@ -39,8 +39,8 @@ class BvalBvecSignalEmbeddingNet(nnx.Module, experimental_pytree=True):
         self.attn_size = attn_size
 
         self.initial_layer = nnx.Linear(9, model_dim, rngs=rngs)
-        self.embed_bvals = GaussianFourierEmbedding(3, rngs=rngs)
-        self.embed_signals = GaussianFourierEmbedding(3, rngs=rngs)
+        self.embed_bvals = GaussianFourierEmbedding(1, 3, rngs=rngs)
+        self.embed_signals = GaussianFourierEmbedding(1, 3, rngs=rngs)
         self.transformer = Transformer(
             model_dim,
             self.num_heads,
@@ -58,8 +58,8 @@ class BvalBvecSignalEmbeddingNet(nnx.Module, experimental_pytree=True):
         signals: ArrayLike,  # B, T
     ):
         # Very naive
-        bvals = self.embed_bvals(bvals)
-        signals = self.embed_signals(signals)
+        bvals = self.embed_bvals(bvals[..., None])
+        signals = self.embed_signals(signals[..., None])
         data = jnp.concatenate([bvals, bvecs, signals], axis=-1)
         tokens = self.initial_layer(data)
         out_tokens = self.transformer(tokens)
