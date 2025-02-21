@@ -23,7 +23,7 @@ class SignalKernel(Compartment):
     @classmethod
     @abstractmethod
     def kernel_fn(
-        cls, mu: ArrayLike, aquisition_scheme: acquisition_scheme
+        cls, mu: ArrayLike, aquisition_scheme: acquisition_scheme, **kwargs
     ) -> ArrayLike:
         pass
 

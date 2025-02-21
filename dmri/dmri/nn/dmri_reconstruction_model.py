@@ -42,7 +42,7 @@ class DMRIModelSelectionAmortizedPriorConfig:
     widening_factor: int = 3
     attn_size: int = 16
     context_dim: int = 64
-    mask_prior_dim: int = 1.0
+    mask_prior_dim: int = 1
 
 
 @dataclass
@@ -92,15 +92,17 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         )
 
         # Setup model selection network
+        params = cfg.model_selection_cfg.__dict__
         if cfg.model_selection_cfg.context_dim is not None:
             # We expect a mask prior input
+
             self.mask_prior_need = True
-            if cfg.model_selection_cfg.context_dim == 1:
-                self.mask_prior_embed = GaussianFourierEmbedding(
-                    cfg.model_selection_cfg.context_dim, rngs=rngs
-                )
-            else:
-                raise NotImplementedError("Only 1D mask prior is currently supported")
+            mask_prior_dim = params.pop("mask_prior_dim")
+            self.mask_prior_embed = GaussianFourierEmbedding(
+                mask_prior_dim,
+                cfg.model_selection_cfg.context_dim,
+                rngs=rngs,
+            )
 
         self.model_decoder = BinaryAutoregressiveDecoder(
             rngs,
@@ -202,14 +204,17 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         return jnp.concatenate([model_mask_loss[None], theta_loss[None]])
 
 
-    def sample_mask(self, rng, bvals, bvecs, signals):
+    def sample_mask(self, rng, bvals, bvecs, signals, mask_prior=None):
         # Update for different model configs
         y = self.encoder(bvals, bvecs, signals)
+        if mask_prior is not None:
+            mask_prior = self.mask_prior_embed(mask_prior)
         model_mask = self.model_decoder.sample(
             rng,
             tokenizer=self.tokenizer,
             y=y,
             dim=self.tokenizer.num_models + self.tokenizer.num_noises,
+            context=mask_prior,
         )
         return model_mask
 
