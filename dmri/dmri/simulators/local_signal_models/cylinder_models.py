@@ -6,13 +6,23 @@ import jax
 from abc import ABC, abstractmethod
 
 from jax.typing import ArrayLike
-import scipy.special as sp_special  # Add this import for special functions
 
 from dmri.simulators.base import SignalCompartment
 from dmri.utils.dmriutils import (
     fit_diffusion_tensor_linearized,
     unitsphere_to_cartesian,
 )
+
+import numpy as np
+from scipy.special import j1 as j1_scipy
+
+x_l = np.linspace(0, 5, 1000)
+y_l = j1_scipy(x_l)
+
+
+def j1(x):
+    return jnp.interp(x, x_l, y_l)
+
 
 class Sphere(SignalCompartment):
     r"""
@@ -105,7 +115,7 @@ class Cylinder(SignalCompartment):
             lam_par=lam_par,
         )
         log_signal_perpendicular = 2 * jnp.log(
-            sp_special.j1(2 * jnp.pi * q * radius)
+            j1(2 * jnp.pi * q * radius)
         ) - 2 * jnp.log(2 * jnp.pi * q * radius)
         q_perp = q * magnitude_perpendicular
         log_signal_perpendicular = jnp.where(q_perp > 0, log_signal_perpendicular, 0.0)

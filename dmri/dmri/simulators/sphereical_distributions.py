@@ -40,13 +40,15 @@ def get_sh_order_from_odi(odi):
 
 @functools.lru_cache(None)
 def inverse_sh_matrix(sh_order, sphere=None, full_basis=False):
-    sphere = hemisphere if sphere is None else sphere
+    r"""Returns the inverse of the spherical harmonics basis matrix."""
+
+    sphere = hemisphere_default if sphere is None else sphere
     full_basis = not isinstance(sphere, HemiSphere)
 
     real_sh_basis, _, _ = real_sh(
         sh_order, sphere.theta, sphere.phi, full_basis=full_basis
     )
-    inverse_real_sh = jnp.linalg.pinv(real_sh_basis)
+    inverse_real_sh = np.linalg.pinv(real_sh_basis)
     return inverse_real_sh
 
 
