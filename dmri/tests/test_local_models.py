@@ -87,3 +87,17 @@ def test_base_function(compartment_model):
     assert jnp.allclose(compartment_model.theta, compartment_model_old.theta), (
         "Failed to reconstruct the compartment model"
     )
+
+
+def test_jitable(compartment_model):
+    bvals = np.random.uniform(size=(10,)) * 1000
+    bvecs = np.random.randn(10, 3)
+    bvecs = bvecs / np.linalg.norm(bvecs, axis=-1, keepdims=True)
+
+    acq = acquisition_scheme(bvals, bvecs)
+
+    # Signal emulation
+    signal = compartment_model.signal(acq)
+    signal_jit = jax.jit(compartment_model.signal)(acq)
+
+    assert jnp.allclose(signal, signal_jit, atol=1e-3), "JIT failed"
