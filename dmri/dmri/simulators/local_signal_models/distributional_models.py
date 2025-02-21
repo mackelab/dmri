@@ -1,5 +1,6 @@
 from functools import partial
 from typing import Any
+from dmri.simulators.acquisition_scheme import acquisition_scheme
 import jax.numpy as jnp
 import jax
 from abc import ABC, abstractmethod
@@ -21,14 +22,16 @@ from dmri.simulators.local_signal_models.gaussian_models import Stick, Zeppelin
 class SignalKernel(Compartment):
     @classmethod
     @abstractmethod
-    def kernel_fn(cls, mu: ArrayLike, bvals, bvecs) -> ArrayLike:
+    def kernel_fn(
+        cls, mu: ArrayLike, aquisition_scheme: acquisition_scheme
+    ) -> ArrayLike:
         pass
 
-    def sh_coeff(self, bvals, bvecs, sh_order):
+    def sh_coeff(self, aquisition_scheme, sh_order):
         inverse_real_sh = inverse_sh_matrix(sh_order, sphere=hemisphere_default)
         kernel = partial(self.kernel_fn, **self.params)
-        signal = jax.vmap(kernel, in_axes=(0, None, None))(
-            hemisphere_default.vertices, bvals, bvecs
+        signal = jax.vmap(kernel, in_axes=(0, None))(
+            hemisphere_default.vertices, aquisition_scheme
         )
         sh_coeff = inverse_real_sh @ signal.squeeze()
         return sh_coeff
@@ -39,14 +42,21 @@ class StickKernel(SignalKernel):
     lam_min: float = Stick.max_lam
     lam_max: float = Stick.min_lam
 
-    def __init__(self, lam: float):
-        self.lam = lam
+    def __init__(self, lam_par: float):
+        self.lam_par = lam_par
 
     @classmethod
-    def kernel_fn(cls, mu: ArrayLike, bvals, bvecs, lam: float, rng=None) -> ArrayLike:
+    def kernel_fn(
+        cls,
+        mu: ArrayLike,
+        aquisition_scheme: acquisition_scheme,
+        lam_par: float,
+        rng=None,
+    ) -> ArrayLike:
         """Compute the log signal for given b-values and b-vectors."""
-        signal_fn = jax.vmap(Stick.signal_fn, in_axes=(0, 0, None, None))
-        return signal_fn(bvals, bvecs, lam, mu)
+        signal_fn = jax.vmap(Stick.signal_fn, in_axes=(0, None, None))
+        mu = cartesian_to_unitsphere(mu)
+        return signal_fn(aquisition_scheme, mu, lam_par)
 
     @classmethod
     def to_params(cls, theta: ArrayLike) -> tuple:
@@ -56,10 +66,10 @@ class StickKernel(SignalKernel):
         return (lam,)
 
     @classmethod
-    def to_theta(cls, lam: ArrayLike) -> ArrayLike:
+    def to_theta(cls, lam_par: ArrayLike) -> ArrayLike:
         """Convert the lambda value to the parameter space theta."""
-        lam = (lam - cls.lam_min) / (cls.lam_max - cls.lam_min)
-        theta = jnp.array([lam])
+        lam_par = (lam_par - cls.lam_min) / (cls.lam_max - cls.lam_min)
+        theta = jnp.array([lam_par])
         theta = jax.scipy.stats.norm.ppf(theta)
         return theta
 
@@ -75,12 +85,17 @@ class ZeppelinKernel(SignalKernel):
 
     @classmethod
     def kernel_fn(
-        cls, mu: ArrayLike, bvals, bvecs, lam_perp: float, lam_par: float, rng=None
+        cls,
+        mu: ArrayLike,
+        aquisition_scheme: acquisition_scheme,
+        lam_perp: float,
+        lam_par: float,
+        rng=None,
     ) -> ArrayLike:
         """Compute the log signal for given b-values and b-vectors."""
-        signal_fn = jax.vmap(Zeppelin.signal_fn, in_axes=(0, 0, None, None, None))
+        signal_fn = jax.vmap(Zeppelin.signal_fn, in_axes=(0, None, None, None))
         mu = cartesian_to_unitsphere(mu)
-        return signal_fn(bvals, bvecs, mu, lam_perp, lam_par)
+        return signal_fn(aquisition_scheme, mu, lam_perp, lam_par)
 
     @classmethod
     def to_params(cls, theta: ArrayLike) -> tuple:
@@ -100,7 +115,7 @@ class ZeppelinKernel(SignalKernel):
         return theta
 
 
-class StickZeppelinKernel(SignalKernel):
+class NODDIKernel(SignalKernel):
     theta_dim: int = 3
 
     def __init__(self, fraction, lam_perp, lam_par):
@@ -110,12 +125,18 @@ class StickZeppelinKernel(SignalKernel):
 
     @classmethod
     def kernel_fn(
-        cls, mu: ArrayLike, bvals, bvecs, fraction, lam_perp, lam_par, rng=None
+        cls,
+        mu: ArrayLike,
+        aquisition_scheme: acquisition_scheme,
+        fraction,
+        lam_perp,
+        lam_par,
+        rng=None,
     ) -> ArrayLike:
         """Compute the log signal for given b-values and b-vectors."""
-        stick_signal = StickKernel.kernel_fn(mu, bvals, bvecs, lam=lam_par)
+        stick_signal = StickKernel.kernel_fn(mu, aquisition_scheme, lam_par=lam_par)
         zeppelin_signal = ZeppelinKernel.kernel_fn(
-            mu, bvals, bvecs, lam_par=lam_par, lam_perp=lam_perp
+            mu, aquisition_scheme, lam_par=lam_par, lam_perp=lam_perp
         )
         return fraction * stick_signal + (1 - fraction) * zeppelin_signal
 
@@ -147,6 +168,73 @@ class StickZeppelinKernel(SignalKernel):
         theta = jax.scipy.stats.norm.ppf(theta)
         return theta
 
+class SimpleSANDIKernel(SignalKernel):
+    theta_dim: int = 5
+
+    def __init__(self, fraction_in, fraction_ec, lam_par_in, lam_perp_ex, lam_par_ex):
+        self.fraction_in = fraction_in
+        self.fraction_ec = fraction_ec
+        self.lam_par_in = lam_par_in
+        self.lam_perp_ex = lam_perp_ex
+        self.lam_par_ex = lam_par_ex
+
+    @classmethod
+    def kernel_fn(
+        cls,
+        mu: ArrayLike,
+        aquisition_scheme: acquisition_scheme,
+        fraction_in,
+        fraction_ec,
+        lam_par_in,
+        lam_perp_ex,
+        lam_par_ex,
+        rng=None,
+    ) -> ArrayLike:
+        """Compute the log signal for given b-values and b-vectors."""
+        axon_signal_in = StickKernel.kernel_fn(
+            mu, aquisition_scheme, lam_par=lam_par_in
+        )
+        soma_signal = 1.0  # Dot
+
+        zeppelin_signal_ex = ZeppelinKernel.kernel_fn(
+            mu, aquisition_scheme, lam_par=lam_par_ex, lam_perp=lam_perp_ex
+        )
+        signal_in = fraction_in * axon_signal_in + (1 - fraction_in) * soma_signal
+        signal_ex = zeppelin_signal_ex
+        return (1 - fraction_ec) * signal_in + fraction_ec * signal_ex
+
+    @classmethod
+    def to_params(cls, theta: ArrayLike) -> tuple:
+        u_theta = jax.scipy.stats.norm.cdf(theta)
+        fraction_in = u_theta[0]
+        fraction_ec = u_theta[1]
+        lam_par_in = u_theta[2] * (Stick.max_lam - Stick.min_lam) + Stick.min_lam
+        lam_perp_ex = (
+            u_theta[3] * (Zeppelin.max_lam - Zeppelin.min_lam) + Zeppelin.min_lam
+        )
+        lam_par_ex = (
+            u_theta[4] * (Zeppelin.max_lam - Zeppelin.min_lam) + Zeppelin.min_lam
+        )
+        return fraction_in, fraction_ec, lam_par_in, lam_perp_ex, lam_par_ex
+
+    @classmethod
+    def to_theta(
+        cls, fraction_in, fraction_ec, lam_par_in, lam_perp_ex, lam_par_ex
+    ) -> ArrayLike:
+        fraction_in = (fraction_in - 0.0) / 1.0
+        fraction_ec = (fraction_ec - 0.0) / 1.0
+        lam_par_in = (lam_par_in - Stick.min_lam) / (Stick.max_lam - Stick.min_lam)
+        lam_perp_ex = (lam_perp_ex - Zeppelin.min_lam) / (
+            Zeppelin.max_lam - Zeppelin.min_lam
+        )
+        lam_par_ex = (lam_par_ex - Zeppelin.min_lam) / (
+            Zeppelin.max_lam - Zeppelin.min_lam
+        )
+        theta = jnp.array(
+            [fraction_in, fraction_ec, lam_par_in, lam_perp_ex, lam_par_ex]
+        )
+        theta = jax.scipy.stats.norm.ppf(theta)
+        return theta
 
 class DistributionalModel(SignalCompartment):
     fod_type: type
@@ -170,20 +258,19 @@ class DistributionalModel(SignalCompartment):
     @classmethod
     def signal_fn(
         cls,
-        bvals: ArrayLike,
-        bvecs: ArrayLike,
+        aquisition_scheme: acquisition_scheme,
         fod,
         signal_kernel,
         rng=None,
     ) -> ArrayLike:
         """Compute the log signal for given b-values and b-vectors."""
         sh_coeff_fod = fod.sh_coeff(sh_order=22)
-        sh_coeff_signal = signal_kernel.sh_coeff(bvals, bvecs, sh_order=22)
+        sh_coeff_signal = signal_kernel.sh_coeff(aquisition_scheme, sh_order=22)
         return jnp.dot(sh_coeff_fod, sh_coeff_signal)
 
     @classmethod
-    def log_signal_fn(cls, bvals, bvecs, **kwargs):
-        return jnp.log(cls.signal_fn(bvals, bvecs, **kwargs))
+    def log_signal_fn(cls, aquisition_scheme: acquisition_scheme, **kwargs):
+        return jnp.log(cls.signal_fn(aquisition_scheme, **kwargs))
 
     @classmethod
     def to_theta(cls, fod, signal_kernel):
@@ -222,8 +309,18 @@ class BinghamZeppelin(DistributionalModel):
 
 class NoddiW(DistributionalModel):
     fod_type = Watson
-    signal_kernel_type = StickZeppelinKernel
+    signal_kernel_type = NODDIKernel
 
 class NoddiB(DistributionalModel):
     fod_type = Bingham
-    signal_kernel_type = StickZeppelinKernel
+    signal_kernel_type = NODDIKernel
+
+
+class SandiW(DistributionalModel):
+    fod_type = Watson
+    signal_kernel_type = SimpleSANDIKernel
+
+
+class SandiB(DistributionalModel):
+    fod_type = Bingham
+    signal_kernel_type = SimpleSANDIKernel

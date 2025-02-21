@@ -6,6 +6,8 @@ from abc import ABC, abstractmethod
 from jax.typing import ArrayLike
 import jax.tree_util as jtu
 
+from dmri.simulators.acquisition_scheme import acquisition_scheme
+
 
 class Compartment(ABC):
     theta_dim: int
@@ -54,35 +56,29 @@ class Compartment(ABC):
 
 
 class SignalCompartment(Compartment):
-    @classmethod
-    def kernel_fn(mu: ArrayLike, bvals, bvecs, **kwargs) -> ArrayLike:
-        """Computes the directional kernel for the compartment."""
-        raise NotImplementedError("Directional kernel not implemented")
 
     @classmethod
     def signal_fn(
-        cls, bvals: ArrayLike, bvecs: ArrayLike, *args, **kwargs
+        cls, acquisition_scheme: acquisition_scheme, *args, **kwargs
     ) -> ArrayLike:
         """Computes the signal for the compartment."""
-        return jnp.exp(cls.log_signal_fn(bvals, bvecs, *args, **kwargs))
+        return jnp.exp(cls.log_signal_fn(acquisition_scheme, *args, **kwargs))
 
     @classmethod
     @abstractmethod
     def log_signal_fn(
-        cls, bvals: ArrayLike, bvecs: ArrayLike, *args, **kwargs
+        cls, aquisition_scheme: acquisition_scheme, *args, **kwargs
     ) -> ArrayLike:
         """Computes the log-signal for the compartment."""
         pass
 
-    def signal(self, bvals: ArrayLike, bvecs: ArrayLike, rng=None) -> ArrayLike:
+    def signal(self, aquisition_scheme: acquisition_scheme, rng=None) -> ArrayLike:
         """Simulates the signal for the compartment."""
-        return type(self).signal_fn(bvals, bvecs, rng=rng, **self.params)
+        return type(self).signal_fn(aquisition_scheme, rng=rng, **self.params)
 
-    def log_signal(self, bvals: ArrayLike, bvecs: ArrayLike, rng=None) -> ArrayLike:
+    def log_signal(self, aquisition_scheme: acquisition_scheme, rng=None) -> ArrayLike:
         """Simulates the log-signal for the compartment."""
-        return type(self).log_signal_fn(
-            bvals=bvals, bvecs=bvecs, rng=rng, **self.params
-        )
+        return type(self).log_signal_fn(aquisition_scheme, rng=rng, **self.params)
 
     def fit(self, logS: ArrayLike, bvals: ArrayLike, bvecs: ArrayLike) -> Any:
         """Fits the compartment to the signal deterministically."""

@@ -293,9 +293,8 @@ class Bingham(SphericalDistribution):
         # Mu to normal
         u0 = (mu[1] + jnp.pi) / (2.0 * jnp.pi)
         u1 = mu[0] / (jnp.pi / 2.0)
-        mu_theta = jnp.array(
-            [jax.scipy.stats.norm.ppf(u0), jax.scipy.stats.norm.ppf(u1)]
-        )
+        mu0 = jax.scipy.stats.norm.ppf(u0)
+        mu1 = jax.scipy.stats.norm.ppf(u1)
 
         # Odi to uniform
         odi_unif = (odi - cls.odi_min) / (cls.odi_max - cls.odi_min)
@@ -311,7 +310,7 @@ class Bingham(SphericalDistribution):
         )
         beta_fraction_theta = jax.scipy.stats.norm.ppf(beta_fraction_unif)
 
-        return jnp.concatenate([mu_theta, odi_theta, psi_theta, beta_fraction_theta])
+        return jnp.array([mu0, mu1, odi_theta, psi_theta, beta_fraction_theta])
 
 
 def deterministic_sphere_integration(
