@@ -76,18 +76,23 @@ class SphericalDistribution(Compartment):
         watson_sh : array,
             spherical harmonics of Watson probability density.
         """
-        if sh_order is None:
-            sh_order = get_sh_order_from_odi(self.odi)
+        with jax.ensure_compile_time_eval():
+            if sh_order is None:
+                sh_order = get_sh_order_from_odi(self.odi)
 
-        if sphere is not None:
-            hemisphere = HemiSphere.from_sphere(sphere)
-        else:
-            hemisphere = hemisphere_default
+            if sphere is not None:
+                hemisphere = HemiSphere.from_sphere(sphere)
+            else:
+                hemisphere = hemisphere_default
 
-        pdf_sf = self.pdf(hemisphere.vertices)
-        sh_mat_inv = inverse_sh_matrix(
-            sh_order, sphere=hemisphere, full_basis=full_basis
-        )
+            sh_mat_inv = inverse_sh_matrix(
+                sh_order, sphere=hemisphere, full_basis=full_basis
+            )
+
+        vertices = jnp.array(hemisphere.vertices)
+        sh_mat_inv = jnp.array(sh_mat_inv)
+        pdf_sf = self.pdf(vertices)
+
         sh_coef = jnp.dot(sh_mat_inv, pdf_sf)
         return sh_coef
 

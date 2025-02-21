@@ -100,4 +100,7 @@ def test_jitable(compartment_model):
     signal = compartment_model.signal(acq)
     signal_jit = jax.jit(compartment_model.signal)(acq)
 
+    # No tracer leaks
+    _ = compartment_model.signal(acq)
+
     assert jnp.allclose(signal, signal_jit, atol=1e-3), "JIT failed"
