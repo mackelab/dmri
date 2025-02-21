@@ -1,6 +1,6 @@
 from .autoregressive import BinaryAutoregressiveDecoder
 from .embedding_net import BvalBvecSignalEmbeddingNet
-from .simformer import EDMSimformer
+from .simformer import EDMSimformer, GaussianFourierEmbedding
 from .tokenizer import StructuredTokenizer, DMRITokenizer
 
 from functools import partial
@@ -20,7 +20,6 @@ import optax
 
 @dataclass
 class DMRIEmbeddingConfig:
-    max_bval: float = 2000
     num_layers: int = 3
     num_heads: int = 4
     widening_factor: int = 2
@@ -33,6 +32,17 @@ class DMRIModelSelectionConfig:
     num_heads: int = 4
     widening_factor: int = 3
     attn_size: int = 16
+    context_dim = None
+
+
+@dataclass
+class DMRIModelSelectionAmortizedPriorConfig:
+    num_layers: int = 4
+    num_heads: int = 4
+    widening_factor: int = 3
+    attn_size: int = 16
+    context_dim: int = 64
+    mask_prior_dim: int = 1.0
 
 
 @dataclass
@@ -54,6 +64,18 @@ class DMRIInferenceModelConfig:
         default_factory=DMRIThetaInferenceConfig
     )
 
+@dataclass
+class DMRIInferenceModelConfigMaskPriorAmortized:
+    simulator: type[MultiCompartment]
+    model_dim: int = 64
+    embedding_cfg: DMRIEmbeddingConfig = field(default_factory=DMRIEmbeddingConfig)
+    model_selection_cfg: DMRIModelSelectionConfig = field(
+        default_factory=DMRIModelSelectionAmortizedPriorConfig
+    )
+    theta_inference_cfg: DMRIThetaInferenceConfig = field(
+        default_factory=DMRIThetaInferenceConfig
+    )
+
 
 class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
     def __init__(self, cfg: DMRIInferenceModelConfig, rngs):
@@ -70,6 +92,16 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         )
 
         # Setup model selection network
+        if cfg.model_selection_cfg.context_dim is not None:
+            # We expect a mask prior input
+            self.mask_prior_need = True
+            if cfg.model_selection_cfg.context_dim == 1:
+                self.mask_prior_embed = GaussianFourierEmbedding(
+                    cfg.model_selection_cfg.context_dim, rngs=rngs
+                )
+            else:
+                raise NotImplementedError("Only 1D mask prior is currently supported")
+
         self.model_decoder = BinaryAutoregressiveDecoder(
             rngs,
             model_dim=cfg.model_dim,
@@ -91,6 +123,7 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         x: ArrayLike,
         bvals: ArrayLike,
         bvecs: ArrayLike,
+        mask_prior: Optional[ArrayLike] = None,
         alpha_prior: Optional[ArrayLike] = None,
         model_types: Optional[List[type]] = None,
         noise_types: Optional[List[type]] = None,
@@ -98,18 +131,22 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
     ):
         # Embed model configuration
         tokens_cfg = self.tokenizer.embed_cfgs(
-            model_mask, alpha_prior, model_types=model_types, noise_types=noise_types
+            model_mask,
+            alpha_prior=alpha_prior,
+            model_types=model_types,
+            noise_types=noise_types,
         )
         # Embed observatiosn
         y = self.encoder(bvals, bvecs, x)
         if y.ndim == 2:
             y = y[..., None, :]
 
-        print("y", y.shape)
-        print("tokens_cfg", tokens_cfg.shape)
         # Get model_mask logits
+        if self.mask_prior_need:
+            assert mask_prior is not None, "Mask prior is required"
+            mask_prior = self.mask_prior_embed(mask_prior)
         model_mask_logits = self.model_decoder(
-            model_mask, self.tokenizer, y=y, tokens_cfg=tokens_cfg
+            model_mask, self.tokenizer, y=y, tokens_cfg=tokens_cfg, context=mask_prior
         )
 
         # Get theta predictions
@@ -130,6 +167,7 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         x,
         bvals,
         bvecs,
+        mask_prior=None,
         alpha_prior=None,
         model_types=None,
         noise_types=None,
@@ -144,8 +182,17 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         if y.ndim == 2:
             y = y[..., None, :]
 
+        if self.mask_prior_need:
+            assert mask_prior is not None, "Mask prior is required"
+            mask_prior = self.mask_prior_embed(mask_prior)
+
         model_mask_loss = self.model_decoder.loss_fn(
-            None, model_mask, self.tokenizer, y=y, tokens_cfg=tokens_cfg
+            None,
+            model_mask,
+            self.tokenizer,
+            y=y,
+            tokens_cfg=tokens_cfg,
+            context=mask_prior,
         )
         theta_loss = self.inference_decoder.loss(
             None, rng, theta, self.tokenizer, y=y, tokens_cfg=tokens_cfg
@@ -154,68 +201,6 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
 
         return jnp.concatenate([model_mask_loss[None], theta_loss[None]])
 
-    # def _loss_model_mask(self, params_model_mask, model_mask, y, rng=None):
-    #     nnx.update(self.model_decoder, params_model_mask)
-    #     logits = self.model_decoder(model_mask, y=y)
-    #     loss = optax.sigmoid_binary_cross_entropy(logits, model_mask).sum(-1).mean()
-    #     return loss
-
-    # def _loss_inference(
-    #     self, params_inference, x, y, node_ids=None, model_mask=None, rng=None
-    # ):
-    #     if node_ids is None:
-    #         node_ids = list(range(self.num_nodes))
-    #     model_mask_repeated = jnp.tile(model_mask, (1, 64 // model_mask.shape[-1] + 1))[
-    #         :, :64
-    #     ]
-
-    #     # Add first "true" to the model
-    #     model_mask_first = jnp.ones((model_mask.shape[0], 1), dtype=bool)
-    #     _model_mask = jnp.concatenate([model_mask_first, model_mask], axis=-1)
-    #     attention_mask = _model_mask[:, None, :] & _model_mask[:, :, None]  # [B, N, N]
-    #     attention_mask = (
-    #         attention_mask | jnp.eye(_model_mask.shape[-1], dtype=bool)[None, :, :]
-    #     )
-    #     loss = self.inference_decoder.loss(
-    #         params_inference,
-    #         rng=rng,
-    #         data=x,
-    #         node_ids=node_ids,
-    #         y=y,
-    #         attention_mask=attention_mask,
-    #         context=model_mask_repeated,
-    #     )
-    #     return loss
-
-    # def _loss(
-    #     self,
-    #     params_encoder,
-    #     params_model_mask,
-    #     params_inference,
-    #     model_mask,
-    #     x,
-    #     bvals,
-    #     bvecs,
-    #     signals,
-    #     rng=None,
-    # ):
-    #     nnx.update(self.encoder, params_encoder)
-    #     y = self.encoder(bvals, bvecs, signals)
-    #     loss_model_mask = self._loss_model_mask(
-    #         params_model_mask, model_mask, y, rng=rng
-    #     )
-    #     loss_inference = self._loss_inference(
-    #         params_inference, x, y, model_mask=model_mask, rng=rng
-    #     )
-    #     loss_inference *= 1 / jnp.sqrt(x.shape[-1])
-    #     return loss_model_mask + loss_inference
-
-    # def model_mask_to_theta_mask(self, model_mask):
-    #     dims_per_component = list(self.cfg.simulator.split_idx())
-    #     theta_mask = []
-    #     for i, d in enumerate(dims_per_component):
-    #         theta_mask.append(jnp.repeat(model_mask[:, i : i + 1], d, axis=-1))
-    #     return jnp.concatenate(theta_mask, axis=-1)
 
     def sample_mask(self, rng, bvals, bvecs, signals):
         # Update for different model configs
