@@ -286,6 +286,9 @@ class DistributionalModel(SignalCompartment):
         signal_kernel = cls.signal_kernel_type.from_theta(signal_theta)
         return fod, signal_kernel
 
+    def to_fod(self):
+        return self.fod
+
 
 class WatsonStick(DistributionalModel):
     fod_type = Watson

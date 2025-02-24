@@ -1,5 +1,6 @@
 from typing import Optional
 
+from dmri.simulators.sphereical_distributions import MixtureOfFODs
 from dmri.simulators import acquisition_scheme
 from dmri.simulators.noise_compartments import (
     LowGaussianNoise,
@@ -195,17 +196,11 @@ class MultiCompartment(SignalCompartment):
         ]
         return fractions, model_compartments, noise_compartments, model_mask
 
-    def fod_logpdf(self, mu):
-        pass
+    def to_fod(self):
+        fods = [m.to_fod() for m in self.model_compartments]
+        fractions = self.model_fractions
+        return MixtureOfFODs(fractions, fods)
 
-    def fod_sample(self, rng):
-        rng1, rng2 = jax.random.split(rng)
-        idx = jax.random.choice(
-            rng1, len(self.model_compartments), p=self.model_fractions
-        )
-        return jax.lax.switch(
-            idx, [m.fod_sample for m in self.model_compartments], rng2
-        )
 
 
 class BallStick(MultiCompartment):
@@ -226,9 +221,9 @@ class Ball3Stick(MultiCompartment):
     fraction_prior = jnp.ones(4)
 
 
-class BallStickZeppelin(MultiCompartment):
+class BallStickZeppelinNoise(MultiCompartment):
     model_types = [Ball, Stick, Zeppelin]
-    noise_types = []
+    noise_types = [LowRicianNoise, MediumRicianNoise]
     fraction_prior = jnp.ones(3)
 
 
