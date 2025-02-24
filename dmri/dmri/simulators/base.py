@@ -86,11 +86,14 @@ class SignalCompartment(Compartment):
 
     def to_fod(self):
         """Converts the signal compartment to a fiber orientation distribution compartment."""
-        raise NotImplementedError("Conversion to FOD not implemented")  
+        raise NotImplementedError("Conversion to FOD not implemented")
 
 
 class NoiseCompartment(Compartment):
     @abstractmethod
-    def noise(self, rng: jax.random.key) -> ArrayLike:
+    def noise(self, signal, rng: jax.random.key) -> ArrayLike:
         """Simulates the noise for the compartment."""
+        pass
+
+    def likelihood(self, signal):
         pass
