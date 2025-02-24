@@ -1,7 +1,6 @@
 from abc import abstractmethod
 import math
 from typing import Any
-from dmri.simulators.local_signal_models.gaussian_models import Stick
 import jax.numpy as jnp
 import jax
 from jax.typing import ArrayLike
@@ -11,11 +10,19 @@ from dmri.utils.dmriutils import (
 )
 
 from dmri.simulators.base import Compartment
+from dmri.utils.odf import (
+    diffusion_tensor_odf,
+    diffusion_tensor2d_odf,
+    sample_single_from_odf_jax,
+)
 from dmri.utils.shm import real_sh
 from dmri.utils.sample_fns import sample_watson_ar_1
 from dipy.data import get_sphere, HemiSphere
 import functools
 import numpy as np
+
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 sphere_default = get_sphere("symmetric724")
 hemisphere_default = HemiSphere(phi=sphere_default.phi, theta=sphere_default.theta)
@@ -40,7 +47,7 @@ def get_sh_order_from_odi(odi):
 
 @functools.lru_cache(None)
 def inverse_sh_matrix(sh_order, sphere=None, full_basis=False):
-    sphere = hemisphere if sphere is None else sphere
+    sphere = hemisphere_default if sphere is None else sphere
     full_basis = not isinstance(sphere, HemiSphere)
 
     real_sh_basis, _, _ = real_sh(
@@ -89,6 +96,180 @@ class SphericalDistribution(Compartment):
         sh_coef = jnp.dot(sh_mat_inv, pdf_sf)
         return sh_coef
 
+    def viz(self, sphere=None, n_samples=1000):
+        r"""Visualize the spherical distribution model on the sphere."""
+        sphere = sphere_default if sphere is None else sphere
+        fig = plt.figure()
+        ax = fig.add_subplot(projection="3d")
+        pdfs = self.pdf(sphere.vertices)
+        samples = self.sample(jax.random.key(0), (n_samples,))
+        # plot sphere vertices colored by their pdf
+        sc = ax.scatter(
+            sphere.vertices[:, 0],
+            sphere.vertices[:, 1],
+            sphere.vertices[:, 2],
+            c=pdfs,
+            cmap="viridis",
+        )
+        # overlay sample points in red
+        ax.scatter(
+            samples[:, 0],
+            samples[:, 1],
+            samples[:, 2],
+            color="red",
+            s=10,
+            alpha=0.1,
+            label="Samples",
+        )
+        plt.colorbar(sc, label="PDF value")
+        ax.set_title("Spherical Distribution PDF")
+
+    def to_pmf(self, sphere=None, n_samples=1_000):
+        sphere = sphere_default if sphere is None else sphere
+        samples = self.sample(jax.random.PRNGKey(0), (n_samples,))
+        pdfs = self.pdf(samples)
+        vertices = sphere.vertices
+
+        # Compute cosine similarity between each vertex and each sample.
+        # Resulting shape is (num_vertices, num_samples)
+        cos_sim = jnp.dot(vertices, samples.T)
+        # For each sample, find the vertex index with maximum cosine similarity.
+        idx_closest = jnp.argmax(cos_sim, axis=0)
+
+        # Initialize vertex weights and accumulate pdfs using segment_sum.
+        vertex_weights = jnp.zeros(vertices.shape[0])
+        vertex_weights = jax.ops.segment_sum(pdfs, idx_closest, vertices.shape[0])
+
+        fpmf = vertex_weights / jnp.sum(vertex_weights)
+        return fpmf
+
+
+class Uniform(SphericalDistribution):
+    theta_dim: int = 0
+
+    def pdf(self, n):
+        return 1.0 / (4 * jnp.pi) * jnp.ones(n.shape[0])
+
+    def sample(self, key, shape):
+        normal = jax.random.normal(key, shape + (3,))
+        return normal / jnp.linalg.norm(normal, axis=-1, keepdims=True)
+
+    @classmethod
+    def to_theta(cls, mu, odi) -> ArrayLike:
+        return jnp.array([])
+
+    @classmethod
+    def to_params(cls, theta: ArrayLike) -> Any:
+        return ()
+
+
+class Dirac(SphericalDistribution):
+    theta_dim = 2
+
+    def __init__(self, mu):
+        self.mu = mu
+
+    def pdf(self, n):
+        return jnp.where(jnp.all(n == self.mu, axis=-1), 1.0, 0.0)
+
+    def sample(self, key, shape):
+        return jnp.tile(self.mu, (shape[0], 1))
+
+    @classmethod
+    def to_theta(cls, mu, odi) -> ArrayLike:
+        return mu
+
+    @classmethod
+    def to_params(cls, theta: ArrayLike) -> Any:
+        return theta
+
+
+class TensorFOD(SphericalDistribution):
+    def __init__(self, evecs, evals):
+        assert evecs.shape == (3, 3), "evecs must have shape (3, 3)"
+        assert evals.shape == (3,), "evals must have shape (3,)"
+        self.evecs = evecs
+        self.evals = evals
+
+    def pdf(self, n):
+        return diffusion_tensor_odf(evals=self.evals, evecs=self.evecs, dirs=n)
+
+    def sample(self, key, shape):
+        num_samples = math.prod(shape)
+        keys = jax.random.split(key, num_samples)
+        sample_fn = functools.partial(
+            sample_single_from_odf_jax, self.evals, self.evecs
+        )
+        sample_fn = jax.vmap(sample_fn)
+        return sample_fn(keys).reshape(shape + (3,))
+
+    @classmethod
+    def to_theta(cls, evecs, evals) -> ArrayLike:
+        raise NotImplementedError()
+
+    @classmethod
+    def to_params(cls, theta: ArrayLike) -> Any:
+        raise NotImplementedError()
+
+
+class Tensor2dFOD(SphericalDistribution):
+    def __init__(self, evecs, evals):
+        assert evecs.shape == (2, 3), "evecs must have shape (2, 3)"
+        assert evals.shape == (2,), "evals must have shape (2,)"
+        self.evecs = evecs
+        self.evals = evals
+
+    def pdf(self, n):
+        return diffusion_tensor2d_odf(self.evals, self.evecs, n)
+
+    def sample(self, key, shape):
+        num_samples = math.prod(shape)
+        keys = jax.random.split(key, num_samples)
+        sample_fn = functools.partial(
+            sample_single_from_odf_jax, self.evals, self.evecs
+        )
+        sample_fn = jax.vmap(sample_fn)
+        return sample_fn(keys).reshape(shape + (3,))
+
+    @classmethod
+    def to_theta(cls, evecs, evals) -> ArrayLike:
+        raise NotImplementedError()
+
+    @classmethod
+    def to_params(cls, theta: ArrayLike) -> Any:
+        raise NotImplementedError()
+
+
+class MixtureOfFODs(SphericalDistribution):
+    def __init__(self, fractions, components):
+        self.components = components
+        self.fractions = fractions
+
+    def pdf(self, n):
+        return jnp.sum(
+            jnp.array([f * m.pdf(n) for f, m in zip(self.fractions, self.components)]),
+            axis=0,
+        )
+
+    def sample(self, key, shape):
+        num_samples = math.prod(shape)
+        keys = jax.random.split(key, num_samples)
+        sample_fn = jax.vmap(self._sample_one)
+        return sample_fn(keys).reshape(shape + (3,))
+
+    def _sample_one(self, key):
+        rng1, rng2 = jax.random.split(key)
+        idx = jax.random.choice(rng1, len(self.components), p=self.fractions)
+        sample_fns = [functools.partial(m.sample, shape=(1,)) for m in self.components]
+        return jax.lax.switch(idx, sample_fns, rng2)
+
+    @classmethod
+    def to_theta(cls, components) -> ArrayLike:
+        raise NotImplementedError()
+
+    @classmethod
+    def to_params(cls, theta: ArrayLike) -> Any:
+        raise NotImplementedError()
 
 class Watson(SphericalDistribution):
     r"""The Watson spherical distribution model [1]_ [2]_.

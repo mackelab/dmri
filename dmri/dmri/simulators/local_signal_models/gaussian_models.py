@@ -11,6 +11,12 @@ from dmri.utils.dmriutils import (
     cartesian_to_unitsphere,
     unitsphere_to_cartesian,
 )
+from dmri.simulators.sphereical_distributions import (
+    Uniform,
+    Dirac,
+    Tensor2dFOD,
+    TensorFOD,
+)
 
 class Dot(SignalCompartment):
     """The Dot model is a simple model that represents a single point in space.
@@ -40,6 +46,9 @@ class Dot(SignalCompartment):
     def to_theta(cls) -> ArrayLike:
         """Convert the lambda value to the parameter space theta."""
         return jnp.array([])
+
+    def to_fod(self):
+        return Uniform()
 
 
 class Ball(SignalCompartment):
@@ -85,15 +94,8 @@ class Ball(SignalCompartment):
         lam = -logS / bvals
         return (jnp.mean(lam),)
 
-    def fod_logpdf(self, mu):
-        """Convert the Ball model to the Orientation Distribution Function (ODF)."""
-        return 1 / (4 * jnp.pi)
-
-    def fod_sample(self, rng: Any):
-        """Sample from the Orientation Distribution Function (ODF)."""
-        u = jax.random.normal(rng, (3,))
-        u = u / jnp.linalg.norm(u)
-        return u
+    def to_fod(self):
+        return Uniform()
 
 
 class Stick(SignalCompartment):
@@ -149,25 +151,9 @@ class Stick(SignalCompartment):
 
         return mu, lam_par
 
-    def fod_logpdf(self, u, kappa: float = 100):
-        """Convert the Stick model to the Orientation Distribution Function (ODF)."""
-        # Compute the ODF for a given direction u
+    def to_fod(self):
         mu_cart = unitsphere_to_cartesian(self.mu)
-        dot_product = jnp.dot(mu_cart, u)
-
-        # Compute the normalization constant for the vMF distribution in 3D.
-        # Note: sinh(kappa) = (exp(kappa) - exp(-kappa))/2.
-        c = kappa / (4 * jnp.pi * jnp.sinh(kappa))
-        log_pdf1 = kappa * dot_product + jnp.log(c) + jnp.log(0.5)
-        log_pdf2 = -kappa * dot_product + jnp.log(c) + jnp.log(0.5)
-        log_prob = jax.scipy.special.logsumexp(jnp.stack([log_pdf1, log_pdf2]), axis=0)
-        return log_prob
-
-    def fod_sample(self, rng: Any, tol: float = 1e-6):
-        """Sample from the Orientation Distribution Function (ODF)."""
-        # Sample a direction from the ODF
-        del rng, tol
-        return unitsphere_to_cartesian(self.mu)
+        return Dirac(mu_cart)
 
     def fit(self, logS: ArrayLike, aquisition_scheme: acquisition_scheme) -> tuple:
         """Fit the Stick model to the log signal, b-values, and b-vectors."""
@@ -227,8 +213,9 @@ class Zeppelin(SignalCompartment):
         """Convert the parameters to the parameter space theta."""
         lambda_par = (lambda_par - cls.min_lam) / (cls.max_lam - cls.min_lam)
         lambda_perp = (lambda_perp - cls.min_lam) / (cls.max_lam - cls.min_lam)
-        mu_normalized = (mu + jnp.pi) / (2 * jnp.pi)
-        theta = jnp.concatenate([jnp.array([lambda_par, lambda_perp]), mu_normalized])
+        mu1_normalized = mu[0] / jnp.pi
+        mu2_normalized = (mu[1] + jnp.pi) / (2 * jnp.pi)
+        theta = jnp.array([lambda_par, lambda_perp, mu1_normalized, mu2_normalized])
         theta = jax.scipy.stats.norm.ppf(theta)
         return theta
 
@@ -238,8 +225,10 @@ class Zeppelin(SignalCompartment):
         theta = jax.scipy.stats.norm.cdf(theta)
         lambda_par = theta[0] * (cls.max_lam - cls.min_lam) + cls.min_lam
         lambda_perp = theta[1] * (cls.max_lam - cls.min_lam) + cls.min_lam
-        mu_normalized = theta[2:] * 2 * jnp.pi - jnp.pi
-        return mu_normalized, lambda_par, lambda_perp
+        mu1 = theta[2] * jnp.pi
+        mu2 = theta[3] * 2 * jnp.pi - jnp.pi
+        mu = jnp.array([mu1, mu2])
+        return mu, lambda_par, lambda_perp
 
     def fit(self, logS: ArrayLike, aquisition_scheme) -> tuple:
         """Fit the Zeppelin model to the log signal, b-values, and b-vectors."""
@@ -254,6 +243,13 @@ class Zeppelin(SignalCompartment):
         mu = self._cartesian_to_unitsphere(mu_cartesian)
         return mu, lambda_par, lambda_perp
 
+    def to_fod(self):
+        mu = unitsphere_to_cartesian(self.mu)
+        D = self.lambda_par * jnp.outer(mu, mu) + self.lambda_perp * (
+            jnp.eye(3) - jnp.outer(mu, mu)
+        )
+        eigvals, eigvecs = jnp.linalg.eigh(D)
+        return TensorFOD(eigvecs,eigvals)
 
 
 class Dti(SignalCompartment):
@@ -305,3 +301,7 @@ class Dti(SignalCompartment):
         bvecs = aquisition_scheme.bvecs
         D = fit_diffusion_tensor_linearized(logS, bvals, bvecs)
         return (D,)
+
+    def to_fod(self):
+        eigvals, eigvecs = jnp.linalg.eigh(self.D)
+        return TensorFOD(eigvecs,eigvals)

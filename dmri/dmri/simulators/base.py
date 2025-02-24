@@ -84,13 +84,9 @@ class SignalCompartment(Compartment):
         """Fits the compartment to the signal deterministically."""
         raise NotImplementedError("Fitting not implemented")
 
-    def fod_logpdf(self, mu: ArrayLike) -> float:
-        """Computes the log-probability of the orientation distribution function."""
-        pass
-
-    def fod_sample(self, rng: jax.random.key) -> ArrayLike:
-        """Samples the fiber orientation distribution."""
-        raise NotImplementedError("FOD sampling not implemented")
+    def to_fod(self):
+        """Converts the signal compartment to a fiber orientation distribution compartment."""
+        raise NotImplementedError("Conversion to FOD not implemented")  
 
 
 class NoiseCompartment(Compartment):

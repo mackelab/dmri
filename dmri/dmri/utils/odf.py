@@ -1,264 +1,182 @@
-# NOTE: We can directly derive our fODE approximation from posterior samples
-# NOTE: We might can benchmark against deconvolution based methods ?
+import jax
+import jax.numpy as jnp
+from jax import lax
 
-# NOTE: This requires to define P(n|\theta) i.e. the likelihood of a orientation
-# for a given model.
-
-import numpy as np
-
-
-class ODF:
-    pass
-
-
-def general_odf(dirs, evals, evecs):
+def diffusion_tensor_odf(dirs, evals, evecs):
     """
-    Compute the Orientation Distribution Function (ODF) for a general three‐dimensional
-    Gaussian diffusion process modeled by a single diffusion tensor.
+    Compute the ODF for a single diffusion tensor at directions `dirs`.
+    """
+    R = jnp.asarray(evecs)
+    eigvals_inv = 1.0 / evals
+    D_inv = R @ jnp.diag(eigvals_inv) @ R.T
+    det_factor = jnp.sqrt(jnp.prod(evals))
 
-    The diffusion propagator is given by
+    # Quadratic form u^T D_inv u
+    quad = jnp.sum(dirs @ D_inv * dirs, axis=1)
+    # ODF(u) = 1 / (4*pi * sqrt(det(D)) * (quad)^(3/2))
+    odf_vals = 1.0 / (4.0 * jnp.pi * det_factor * (quad**1.5))
+    return odf_vals
 
-    .. math::
 
-        p(\mathbf{r}) = \frac{1}{\sqrt{(4\pi\tau)^3\,\det(D)}}
-        \exp\!\left[-\frac{1}{4\tau}\,\mathbf{r}^T D^{-1}\mathbf{r}\right],
+def diffusion_tensor2d_odf(dirs, evals, evecs):
+    """
+    Compute the ODF for a single diffusion tensor at directions `dirs`.
+    Handles the degenerate case, where the last eigenvalue is 0, by
+    restricting the evaluation to the plane spanned by the first two eigenvectors.
+    For directions falling outside the plane, returns 0.
+    """
+    assert evals.shape == (2,)
+    assert evecs.shape == (3, 2)
 
-    where the diffusion tensor is constructed from its eigenvalues and eigenvectors:
+    evec1, evec2 = evecs.T
+    evec3 = jnp.cross(evec1, evec2)
 
-    .. math::
+    # Build the inverse tensor in the plane.
+    inv_vals = jnp.array([1.0 / evals[0], 1.0 / evals[1]])
+    mat_perp = jnp.column_stack([evec1, evec2])
+    D_perp_inv = mat_perp @ jnp.diag(inv_vals) @ mat_perp.T
 
-        D = R\,\mathrm{diag}(\lambda_1,\lambda_2,\lambda_3)\,R^T.
+    # Compute projection on the degenerate (normal) vector.
+    proj = jnp.abs(dirs @ evec3)
+    tol = 1e-6
 
-    The Orientation Distribution Function (ODF) is defined as the radial integral of the
-    propagator:
+    # Quadratic form for each direction.
+    quad = jnp.sum(dirs @ D_perp_inv * dirs, axis=1)
 
-    .. math::
+    # In-plane ODF (ignoring the vanished normalization factor).
+    odf_inplane = 1.0 / (4.0 * jnp.pi * (quad**1.5))
 
-        \text{ODF}(\mathbf{u}) = \int_0^\infty p(r\,\mathbf{u})\,r^2\,dr,
+    # Set ODF to 0 for directions not in the plane.
+    odf_vals = jnp.where(proj < tol, odf_inplane, 0.0)
+    return odf_vals
 
-    where :math:`\mathbf{u}` is a unit direction vector. One can show that, after performing
-    the radial integration (and assuming that the diffusion time :math:`\tau` has been absorbed
-    into the eigenvalues), the ODF can be written as
 
-    .. math::
-
-        \text{ODF}(\mathbf{u}) = \frac{1}{4\pi\,\sqrt{\lambda_1\lambda_2\lambda_3}\,
-        \left(\mathbf{u}^T D^{-1}\mathbf{u}\right)^{3/2}}.
+def sample_single_from_odf_jax(evals, evecs, rng):
+    """
+    Sample a single unit direction from the ODF defined by the diffusion tensor
+    using naive rejection sampling in JAX, implemented with jax.lax.while_loop.
 
     Parameters
     ----------
-    dirs : ndarray, shape (N, 3)
-        Array of unit vectors (directions) at which to evaluate the ODF.
     evals : array-like, shape (3,)
-        The eigenvalues (typically all positive) of the diffusion tensor.
+        Eigenvalues of the diffusion tensor (assumed positive).
     evecs : array-like, shape (3, 3)
-        The eigenvectors of the diffusion tensor (each column is an eigenvector).
+        Eigenvectors of the diffusion tensor (columns = eigenvectors).
+    rng : jax.random.PRNGKey
+        Random key for JAX.
+    max_iter : int, optional
+        Maximum proposals for rejection sampling.
 
     Returns
     -------
-    odf : ndarray, shape (N,)
-        The ODF evaluated at each direction in `dirs`.
+    direction : jnp.ndarray, shape (3,)
+        A single sampled unit direction, or None (a Python object) if rejected
+        in all attempts.
     """
-    # Build the diffusion tensor D from the eigenvalues and eigenvectors.
-    R = np.asarray(evecs)
-    D = R @ np.diag(evals) @ R.T
 
-    # Invert the tensor.
-    D_inv = np.linalg.inv(D)
-
-    # The normalization factor involves the square root of the product of the eigenvalues,
-    # which is equivalent to sqrt(det(D)) when D is diagonal.
-    det_factor = np.sqrt(np.prod(evals))
-
-    # For each measurement direction u (a row in 'dirs'), compute the quadratic form:
-    #   Q(u) = u^T D^{-1} u
-    quad = np.sum(dirs @ D_inv * dirs, axis=1)
-
-    # The ODF is then given by:
-    #   ODF(u) = 1 / (4*pi * sqrt(det(D)) * Q(u)^(3/2))
-    odf = 1.0 / (4 * np.pi * det_factor * (quad ** (1.5)))
-    return odf
+    R = jnp.asarray(evecs)
+    D = R @ jnp.diag(evals) @ R.T
+    mv_norm = jax.random.multivariate_normal(rng, jnp.zeros(3), D)
+    sample = mv_norm / jnp.linalg.norm(mv_norm)
+    return sample
 
 
-def one_dimensional_odf(dirs, lambda_val, v, tau=1.0, tol=1e-6):
+def sample_single_from_odf_jax_degenerate(evals, evecs, rng, max_iter=10000):
     """
-    Compute the Orientation Distribution Function (ODF) for a one‐dimensional (stick model)
-    diffusion process.
-
-    In the stick model the diffusion tensor is degenerate and takes the form
-
-    .. math::
-
-        D = \lambda\,\mathbf{v}\mathbf{v}^T,
-
-    with eigenvalues :math:`\lambda, 0, 0`, meaning that diffusion occurs only along the
-    unit vector :math:`\mathbf{v}`.
-
-    The diffusion propagator in this case is given by
-
-    .. math::
-
-        p(\mathbf{r}) = \frac{1}{\sqrt{4\pi\lambda\tau}}
-        \exp\!\left[-\frac{r_\parallel^2}{4\lambda\tau}\right]
-        \delta(\mathbf{r}_\perp),
-
-    where :math:`r_\parallel = \mathbf{v}^T\mathbf{r}` is the displacement along the fiber
-    and :math:`\mathbf{r}_\perp` represents the perpendicular components. Because of the
-    Dirac delta function :math:`\delta(\mathbf{r}_\perp)`, only displacements along :math:`\mathbf{v}`
-    contribute.
-
-    The ODF is defined as
-
-    .. math::
-
-        \text{ODF}(\mathbf{u}) = \int_0^\infty p(r\,\mathbf{u})\,r^2\,dr.
-
-    Since the propagator is nonzero only when :math:`\mathbf{u}` is collinear with :math:`\mathbf{v}`,
-    one finds that
-
-    .. math::
-
-        \text{ODF}(\pm\mathbf{v}) = \lambda \tau,
-
-    and for any other direction the ODF is zero.
+    Sample a direction from the ODF of a 'degenerate' diffusion tensor
+    with eigenvalues [lambda1, lambda2, 0] using naive rejection sampling
+    in the plane of nonzero diffusion.
 
     Parameters
     ----------
-    dirs : ndarray, shape (N, 3)
-        Array of unit vectors (directions) at which to evaluate the ODF.
-    lambda_val : float
-        Diffusivity along the fiber (stick) direction.
-    v : array-like, shape (3,)
-        Unit vector representing the principal (fiber) diffusion direction.
-    tau : float, optional
-        Diffusion time (default is 1.0).
-    tol : float, optional
-        Tolerance for determining collinearity (default is 1e-6).
+    evals : array-like of shape (3,)
+        Eigenvalues of the diffusion tensor. We assume evals[2] == 0 and
+        evals[0], evals[1] > 0 (ordered or not).
+    evecs : array-like of shape (3,3)
+        Eigenvectors (columns) of the diffusion tensor.
+        evecs[:,2] is the direction corresponding to the zero eigenvalue.
+    rng : jax.random.PRNGKey
+        Random key for JAX.
+    max_iter : int, optional
+        Maximum proposals for rejection sampling in the plane.
 
     Returns
     -------
-    odf : ndarray, shape (N,)
-        The ODF evaluated at each direction in `dirs`. It will have the value
-        :math:`\lambda\tau` when :math:`\mathbf{u}` is (approximately) collinear with `v`
-        (or its opposite), and 0 for all other directions.
+    direction : jnp.ndarray of shape (3,)
+        A sampled unit direction in the plane spanned by the two nonzero
+        eigenvalues, or None (Python object) if rejected in all attempts.
     """
-    dirs = np.asarray(dirs)
-    v = np.asarray(v)
-    # Check for collinearity by computing the absolute dot product.
-    # A dot product of 1 (within tolerance) means the vectors are collinear.
-    dot_prod = np.abs(np.dot(dirs, v))
-    odf = np.zeros(len(dirs))
-    aligned = np.abs(dot_prod - 1) < tol
-    odf[aligned] = lambda_val * tau
-    return odf
+    # --- 1. Identify the plane vectors & eigenvalues ---
+    # Sort the eigenvalues just to be sure we know which is zero.
+    # Alternatively, you can skip sorting if you already know the order.
+    idx_sorted = jnp.argsort(evals)  # ascending order
+    evals_sorted = evals[idx_sorted]
+    evecs_sorted = evecs[:, idx_sorted]
 
+    # rename them for clarity
+    lam1, lam2, lam3 = evals_sorted
+    # evec1, evec2, evec3
+    evec1 = evecs_sorted[:, 0]
+    evec2 = evecs_sorted[:, 1]
+    evec3 = evecs_sorted[:, 2]
 
-def two_dimensional_odf(dirs, evals2d, evecs, tau=1.0, tol=1e-6):
-    """
-    Compute the Orientation Distribution Function (ODF) for a two‐dimensional diffusion process.
+    # We assume lam3 == 0, lam1>0, lam2>0
+    # Build the 2D inverse sub-tensor in that plane:
+    #    D_perp_inv = [evec1 evec2] diag(1/lam1, 1/lam2) [evec1 evec2]^T
+    mat_perp = jnp.column_stack([evec1, evec2])  # shape (3,2)
+    inv_vals = jnp.array([1.0 / lam1, 1.0 / lam2])  # (2,)
+    D_perp_inv = mat_perp @ jnp.diag(inv_vals) @ mat_perp.T  # shape (3,3)
 
-    In a 2D diffusion process, diffusion is confined to a plane. This can be modeled by a
-    degenerate diffusion tensor with two nonzero eigenvalues and one zero eigenvalue. The tensor
-    can be written as:
+    # --- 2. Define the ODF function restricted to the plane ---
+    # ignoring normalization constants for rejection sampling
+    def in_plane_odf(theta):
+        """
+        Return ODF(theta) ~ 1 / ( u^T D_perp_inv u )^(3/2 ),
+        where u(theta) = cos(theta)*evec1 + sin(theta)*evec2.
+        """
+        # direction in-plane
+        u = jnp.cos(theta) * evec1 + jnp.sin(theta) * evec2
+        quad = u @ D_perp_inv @ u
+        # We only need it up to a scale factor for acceptance
+        return 1.0 / (quad**1.5)
 
-    .. math::
+    # --- 3. Find a crude upper bound by sampling angles ---
+    angles_grid = jnp.linspace(0.0, 2 * jnp.pi, num=1000, endpoint=False)
+    odf_grid = jax.vmap(in_plane_odf)(angles_grid)
+    max_odf_est = jnp.max(odf_grid) * 1.2  # a small safety margin
 
-        D = R\,\mathrm{diag}(\lambda_1,\lambda_2, 0)\,R^T,
+    # --- 4. Naive rejection sampling in [0, 2*pi) ---
+    # We'll do a while_loop that tries up to `max_iter` times
 
-    where :math:`\lambda_1` and :math:`\lambda_2` are the in‐plane diffusivities, and `R` is a
-    3×3 rotation matrix. Its first two columns span the diffusion plane and its third column is the
-    normal vector :math:`\mathbf{n}` to that plane.
+    def cond_fun(state):
+        i, done, theta_accepted, key = state
+        return (i < max_iter) & (~done)
 
-    The 2D diffusion propagator (restricted to the plane) is given by
+    def body_fun(state):
+        i, done, theta_acc, key = state
+        key, subkey1, subkey2 = jax.random.split(key, 3)
 
-    .. math::
+        # Propose an angle uniformly in [0, 2*pi)
+        theta_prop = jax.random.uniform(subkey1, minval=0.0, maxval=2 * jnp.pi)
+        # Evaluate acceptance probability
+        accept_prob = in_plane_odf(theta_prop) / max_odf_est
+        # Accept if uniform(0,1) < accept_prob
+        accept = (jax.random.uniform(subkey2) < accept_prob) & (~done)
 
-        p(\mathbf{r}) = \frac{1}{(4\pi\tau)\sqrt{\lambda_1\lambda_2}}
-        \exp\!\left[-\frac{1}{4\tau}\,\mathbf{r}_{||}^T D_{2d}^{-1}\mathbf{r}_{||}\right]\,
-        \delta(r_\perp),
+        new_done = done | accept
+        new_theta = jnp.where(accept, theta_prop, theta_acc)
+        return (i + 1, new_done, new_theta, key)
 
-    where :math:`\mathbf{r}_{||}` is the displacement in the plane and
-    :math:`r_\perp` is the perpendicular component.
+    init_state = (0, False, 0.0, rng)
+    final_state = lax.while_loop(cond_fun, body_fun, init_state)
+    i_final, done_final, theta_final, _ = final_state
 
-    The ODF is defined as the radial integral in the plane:
-
-    .. math::
-
-        \text{ODF}(\mathbf{u}) = \int_0^\infty p(r\,\mathbf{u})\,r\,dr,
-
-    where the 2D measure is :math:`r\,dr` (instead of :math:`r^2dr` in 3D). For directions
-    :math:`\mathbf{u}` that lie in the plane, if we define
-
-    .. math::
-
-        Q(\mathbf{u}) = \mathbf{u}_{2d}^T\,\mathrm{diag}(1/\lambda_1, 1/\lambda_2)\,\mathbf{u}_{2d},
-
-    with :math:`\mathbf{u}_{2d}` the representation of :math:`\mathbf{u}` in the plane basis,
-    one obtains the integral
-
-    .. math::
-
-        \int_0^\infty \exp\!\left[-\frac{r^2}{4\tau}Q(\mathbf{u})\right]\,r\,dr
-        = \frac{2\tau}{Q(\mathbf{u})}.
-
-    Therefore, the ODF for directions in the plane is
-
-    .. math::
-
-        \text{ODF}(\mathbf{u}) = \frac{1}{2\pi\sqrt{\lambda_1\lambda_2}}\,
-        \frac{1}{Q(\mathbf{u})}.
-
-    For any direction :math:`\mathbf{u}` that is not in the diffusion plane (i.e. not orthogonal to
-    the normal :math:`\mathbf{n}`), the delta function forces the propagator (and thus the ODF) to be zero.
-
-    Parameters
-    ----------
-    dirs : ndarray, shape (N, 3)
-        Array of unit vectors (directions) at which to evaluate the ODF.
-    evals2d : array-like, shape (2,)
-        The two nonzero eigenvalues (in‐plane diffusivities) of the diffusion tensor.
-    evecs : ndarray, shape (3, 3)
-        A rotation matrix whose first two columns span the diffusion plane and whose third column
-        is the normal vector to the plane.
-    tau : float, optional
-        Diffusion time (default is 1.0).
-    tol : float, optional
-        Tolerance for determining whether a direction lies in the diffusion plane (default is 1e-6).
-
-    Returns
-    -------
-    odf : ndarray, shape (N,)
-        The ODF evaluated at each direction in `dirs`. For directions that lie in the diffusion plane,
-        the ODF is given by the derived formula. For directions outside the plane, the ODF is zero.
-    """
-    # Ensure inputs are arrays.
-    dirs = np.asarray(dirs)
-    evals2d = np.asarray(evals2d)
-    evecs = np.asarray(evecs)
-
-    # The plane basis: the first two columns of evecs span the plane.
-    B = evecs[:, :2]  # shape (3,2)
-    # The plane normal: the third column of evecs.
-    n = evecs[:, 2]
-
-    # For each direction, check if it lies in the plane (i.e., its dot product with n is near zero)
-    dot_with_normal = np.abs(np.dot(dirs, n))
-    odf = np.zeros(len(dirs))
-
-    # Indices of directions that are in the plane (within tolerance)
-    in_plane = dot_with_normal < tol
-
-    if np.any(in_plane):
-        # For directions in the plane, project them into the 2D basis.
-        dirs_in_plane = dirs[in_plane]  # shape (M, 3)
-        # Compute 2D coordinates in the plane basis:
-        coords = dirs_in_plane @ B  # shape (M, 2)
-        # The quadratic form is:
-        #   Q(u) = u_1^2/lambda1 + u_2^2/lambda2.
-        Q = (coords[:, 0] ** 2) / evals2d[0] + (coords[:, 1] ** 2) / evals2d[1]
-        # Then the ODF is given by:
-        odf[in_plane] = 1.0 / (2 * np.pi * np.sqrt(evals2d[0] * evals2d[1]) * Q)
-
-    # Directions not in the plane remain zero.
-    return odf
-
+    # --- 5. Return the result in Python space ---
+    if bool(done_final):
+        # Convert the accepted angle to a 3D unit vector in-plane
+        u = jnp.cos(theta_final) * evec1 + jnp.sin(theta_final) * evec2
+        # (Should already be unit in principle if evec1, evec2 are orthonormal.)
+        return u / jnp.linalg.norm(u)
+    else:
+        # If no acceptance, return None
+        return None
