@@ -47,13 +47,15 @@ def get_sh_order_from_odi(odi):
 
 @functools.lru_cache(None)
 def inverse_sh_matrix(sh_order, sphere=None, full_basis=False):
+    r"""Returns the inverse of the spherical harmonics basis matrix."""
+
     sphere = hemisphere_default if sphere is None else sphere
     full_basis = not isinstance(sphere, HemiSphere)
 
     real_sh_basis, _, _ = real_sh(
         sh_order, sphere.theta, sphere.phi, full_basis=full_basis
     )
-    inverse_real_sh = jnp.linalg.pinv(real_sh_basis)
+    inverse_real_sh = np.linalg.pinv(real_sh_basis)
     return inverse_real_sh
 
 
@@ -81,18 +83,23 @@ class SphericalDistribution(Compartment):
         watson_sh : array,
             spherical harmonics of Watson probability density.
         """
-        if sh_order is None:
-            sh_order = get_sh_order_from_odi(self.odi)
+        with jax.ensure_compile_time_eval():
+            if sh_order is None:
+                sh_order = get_sh_order_from_odi(self.odi)
 
-        if sphere is not None:
-            hemisphere = HemiSphere.from_sphere(sphere)
-        else:
-            hemisphere = hemisphere_default
+            if sphere is not None:
+                hemisphere = HemiSphere.from_sphere(sphere)
+            else:
+                hemisphere = hemisphere_default
 
-        pdf_sf = self.pdf(hemisphere.vertices)
-        sh_mat_inv = inverse_sh_matrix(
-            sh_order, sphere=hemisphere, full_basis=full_basis
-        )
+            sh_mat_inv = inverse_sh_matrix(
+                sh_order, sphere=hemisphere, full_basis=full_basis
+            )
+
+        vertices = jnp.array(hemisphere.vertices)
+        sh_mat_inv = jnp.array(sh_mat_inv)
+        pdf_sf = self.pdf(vertices)
+
         sh_coef = jnp.dot(sh_mat_inv, pdf_sf)
         return sh_coef
 
