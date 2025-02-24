@@ -92,8 +92,9 @@ def random_clinical_acquisition(rng, num_acquisitions=35) -> acquisition_scheme:
     # Choose one of the above randomly
     bvals = jax.random.choice(
         rng3,
-        jnp.concatenate(jnp.stack[bvals_typical, bvals_rand_int, bvals_float]),
+        jnp.stack([bvals_typical, bvals_rand_int, bvals_float])
     )
+    bvals = jnp.sort(bvals)
     # Create a mask for b0 images
     mask = jax.random.choice(
         rng4, jnp.array([0, 1]), shape=(num_acquisitions,), p=jnp.array([0.1, 0.9])
@@ -108,7 +109,7 @@ def random_clinical_acquisition(rng, num_acquisitions=35) -> acquisition_scheme:
 
 
 def random_hardi_acquisition(rng, num_acquisitions=200):
-    rng1, rng2, rng3, rng4, rng5, rng6 = jax.random.split(rng, 5)
+    rng1, rng2, rng3, rng4, rng5, rng6 = jax.random.split(rng, 6)
     bvals_typical = jax.random.choice(rng1, jnp.array([1000.0, 2000.0, 3000.0]))
     bvals_typical = jnp.array([bvals_typical] * num_acquisitions)
     bvals_rand_int = jax.random.choice(
@@ -118,8 +119,9 @@ def random_hardi_acquisition(rng, num_acquisitions=200):
 
     bvals = jax.random.choice(
         rng4,
-        jnp.concatenate(jnp.stack[bvals_typical, bvals_rand_int, bvals_float]),
+        jnp.stack([bvals_typical, bvals_rand_int, bvals_float]),
     )
+    bvals = jnp.sort(bvals)
 
     # Create a mask for b0 images
     mask = jax.random.choice(
@@ -135,7 +137,7 @@ def random_hardi_acquisition(rng, num_acquisitions=200):
 
 
 def random_advanced_reasearch_acquisition_scheme(rng, num_acquisitions=500):
-    rng1, rng2, rng3, rng4, rng5, rng6 = jax.random.split(rng, 5)
+    rng1, rng2, rng3, rng4, rng5, rng6 = jax.random.split(rng, 6)
     bvals_typical = jax.random.choice(rng1, jnp.array([1000.0, 2000.0, 3000.0]))
     bvals_typical = jnp.array([bvals_typical] * num_acquisitions)
     bvals_rand_int = jax.random.choice(
@@ -145,8 +147,10 @@ def random_advanced_reasearch_acquisition_scheme(rng, num_acquisitions=500):
 
     bvals = jax.random.choice(
         rng4,
-        jnp.concatenate(jnp.stack[bvals_typical, bvals_rand_int, bvals_float]),
+        jnp.stack([bvals_typical, bvals_rand_int, bvals_float]),
     )
+
+    bvals = jnp.sort(bvals)
 
     # Create a mask for b0 images
     mask = jax.random.choice(
