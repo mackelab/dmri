@@ -154,8 +154,24 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         # Get theta predictions
         if t is None:
             t = jnp.ones((theta.shape[0], 1)) * 0.0001
+        # Mask out non-selected models
+        # The first token is doing model fractions
+        _model_mask_extended = jnp.concatenate(
+            [jnp.ones((model_mask.shape[0], 1), dtype=bool), model_mask], axis=-1
+        )
+        attention_mask = (
+            _model_mask_extended[..., None, :] & _model_mask_extended[..., :, None]
+        )
+        attention_mask = attention_mask | jnp.eye(
+            _model_mask_extended.shape[-1], dtype=bool
+        )
         theta_pred = self.inference_decoder(
-            t, theta, self.tokenizer, y=y, tokens_cfg=tokens_cfg
+            t,
+            theta,
+            self.tokenizer,
+            y=y,
+            tokens_cfg=tokens_cfg,
+            attention_mask=attention_mask,
         )
 
         return model_mask_logits, theta_pred
@@ -196,8 +212,25 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
             tokens_cfg=tokens_cfg,
             context=mask_prior,
         )
+
+        _model_mask_extended = jnp.concatenate(
+            [jnp.ones((model_mask.shape[0], 1), dtype=bool), model_mask], axis=-1
+        )
+        attention_mask = (
+            _model_mask_extended[..., None, :] & _model_mask_extended[..., :, None]
+        )
+        attention_mask = attention_mask | jnp.eye(
+            _model_mask_extended.shape[-1], dtype=bool
+        )
+
         theta_loss = self.inference_decoder.loss(
-            None, rng, theta, self.tokenizer, y=y, tokens_cfg=tokens_cfg
+            None,
+            rng,
+            theta,
+            self.tokenizer,
+            y=y,
+            tokens_cfg=tokens_cfg,
+            attention_mask=attention_mask,
         )
         theta_loss /= jnp.sqrt(theta.shape[-1])
 
@@ -231,14 +264,11 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         y = self.encoder(bvals, bvecs, signals)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
 
-        # model_mask_repeated = jnp.tile(model_mask, (1, 64 // model_mask.shape[-1] + 1))[
-        #     :, :64
-        # ]
-        # _model_mask_extended = jnp.concatenate([jnp.array([True]), model_mask])
-        # attention_mask = _model_mask_extended[None, :] & _model_mask_extended[:, None]
-        # attention_mask = attention_mask | jnp.eye(
-        #     _model_mask_extended.shape[-1], dtype=bool
-        # )
+        _model_mask_extended = jnp.concatenate([jnp.array([True]), model_mask])
+        attention_mask = _model_mask_extended[None, :] & _model_mask_extended[:, None]
+        attention_mask = attention_mask | jnp.eye(
+            _model_mask_extended.shape[-1], dtype=bool
+        )
 
         # diffusion sampling
         theta = self.inference_decoder.sample(
@@ -247,10 +277,9 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
             tokenizer=self.tokenizer,
             dim=self.cfg.simulator.theta_dim,
             tokens_cfg=tokens_cfg,
-            # context=model_mask_repeated,
             num_steps=num_steps,
             max_noise=max_noise,
-            # attention_mask=attention_mask,
+            attention_mask=attention_mask,
         )
 
         return theta
