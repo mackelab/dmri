@@ -5,6 +5,9 @@ import jax.numpy as jnp
 #from jax.scipy.stats import ks_2samp
 
 
+
+
+
 def run_tarp(
     thetas_true: jnp.ndarray,
     posterior_samples: jnp.ndarray,
@@ -22,7 +25,6 @@ def run_tarp(
         references = get_tarp_references(thetas_true)
 
     return _run_tarp(posterior_samples, thetas_true, references, distance, num_bins, z_score_theta)
-
 
 def _run_tarp(
     posterior_samples: jnp.ndarray,
@@ -49,7 +51,7 @@ def _run_tarp(
 
     sample_dists = distance(references-posterior_samples, axis=-1)
     theta_dists = distance(references-thetas, axis=-1)
-    print(sample_dists.shape, theta_dists.shape)
+
     coverage_values = jnp.sum(sample_dists < theta_dists, axis=0) / num_posterior_samples
     hist, alpha_grid = jnp.histogram(coverage_values, bins=num_bins, density=True)
     ecp = jnp.cumsum(hist) / jnp.sum(hist)
