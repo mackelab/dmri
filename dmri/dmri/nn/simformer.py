@@ -140,20 +140,7 @@ class EDMSimformer(EDM):
 
 
         x = state.y0
-
-        # Singel euler step to get the final sample
-        # f = self.drift(ts[-1], x)
-        # g = self.diffusion(ts[-1], x)
-        # score = self.score(
-        #     ts[-1],
-        #     x,
-        #     tokenizer=tokenizer,
-        #     tokens_cfg=tokens_cfg,
-        #     y=y,
-        #     context=context,
-        #     attention_mask=attention_mask,
-        # )
-        # # dt is 0 - ts[0] to get the final sample
-        # x += -(f - 0.5 * g**2 * score) * ts[0]
+        # dt is 0 - ts[0] to get the final sample
+        x += -drift(ts[-1], x) * ts[-1]
 
         return x
