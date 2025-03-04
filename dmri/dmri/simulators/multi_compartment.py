@@ -100,22 +100,21 @@ class MultiCompartment(SignalCompartment):
         signal = jnp.sum(signals * fractions, axis=0)
 
         # Add noise
-        if len(noise_compartments) > 0:
-            assert rng is not None, "rng key  must be provided for noise"
-            rngs = jax.random.split(rng, len(noise_compartments))
-            for i, (noise, rng) in enumerate(zip(noise_compartments, rngs)):
-                if model_mask is not None:
-                    idx = len(model_compartments) + i
-                    mask = model_mask[idx]
-                    signal = jax.lax.cond(
-                        mask,
-                        lambda x, rng: noise.noise(x, rng),
-                        lambda x, rng: x,
-                        signal,
-                        rng,
-                    )
-                else:
-                    signal = noise.noise(signal, rng)
+        if rng is not None and len(noise_compartments) > 0:
+            if model_mask is None:
+                # Select first noise compartment
+                idx = len(model_compartments)
+                noise_model = noise_compartments[idx]
+                signal = noise_model.noise(signal, rng)
+            else:
+                # Make mask shape match noise compartments
+                idx = len(model_compartments)
+                noise_mask = model_mask[idx:]
+                # Apply noise sequentially with where to avoid conditionals
+                for i in range(len(noise_compartments)):
+                    noised_signal = noise_compartments[i].noise(signal, rng)
+                    signal = jnp.where(noise_mask[i], noised_signal, signal)
+
         return signal
 
     @classmethod
@@ -201,6 +200,35 @@ class MultiCompartment(SignalCompartment):
         fractions = self.model_fractions
         return MixtureOfFODs(fractions, fods)
 
+    def log_likelihood(self, aquisition_scheme, signal_observed):
+        # Compute the signal for each compartment
+        signals = jnp.stack(
+            [m.signal(aquisition_scheme) for m in self.model_compartments], axis=0
+        )
+        fractions = self.model_fractions[:, None]
+        # Combine signals with sum
+        signal = jnp.sum(signals * fractions, axis=0)
+
+        # Compute the noise likelihood
+
+        if len(self.noise_compartments) > 0:
+            if self.model_mask is None:
+                # Select first noise compartment
+                idx = len(self.model_compartments)
+                noise_model = self.noise_compartments[idx]
+                log_likelihood = noise_model.log_likelihood(signal, signal_observed)
+            else:
+                # Make mask shape match noise compartments
+                idx = len(self.model_compartments)
+                noise_mask = self.model_mask[idx:]
+                # Apply noise sequentially with where to avoid conditionals
+                log_likelihood = 0.0
+                for i in range(len(self.noise_compartments)):
+                    ll = self.noise_compartments[i].log_likelihood(
+                        signal, signal_observed
+                    )
+                    log_likelihood += jnp.where(noise_mask[i], ll, 0.0)
+        return log_likelihood
 
 
 class BallStick(MultiCompartment):

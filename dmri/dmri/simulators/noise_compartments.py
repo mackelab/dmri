@@ -18,11 +18,13 @@ class RicianNoise(NoiseCompartment):
     def noise(self, signal, rng):
         return add_rician_noise(rng, signal, self.sigma_g)
 
-    def likelihood(cls, signal):
-        unnormed = signal * jnp.exp(-(signal**2) / (2 * cls.sigma_g**2))
-        normalize = jax.scipy.special.i0(signal / cls.sigma_g)
-        return unnormed / normalize
-
+    def log_likelihood(cls, signal_pred, signal_true):
+        log_likelihood = jnp.log(signal_true) - 2 * jnp.log(cls.sigma_g)
+        log_likelihood -= 0.5 * (signal_true**2 + signal_pred**2) / cls.sigma_g**2
+        x = signal_true * signal_pred / cls.sigma_g**2
+        log_i0_value = x + jnp.log(jax.scipy.special.i0e(x))
+        log_likelihood += log_i0_value
+        return log_likelihood.sum(-1)
     @classmethod
     def to_theta(cls, *args) -> ArrayLike:
         """Transforms the natural parameters to the optimization parameters which are
@@ -46,8 +48,11 @@ class GaussianNoise(NoiseCompartment):
     def noise(self, signal, rng):
         return add_gaussian_noise(rng, signal, self.sigma_g)
 
-    def likelihood(cls, signal):
-        return jax.scipy.stats.norm.pdf(signal, scale=cls.sigma_g)
+    def log_likelihood(cls, signal_pred, signal_true):
+        log_likelihood = jax.scipy.stats.norm.logpdf(
+            signal_true, loc=signal_pred, scale=cls.sigma_g
+        )
+        return log_likelihood.sum(-1)
 
     @classmethod
     def to_theta(cls, *args) -> ArrayLike:
@@ -62,7 +67,7 @@ class GaussianNoise(NoiseCompartment):
         return (jnp.exp(theta),)
 
 
-class BoundedRicianNoise(NoiseCompartment):
+class BoundedRicianNoise(RicianNoise):
     theta_dim = 1
     min_sigma_g = 0.
     max_sigma_g = 0.5
@@ -89,7 +94,7 @@ class BoundedRicianNoise(NoiseCompartment):
         """Transforms the optimization parameters to the natural parameters."""
         return jax.nn.sigmoid(theta) * (cls.max_sigma_g - cls.min_sigma_g) + cls.min_sigma_g,
 
-class BoundedGaussianNoise(NoiseCompartment):
+class BoundedGaussianNoise(GaussianNoise):
     theta_dim = 1
     min_sigma_g = 0.
     max_sigma_g = 0.5

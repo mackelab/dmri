@@ -95,5 +95,5 @@ class NoiseCompartment(Compartment):
         """Simulates the noise for the compartment."""
         pass
 
-    def likelihood(self, signal):
+    def log_likelihood(self, signal_pred, signal_obs) -> ArrayLike:
         pass
