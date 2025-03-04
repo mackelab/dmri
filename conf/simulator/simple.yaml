@@ -1,6 +1,6 @@
 
 prior_mask_alpha: 1.
 prior_mask_beta: 1.
-default:
-  sim_type: BallStickZeppelin
-  acquisition_scheme: hardi
+defaults:
+  - sim_type: ballstickzeppelin
+  - acquisition_scheme: hardi

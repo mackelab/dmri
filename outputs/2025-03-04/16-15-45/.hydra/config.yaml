@@ -1,0 +1,14 @@
+simulator:
+  prior_mask_alpha: 1.0
+  prior_mask_beta: 1.0
+  default:
+    sim_type: BallStickZeppelin
+    acquisition_scheme: hardi
+model:
+  init_seed: 0
+name: dmri
+seed: 0
+use_wandb: false
+wandb:
+  project: dmri
+  entity: ${name}

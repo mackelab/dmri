@@ -25,10 +25,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
-sphere_default = get_sphere("symmetric724")
+sphere_default = get_sphere(name="symmetric724")
 hemisphere_default = HemiSphere(phi=sphere_default.phi, theta=sphere_default.theta)
 
-big_sphere = get_sphere("repulsion724")
+big_sphere = get_sphere(name="repulsion724")
 bigger_hemisphere = HemiSphere(phi=big_sphere.phi, theta=big_sphere.theta)
 
 
