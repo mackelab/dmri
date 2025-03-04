@@ -1,0 +1,3 @@
+name: clinical
+params:
+  num_trials: 35
