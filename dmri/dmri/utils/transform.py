@@ -1,12 +1,12 @@
+from functools import partial
 from probjax.utils.stats import betainc, betaincinv
 
 import jax
 import jax.numpy as jnp
 from jax import lax
 
-
 @jax.jit
-def normal_to_dirichlet(alpha, eps, mask=None):
+def _normal_to_dirichlet(alpha, eps, mask=None):
     assert len(eps) == len(alpha) - 1, "eps should be of size len(alpha) - 1"
     u = jax.scipy.stats.norm.cdf(eps)
 
@@ -43,9 +43,10 @@ def normal_to_dirichlet(alpha, eps, mask=None):
     if mask is not None:
         last_entry = -jnp.argmax(mask[::-1]) - 1
         # jax.debug.print("{last_entry}", last_entry=last_entry)
-        pis = pis.at[-1].set(0.0)
+        zero = jnp.array(0.0)
+        pis = pis.at[-1].set(zero)
         pis = pis.at[last_entry].set(pi_K)
-        pis = jnp.where(~mask, 0.0, pis)
+        pis = jnp.where(~mask, zero, pis)
         # jax.debug.print("{pis}", pis=pis)
         pis /= jnp.sum(pis)
         pis = jnp.nan_to_num(pis)
@@ -65,8 +66,9 @@ def dirichlet_to_normal(alpha, pi, mask=None):
         eps   (array): Shape (K - 1,), the Normal samples that would map
                        back to `pi` under `normal_to_dirichlet(alpha, eps)`.
     """
+    zero = jnp.array(0.0)
     if mask is not None:
-        alpha = jnp.where(mask, alpha, 0.0)
+        alpha = jnp.where(mask, alpha, zero)
 
     def scan_fn(carry, i):
         pi_sum = carry
@@ -84,3 +86,44 @@ def dirichlet_to_normal(alpha, pi, mask=None):
     eps = jnp.nan_to_num(eps)
 
     return eps
+
+# Forward function (returns output and residuals for backward pass)
+@jax.custom_vjp
+def normal_to_dirichlet(alpha, eps, mask=None):
+    """Forward function that we want a custom backward (VJP) for."""
+    return _normal_to_dirichlet(alpha, eps, mask)
+
+
+# Forward pass for custom VJP. Return (output, residuals_for_bwd).
+def normal_to_dirichlet_fwd(alpha, eps, mask):
+    out = _normal_to_dirichlet(alpha, eps, mask)
+    # We save (alpha, eps, mask, out) so we can use them in backward pass.
+    return out, (alpha, eps, mask, out)
+
+
+# Backward pass. Given residuals and the gradient w.r.t. output (g),
+# return the gradient w.r.t. each input: (grad_alpha, grad_eps, grad_mask).
+def normal_to_dirichlet_bwd(res, g):
+    alpha, eps, mask, out = res
+
+    # Suppose we define an "inverse" function that recovers normal coords
+    # from the final dirichlet coords:
+    def f_inv(dirichlet_out):
+        return dirichlet_to_normal(alpha, dirichlet_out, mask=mask)
+
+    # J is the Jacobian of f_inv at "out"
+    J = jax.jacfwd(f_inv)(out)
+    J_inv = jnp.linalg.pinv(J)
+    print(J_inv.shape, g.shape)
+
+    # For demonstration, we treat everything as if we only care about eps.
+    # So, example chain rule: grad w.r.t. eps = J_inv * g
+    grad_eps = jnp.dot(g, J_inv)
+
+    # Return (grad_alpha, grad_eps, grad_mask)
+    # If alpha/mask are not trainable or not used, return None for them:
+    return (None, grad_eps, None)
+
+
+# Register the forward/backward with JAX
+normal_to_dirichlet.defvjp(normal_to_dirichlet_fwd, normal_to_dirichlet_bwd)

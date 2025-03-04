@@ -5,6 +5,7 @@ import jax.numpy as jnp
 import jax
 from jax.typing import ArrayLike
 from dmri.utils.dmriutils import (
+    cartesian_to_unitsphere,
     rotation_matrix_100_to_theta_phi_psi,
     unitsphere_to_cartesian,
 )
@@ -103,33 +104,47 @@ class SphericalDistribution(Compartment):
         sh_coef = jnp.dot(sh_mat_inv, pdf_sf)
         return sh_coef
 
-    def viz(self, sphere=None, n_samples=1000):
+    def viz(self, plot_type="polar", sphere=None, n_samples=1000, ax=None, color=None):
         r"""Visualize the spherical distribution model on the sphere."""
-        sphere = sphere_default if sphere is None else sphere
-        fig = plt.figure()
-        ax = fig.add_subplot(projection="3d")
-        pdfs = self.pdf(sphere.vertices)
-        samples = self.sample(jax.random.key(0), (n_samples,))
-        # plot sphere vertices colored by their pdf
-        sc = ax.scatter(
-            sphere.vertices[:, 0],
-            sphere.vertices[:, 1],
-            sphere.vertices[:, 2],
-            c=pdfs,
-            cmap="viridis",
-        )
-        # overlay sample points in red
-        ax.scatter(
-            samples[:, 0],
-            samples[:, 1],
-            samples[:, 2],
-            color="red",
-            s=10,
-            alpha=0.1,
-            label="Samples",
-        )
-        plt.colorbar(sc, label="PDF value")
-        ax.set_title("Spherical Distribution PDF")
+        if plot_type == "polar":
+            samples = self.sample(jax.random.key(0), (n_samples,))
+            pdf = self.pdf(samples)
+            mu = jax.vmap(cartesian_to_unitsphere)(samples)
+            if ax is None:
+                fig = plt.figure()
+                ax = plt.gca()
+            cmap = plt.get_cmap("viridis") if color is None else plt.get_cmap(color)
+            ax.scatter(mu[:, 0], mu[:, 1], c = pdf, cmap=cmap,alpha=0.1)
+            ax.set_ylabel("Polar angle (phi)")
+            ax.set_xlabel("Inclination (theta)")
+            ax.set_ylim(-np.pi, np.pi)
+            ax.set_xlim(0, np.pi)
+        elif plot_type == "cartesian":
+            sphere = sphere_default if sphere is None else sphere
+            fig = plt.figure()
+            ax = fig.add_subplot(projection="3d")
+            pdfs = self.pdf(sphere.vertices)
+            samples = self.sample(jax.random.key(0), (n_samples,))
+            # plot sphere vertices colored by their pdf
+            sc = ax.scatter(
+                sphere.vertices[:, 0],
+                sphere.vertices[:, 1],
+                sphere.vertices[:, 2],
+                c=pdfs,
+                cmap="viridis",
+            )
+            # overlay sample points in red
+            ax.scatter(
+                samples[:, 0],
+                samples[:, 1],
+                samples[:, 2],
+                color="red",
+                s=10,
+                alpha=0.1,
+                label="Samples",
+            )
+            plt.colorbar(sc, label="PDF value")
+            ax.set_title("Spherical Distribution PDF")
 
     def to_pmf(self, sphere=None, n_samples=1_000):
         sphere = sphere_default if sphere is None else sphere

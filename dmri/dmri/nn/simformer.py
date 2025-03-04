@@ -102,15 +102,14 @@ class EDMSimformer(EDM):
         dim,
         tokens_cfg=None,
         context=None,
+        attention_mask=None,
         max_noise=None,
         num_steps=16,
-        attention_mask=None,
     ):
         if max_noise is not None:
             self.max_noise = max_noise
         eps = jax.random.normal(rng, dim) * self.marginal_std(self.max_noise)
         ts = self.solve_schedule(num_steps)
-
 
         def drift(t, x):
             t = jnp.atleast_1d(t)
@@ -127,8 +126,6 @@ class EDMSimformer(EDM):
             )
             return (f - 0.5 * g**2 * score).reshape(x.shape)
 
-        # Solve the ODE
-
         state, _ = odeint(
             drift,
             eps,
@@ -138,9 +135,66 @@ class EDMSimformer(EDM):
             return_state=True,
         )
 
-
         x = state.y0
-        # dt is 0 - ts[0] to get the final sample
         x += -drift(ts[-1], x) * ts[-1]
-
         return x
+
+    def log_prob(
+        self,
+        x,
+        tokenizer,
+        y,
+        tokens_cfg=None,
+        context=None,
+        attention_mask=None,
+        max_noise=None,
+        num_steps=16,
+    ):
+        if max_noise is not None:
+            self.max_noise = max_noise
+        ts = self.solve_schedule(num_steps)[::-1]
+
+        def dx_dt_fn(t, z):
+            f_ = self.drift(t, z)
+            g_ = self.diffusion(t, z)
+            s_ = self.score(
+                t,
+                z,
+                tokenizer=tokenizer,
+                tokens_cfg=tokens_cfg,
+                y=y,
+                context=context,
+                attention_mask=attention_mask,
+            )
+            return f_ - 0.5 * g_**2 * s_
+
+        # Euler step forward from t=0 (including logp)
+        # dx0 = dx_dt_fn(0.0, x)
+        # div0 = jnp.trace(jax.jacfwd(lambda z: dx_dt_fn(0.0, z))(x))
+        # x = x + dx0 * ts[0]
+        # logp0 = -div0 * ts[0]
+        x = x
+        logp0 = 0.0
+
+        def drift(t, state):
+            data, logp = state
+            dx_dt = dx_dt_fn(t, data)
+            div = jnp.trace(jax.jacfwd(lambda z: dx_dt_fn(t, z))(data))
+            return (dx_dt, div)
+
+        state, _ = odeint(
+            drift,
+            (x, logp0),
+            ts,
+            method="heun",
+            filter_state=lambda *args: None,
+            return_state=True,
+        )
+        x_final = state.y0
+        x_final, logp_final = x_final[:-1], x_final[-1]
+
+        sigma = self.marginal_std(self.max_noise)
+        base_logp = -0.5 * jnp.sum(x_final**2) / sigma**2
+        base_logp += -0.5 * x_final.shape[-1] * jnp.log(2 * np.pi * sigma**2)
+        final = logp_final + base_logp
+        return jnp.squeeze(final)

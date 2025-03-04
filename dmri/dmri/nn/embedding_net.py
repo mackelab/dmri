@@ -58,6 +58,9 @@ class BvalBvecSignalEmbeddingNet(nnx.Module, experimental_pytree=True):
         signals: ArrayLike,  # B, T
     ):
         # Very naive
+        # TODO: Change this to a more sophisticated embedding
+        # - log transform signals to make it sensitive to small signals
+        # - more random fourier features
         bvals = self.embed_bvals(bvals[..., None])
         signals = self.embed_signals(signals[..., None])
         data = jnp.concatenate([bvals, bvecs, signals], axis=-1)
