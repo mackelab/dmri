@@ -19,7 +19,15 @@ import wandb
 
 
 logo = """
-logo
+
+ /$$$$$$$  /$$      /$$ /$$$$$$$  /$$$$$$
+| $$__  $$| $$$    /$$$| $$__  $$|_  $$_/
+| $$  \ $$| $$$$  /$$$$| $$  \ $$  | $$
+| $$  | $$| $$ $$/$$ $$| $$$$$$$/  | $$
+| $$  | $$| $$  $$$| $$| $$__  $$  | $$
+| $$  | $$| $$\  $ | $$| $$  \ $$  | $$
+| $$$$$$$/| $$ \/  | $$| $$  | $$ /$$$$$$
+|_______/ |__/     |__/|__/  |__/|______/
 """
 
 
@@ -62,8 +70,6 @@ def _main(cfg: DictConfig):
 
     model, params = build_model(cfg, sim_type)
 
-    log.info("Building model")
-    log.info(model)
 
     # Train model
     log.info("Training")
@@ -96,7 +102,7 @@ def _main(cfg: DictConfig):
 
     batch_simulator = jax.jit(jax.vmap(simulator))
 
-    key = jax.random.PRNGKey(42)
+    key = rng_key
     for i in range(10):
         key, subkey1 = jax.random.split(key, 2)
         p_mask, masks, thetas, x_os, acq = batch_simulator(

@@ -1,1 +1,6 @@
 init_seed: 0
+
+defaults:
+  - embedding_net: bvalbvec
+  - inference_net: simformer
+  - model_selection_net: autoregressive

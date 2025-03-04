@@ -1,0 +1,6 @@
+name: dmri
+seed: 0
+use_wandb: false
+wandb:
+  project: dmri
+  entity: ${name}

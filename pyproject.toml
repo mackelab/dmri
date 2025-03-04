@@ -5,6 +5,11 @@ description = "A project for selecting models for diffusion MRI."
 authors = ["Your Name <your.email@example.com>"]
 license = "MIT"
 
+[tool.poetry.dependencies]
+hydra-core = "^1.3"
+hydra-submitit-launcher = "*"
+hydra-optuna-sweeper = "*"
+wandb = "*"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

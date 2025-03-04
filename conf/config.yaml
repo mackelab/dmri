@@ -1,6 +1,23 @@
-
+name: dmri
+seed: 0
 use_wandb: false
+
+
+# Output directory for results
+hydra:
+  run:
+    dir: results/${name}/${now:%Y-%m-%d_%H-%M-%S}
+  sweep:
+    dir: results/${name}/${now:%Y-%m-%d_%H-%M-%S}
+    subdir: ${hydra.job.num}  # Cap the directory name to 50 characters
 
 wandb:
   project: dmri
-  entity: dmri
+  entity: ${name}
+
+defaults:
+  - _self_
+  - simulator: simple
+  - model: mask_amortized
+  - launcher: slurm
+  - partition: none

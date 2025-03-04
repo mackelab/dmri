@@ -1,0 +1,16 @@
+name: dmri
+seed: 0
+use_wandb: false
+wandb:
+  project: dmri
+  entity: ${name}
+simulator:
+  sim_type:
+    name: BallStickZeppelinNoise
+  acquisition_scheme:
+    name: hardi
+  prior_mask_alpha: 1.0
+  prior_mask_beta: 1.0
+model:
+  init_seed: 0
+partition: {}
