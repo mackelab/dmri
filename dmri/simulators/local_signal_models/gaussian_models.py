@@ -13,7 +13,7 @@ from dmri.utils.dmriutils import (
 )
 from dmri.simulators.sphereical_distributions import (
     Uniform,
-    Dirac,
+    SymmetricDirac,
     Tensor2dFOD,
     TensorFOD,
 )
@@ -153,7 +153,7 @@ class Stick(SignalCompartment):
 
     def to_fod(self):
         mu_cart = unitsphere_to_cartesian(self.mu)
-        return Dirac(mu_cart)
+        return SymmetricDirac(mu_cart)
 
     def fit(self, logS: ArrayLike, aquisition_scheme: acquisition_scheme) -> tuple:
         """Fit the Stick model to the log signal, b-values, and b-vectors."""

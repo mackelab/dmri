@@ -104,21 +104,47 @@ class SphericalDistribution(Compartment):
         sh_coef = jnp.dot(sh_mat_inv, pdf_sf)
         return sh_coef
 
-    def viz(self, plot_type="polar", sphere=None, n_samples=1000, ax=None, color=None):
+    def viz(
+        self,
+        plot_type="polar",
+        sphere=None,
+        n_samples=1000,
+        ax=None,
+        color=None,
+        levels=3,
+    ):
         r"""Visualize the spherical distribution model on the sphere."""
         if plot_type == "polar":
             samples = self.sample(jax.random.key(0), (n_samples,))
+            grid_y = np.linspace(0, np.pi, 100)
+            grid_x = np.linspace(-np.pi, np.pi, 200)
+            grid_x, grid_y = np.meshgrid(grid_x, grid_y)
+            samples_rand = np.stack([grid_y.flatten(), grid_x.flatten()], axis=-1)
+            samples_cart = jax.vmap(unitsphere_to_cartesian)(samples_rand)
+            samples = jnp.concatenate([samples, samples_cart], axis=0)
             pdf = self.pdf(samples)
             mu = jax.vmap(cartesian_to_unitsphere)(samples)
+            pdf = pdf / jnp.max(pdf)
+            # Add some jitter to avoid overlapping points
+
             if ax is None:
                 fig = plt.figure()
                 ax = plt.gca()
-            cmap = plt.get_cmap("viridis") if color is None else plt.get_cmap(color)
-            ax.scatter(mu[:, 0], mu[:, 1], c = pdf, cmap=cmap,alpha=0.1)
-            ax.set_ylabel("Polar angle (phi)")
-            ax.set_xlabel("Inclination (theta)")
-            ax.set_ylim(-np.pi, np.pi)
-            ax.set_xlim(0, np.pi)
+
+            cmap = "viridis" if color is None else color
+            ax.tricontour(
+                mu[:, 1],
+                mu[:, 0],
+                pdf,
+                cmap=cmap,
+                levels=levels,
+            )
+            ax.set_ylim(0, np.pi)
+            ax.set_xlim(-np.pi, np.pi)
+            ax.set_aspect("equal")
+            ax.set_title("Spherical Distribution PDF")
+            ax.set_xlabel("Azimuthal Angle (phi)")
+            ax.set_ylabel("Polar Angle (theta)")
         elif plot_type == "cartesian":
             sphere = sphere_default if sphere is None else sphere
             fig = plt.figure()
@@ -185,8 +211,8 @@ class Uniform(SphericalDistribution):
         return ()
 
 
-class Dirac(SphericalDistribution):
-    theta_dim = 2
+class SymmetricDirac(SphericalDistribution):
+    theta_dim = 3
 
     def __init__(self, mu):
         self.mu = mu
@@ -195,7 +221,9 @@ class Dirac(SphericalDistribution):
         return jnp.where(jnp.all(n == self.mu, axis=-1), 1.0, 0.0)
 
     def sample(self, key, shape):
-        return jnp.tile(self.mu, (shape[0], 1))
+        # Point symmetric on origin
+        sign = jax.random.choice(key, jnp.array([-1.0, 1.0]), shape=shape + (1,))
+        return sign * self.mu
 
     @classmethod
     def to_theta(cls, mu, odi) -> ArrayLike:
