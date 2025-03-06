@@ -7,6 +7,7 @@ import time
 
 from dmri.train.build_simulator import build_simulator
 from dmri.train.build_model import build_model
+from dmri.train.data_loading import StreamDataLoader
 import hydra
 import numpy as np
 import jax
@@ -74,22 +75,22 @@ def _main(cfg: DictConfig):
     # Train model
     log.info("Training")
 
-    scheduler = optax.cosine_onecycle_schedule(100 * 500, 5e-4)
+    scheduler = optax.cosine_onecycle_schedule(100 * 500, 5e-4, final_div_factor=5)
     optimizer = optax.chain(
         optax.adaptive_grad_clip(50.0), optax.ema(0.01), optax.adamw(scheduler)
     )
     opt_state = optimizer.init(params)
 
     def loss_fn(params, data, rng):
-        p_mask, model_mask, thetas, xs, bvals, bvecs = data
+        p_mask, model_mask, thetas, xs, acq = data
         return model.loss_fn(
             params,
             rng,
             model_mask=model_mask,
             theta=thetas,
             x=xs,
-            bvals=bvals,
-            bvecs=bvecs,
+            bvals=acq.bvals,
+            bvecs=acq.bvecs,
             mask_prior=p_mask,
         ).sum()
 
@@ -100,45 +101,17 @@ def _main(cfg: DictConfig):
         new_params = optax.apply_updates(params, updates)
         return new_params, opt_state, loss
 
-    batch_simulator = jax.jit(jax.vmap(simulator))
+    loader = StreamDataLoader(
+        simulator,
+        batch_size=64,
+        max_queue_size=10_000,
+        num_producers=4,
+    )
 
     key = rng_key
-    for i in range(10):
-        key, subkey1 = jax.random.split(key, 2)
-        p_mask, masks, thetas, x_os, acq = batch_simulator(
-            jax.random.split(subkey1, 2**16)
-        )
-        l = 0
-        for j in range(500):
-            key, subkey2 = jax.random.split(key, 2)
-            idx = jax.random.randint(subkey2, (128,), 0, 2**16)
-            (
-                p_mask_batch,
-                masks_batch,
-                thetas_batch,
-                x_os_batch,
-                bvals_batch,
-                bvecs_batch,
-            ) = (
-                p_mask[idx],
-                masks[idx],
-                thetas[idx],
-                x_os[idx],
-                acq.bvals[idx],
-                acq.bvecs[idx],
-            )
-            params, opt_state, loss = update(
-                params,
-                opt_state,
-                (
-                    p_mask_batch,
-                    masks_batch,
-                    thetas_batch,
-                    x_os_batch,
-                    bvals_batch,
-                    bvecs_batch,
-                ),
-                subkey2,
-            )
-            l += loss
-        print(l / 500)
+    for data in loader:
+        key, subkey = jax.random.split(key)
+        params, opt_state, loss = update(params, opt_state, data, subkey)
+        log.info(f"Loss: {loss}")
+        if cfg.use_wandb:
+            wandb.log({"loss": loss})
