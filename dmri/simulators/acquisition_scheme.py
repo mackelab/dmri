@@ -17,8 +17,8 @@ WATER_GYROMAGNETIC_RATIO = 267.513e6  # 1/(sT)
 class acquisition_scheme:
     bvals: ArrayLike  # s/mm^2
     bvecs: ArrayLike  # unit vectors
-    delta: ArrayLike = field(default_factory=lambda: jnp.array(0.03))  # In seconds
-    Delta: ArrayLike = field(default_factory=lambda: jnp.array(0.05))  # In seconds
+    delta: ArrayLike = field(default_factory=lambda: 0.03)  # In seconds
+    Delta: ArrayLike = field(default_factory=lambda: 0.05)  # In seconds
 
     @property
     def q_values(self):

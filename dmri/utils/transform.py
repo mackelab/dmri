@@ -5,6 +5,9 @@ import jax
 import jax.numpy as jnp
 from jax import lax
 
+import numpy as np
+
+
 @jax.jit
 def _normal_to_dirichlet(alpha, eps, mask=None):
     assert len(eps) == len(alpha) - 1, "eps should be of size len(alpha) - 1"
@@ -127,3 +130,90 @@ def normal_to_dirichlet_bwd(res, g):
 
 # Register the forward/backward with JAX
 normal_to_dirichlet.defvjp(normal_to_dirichlet_fwd, normal_to_dirichlet_bwd)
+
+
+def uniform_rotation(rng_key):
+    # Generate a random quaternion
+    q = jax.random.uniform(rng_key, (4,))
+    q /= jnp.linalg.norm(q)
+
+    # Convert quaternion to rotation matrix
+    R = transform_quaternion_to_S03(q)
+    return R
+
+
+def r3_to_s3(v: jnp.ndarray) -> jnp.ndarray:
+    """
+    Stereographic projection from R^3 to S^3 (minus one point).
+    Output is a quaternion (w,x,y,z) of norm 1.
+
+    The origin maps to (1,0,0,0).
+    The 'north pole' is (-1,0,0,0) and is not reached by any finite v.
+    """
+    x, y, z = v
+    r_sq = x * x + y * y + z * z
+    denom = 1.0 + r_sq
+
+    w = (1.0 - r_sq) / denom
+    i = (2.0 * x) / denom
+    j = (2.0 * y) / denom
+    k = (2.0 * z) / denom
+    q = jnp.array([w, i, j, k])
+
+    # Optional: enforce w >= 0 if you want a unique “branch”
+    # but that will cause a discontinuity near w=0.
+    # q = jnp.where(q[0] < 0, -q, q)
+
+    return q
+
+
+def s3_to_r3(q: jnp.ndarray) -> jnp.ndarray:
+    """
+    Inverse stereographic projection from a quaternion (w,x,y,z) in S^3
+    back to R^3.  The excluded point on S^3 is (-1,0,0,0).
+    """
+    w, x, y, z = q
+    # Solve for r^2 using w = (1 - r^2)/(1 + r^2)
+    # => r^2 = (1 - w)/(1 + w)
+    # If w ~ -1, then r^2 -> infinity (that is the 'north pole').
+    r_sq = (1.0 - w) / (1.0 + w)
+
+    # Then x_3D = i * (1 + r^2) / 2, etc.
+    factor = 0.5 * (1.0 + r_sq)
+    x_3D = x * factor
+    y_3D = y * factor
+    z_3D = z * factor
+    return jnp.array([x_3D, y_3D, z_3D])
+
+
+def transform_quaternion_to_S03(q: jnp.ndarray) -> jnp.ndarray:
+    """
+    Convert a unit quaternion (w, x, y, z) to a 3x3 rotation matrix in SO(3).
+    """
+    w, x, y, z = q
+    R = jnp.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ]
+    )
+    return R
+
+
+def transform_S03_to_quaternion(R: jnp.ndarray) -> jnp.ndarray:
+    """
+    Convert rotation matrix in SO(3) to a unit quaternion (w,x,y,z), enforcing w >= 0.
+    """
+    # Typically you might check det(R) ~ 1 and R^T R ~ I for validity.
+    w = jnp.sqrt(1.0 + R[0, 0] + R[1, 1] + R[2, 2]) / 2
+    # To avoid division by zero, you might want an epsilon check if w is extremely small.
+    w4 = 4.0 * w
+    x = (R[2, 1] - R[1, 2]) / w4
+    y = (R[0, 2] - R[2, 0]) / w4
+    z = (R[1, 0] - R[0, 1]) / w4
+    q = jnp.array([w, x, y, z])
+
+    # Enforce w >= 0 for a canonical representative in double-cover
+    q = jnp.where(q[0] < 0, -q, q)
+    return q

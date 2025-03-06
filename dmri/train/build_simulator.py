@@ -15,7 +15,6 @@ from functools import partial
 
 def build_simulator(cfg: DictConfig):
     sim_type_name = cfg.simulator.sim_type.name
-    print(sim_type_name)
     sim_type_module = importlib.import_module("dmri.simulators.multi_compartment")
     sim_type = getattr(sim_type_module, sim_type_name)
 
