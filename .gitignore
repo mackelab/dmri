@@ -23,6 +23,7 @@ sdist/
 var/
 wheels/
 wandb/
+results/
 share/python-wheels/
 *.egg-info/
 .installed.cfg
