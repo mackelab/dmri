@@ -8,6 +8,7 @@ import time
 from dmri.train.build_simulator import build_simulator
 from dmri.train.build_model import build_model
 from dmri.train.data_loading import StreamDataLoader
+from dmri.train.checkpointing import CheckpointManager
 import hydra
 import numpy as np
 import jax
@@ -71,15 +72,45 @@ def _main(cfg: DictConfig):
 
     model, params = build_model(cfg, sim_type)
 
-
     # Train model
     log.info("Training")
 
-    scheduler = optax.cosine_onecycle_schedule(100 * 500, 5e-4, final_div_factor=5)
+    # Set up checkpoint manager
+    checkpoint_dir = os.path.join(output_dir, "checkpoints")
+    continue_training = cfg.get("continue_training", False)
+    checkpoint_manager = CheckpointManager(
+        ckpt_dir=checkpoint_dir,
+        max_to_keep=cfg.get("max_checkpoints", 3),
+        keep_best=cfg.get("keep_best_checkpoint", True),
+        recovery_threshold=cfg.get("recovery_threshold", float("inf")),
+        continue_training=continue_training,
+    )
+
+    # For resuming training
+    start_step = 0
+    if continue_training:
+        latest_step = checkpoint_manager.get_latest_step()
+        if latest_step > 0:
+            log.info(f"Restoring checkpoint at step {latest_step}")
+            checkpoint = checkpoint_manager.restore()
+            if checkpoint is not None:
+                params = checkpoint["params"]
+                opt_state = checkpoint["optimizer_state"]
+                start_step = checkpoint["step"] + 1
+                log.info(f"Resumed training from step {start_step}")
+            else:
+                log.warning("Failed to restore checkpoint. Starting from scratch.")
+
+    # Learning rate scheduler and optimizer
+    max_steps = cfg.get("max_steps", 100 * 500)
+    scheduler = optax.cosine_onecycle_schedule(max_steps, 5e-4, final_div_factor=5)
     optimizer = optax.chain(
         optax.adaptive_grad_clip(50.0), optax.ema(0.01), optax.adamw(scheduler)
     )
-    opt_state = optimizer.init(params)
+
+    # Initialize optimizer state if not restored from checkpoint
+    if not continue_training or start_step == 0:
+        opt_state = optimizer.init(params)
 
     def loss_fn(params, data, rng):
         p_mask, model_mask, thetas, xs, acq = data
@@ -109,9 +140,54 @@ def _main(cfg: DictConfig):
     )
 
     key = rng_key
+    checkpoint_freq = cfg.get("checkpoint_freq", 2000)  # Save checkpoint every N steps
+    step = start_step
+
     for data in loader:
         key, subkey = jax.random.split(key)
         params, opt_state, loss = update(params, opt_state, data, subkey)
-        log.info(f"Loss: {loss}")
-        if cfg.use_wandb:
-            wandb.log({"loss": loss})
+
+        if step % 10 == 0:  # Log every 10 steps
+            log.info(f"Step {step}, Loss: {loss}")
+            if cfg.use_wandb:
+                wandb.log({"loss": loss, "step": step})
+
+        # Save checkpoint periodically
+        if step > 0 and step % checkpoint_freq == 0:
+            log.info(f"Saving checkpoint at step {step}")
+            checkpoint_manager.save(
+                step=step,
+                model=model,
+                params=params,
+                optimizer_state=opt_state,
+                metrics={"loss": float(loss)},
+            )
+
+        # Check if we need to recover from a bad update
+        if checkpoint_manager.should_recover(loss):
+            log.warning(
+                f"Recovery triggered at step {step}. Restoring from checkpoint."
+            )
+            checkpoint = checkpoint_manager.restore()
+            if checkpoint is not None:
+                params = checkpoint["params"]
+                opt_state = checkpoint["optimizer_state"]
+                step = checkpoint["step"]
+                log.info(f"Recovered to step {step}")
+
+        step += 1
+
+        # Check if we've reached the maximum steps
+        if step >= max_steps:
+            log.info(f"Reached maximum steps {max_steps}")
+            # Save final checkpoint
+            checkpoint_manager.save(
+                step=step,
+                model=model,
+                params=params,
+                optimizer_state=opt_state,
+                metrics={"loss": float(loss)},
+            )
+            break
+
+    log.info("Training complete")

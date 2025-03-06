@@ -1,5 +1,0 @@
-name: dmri
-use_wandb: false
-wandb:
-  project: dmri
-  entity: ${name}
