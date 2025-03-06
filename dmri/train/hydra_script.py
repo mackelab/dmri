@@ -111,7 +111,7 @@ def _main(cfg: DictConfig):
         l = 0
         for j in range(500):
             key, subkey2 = jax.random.split(key, 2)
-            idx = jax.random.randint(subkey2, (512,), 0, 2**16)
+            idx = jax.random.randint(subkey2, (128,), 0, 2**16)
             (
                 p_mask_batch,
                 masks_batch,
