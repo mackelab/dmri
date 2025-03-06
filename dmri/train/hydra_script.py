@@ -7,8 +7,9 @@ import time
 
 from dmri.train.build_simulator import build_simulator
 from dmri.train.build_model import build_model
-from dmri.train.data_loading import StreamDataLoader
+from dmri.train.dataloader import StreamDataLoader
 from dmri.train.checkpointing import CheckpointManager
+from dmri.train.evaluator import build_pure_eval_fns
 import hydra
 import numpy as np
 import jax
@@ -71,6 +72,9 @@ def _main(cfg: DictConfig):
     sim_type, simulator = build_simulator(cfg)
 
     model, params = build_model(cfg, sim_type)
+
+    # Create evaluator for model performance metrics
+    evaluator = build_pure_eval_fns(model, sim_type)
 
     # Train model
     log.info("Training")
@@ -139,8 +143,17 @@ def _main(cfg: DictConfig):
         num_producers=4,
     )
 
+    # Create a separate loader for evaluation
+    eval_loader = StreamDataLoader(
+        simulator,
+        batch_size=32,
+        max_queue_size=1000,
+        num_producers=2,
+    )
+
     key = rng_key
     checkpoint_freq = cfg.get("checkpoint_freq", 2000)  # Save checkpoint every N steps
+    eval_freq = cfg.get("eval_freq", 500)  # Evaluate model every N steps
     step = start_step
 
     for data in loader:
@@ -152,6 +165,42 @@ def _main(cfg: DictConfig):
             if cfg.use_wandb:
                 wandb.log({"loss": loss, "step": step})
 
+        # Evaluate model periodically
+        if step > 0 and step % eval_freq == 0:
+            log.info(f"Evaluating model at step {step}")
+
+            # Evaluate negative log-likelihood for masks
+            key, eval_key = jax.random.split(key)
+            mask_nnl = evaluator.eval_nnl_mask(params, eval_loader, iters=5)
+
+            # Evaluate negative log-likelihood for thetas
+            theta_nnl = evaluator.eval_nnl_theta(params, eval_loader, iters=5)
+
+            # Evaluate ess
+            ess = evaluator.eval_effective_sample_size(
+                params, eval_loader, eval_key, K=5
+            )
+
+            log.info(f"Mask NLL: {mask_nnl}, Theta NLL: {theta_nnl}, ESS: {ess}")
+
+            if cfg.use_wandb:
+                wandb.log(
+                    {
+                        "mask_negative_log_likelihood": float(mask_nnl),
+                        "theta_negative_log_likelihood": float(theta_nnl),
+                        "step": step,
+                    }
+                )
+
+            # Add these metrics to checkpoint
+            metrics = {
+                "loss": float(loss),
+                "mask_nnl": float(mask_nnl),
+                "theta_nnl": float(theta_nnl),
+            }
+        else:
+            metrics = {"loss": float(loss)}
+
         # Save checkpoint periodically
         if step > 0 and step % checkpoint_freq == 0:
             log.info(f"Saving checkpoint at step {step}")
@@ -160,7 +209,7 @@ def _main(cfg: DictConfig):
                 model=model,
                 params=params,
                 optimizer_state=opt_state,
-                metrics={"loss": float(loss)},
+                metrics=metrics,
             )
 
         # Check if we need to recover from a bad update
@@ -180,14 +229,27 @@ def _main(cfg: DictConfig):
         # Check if we've reached the maximum steps
         if step >= max_steps:
             log.info(f"Reached maximum steps {max_steps}")
-            # Save final checkpoint
+            # Save final checkpoint with evaluation metrics
+            key, eval_key = jax.random.split(key)
+            mask_nnl = evaluator.eval_nnl_mask(params, eval_loader, iters=10)
+            theta_nnl = evaluator.eval_nnl_theta(params, eval_loader, iters=10)
+
+            final_metrics = {
+                "loss": float(loss),
+                "final_mask_nnl": float(mask_nnl),
+                "final_theta_nnl": float(theta_nnl),
+            }
+
             checkpoint_manager.save(
                 step=step,
                 model=model,
                 params=params,
                 optimizer_state=opt_state,
-                metrics={"loss": float(loss)},
+                metrics=final_metrics,
             )
+
+            if cfg.use_wandb:
+                wandb.log(final_metrics)
             break
 
     log.info("Training complete")
