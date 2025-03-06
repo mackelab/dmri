@@ -102,6 +102,11 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
     def sample(self, key, tokenizer, y, dim, context=None):
         return naive_autoregressive_decoding(self, key, tokenizer, y, dim, context=context)
 
+    def log_prob(self, model_mask, tokenizer, y, **kwargs):
+        model_mask_logits = self(model_mask, tokenizer, y=y, **kwargs)
+        log_prob = jax.nn.log_sigmoid(model_mask_logits)
+        return jnp.sum(log_prob, axis=-1)
+
 
 @partial(jax.jit, static_argnums=(2,4,))
 def naive_autoregressive_decoding(model, key, tokenizer, y, dim, context=None):

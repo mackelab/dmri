@@ -1,0 +1,141 @@
+from typing import Callable, NamedTuple
+import jax
+import jax.numpy as jnp
+from flax import nnx
+
+from functools import partial
+
+
+def build_pure_eval_fns(model, sim_type):
+    @jax.jit
+    def sample_masks(params, rng, data):
+        nnx.update(model, params)
+        p_mask, _, thetas, xs, acq = data
+        sample_fn = jax.vmap(model.sample_mask)
+        rngs = jax.random.split(rng, len(thetas))
+        masks_sampled = sample_fn(rngs, acq.bvals, acq.bvecs, xs, p_mask)
+        return masks_sampled
+
+    @jax.jit
+    def log_prob_masks(params, data):
+        nnx.update(model, params)
+        p_mask, model_mask, thetas, xs, acq = data
+        return jax.vmap(model.log_prob_mask)(
+            model_mask, acq.bvals, acq.bvecs, xs, p_mask
+        )
+
+    @jax.jit
+    def sample_thetas(params, rng, data, num_steps=128, max_noise=40):
+        nnx.update(model, params)
+        _, model_mask, thetas, xs, acq = data
+        sample_fn = jax.vmap(model.sample_theta)
+        rngs = jax.random.split(rng, len(thetas))
+        sample_fn = jax.vmap(
+            partial(model.sample_theta, num_steps=num_steps, max_noise=max_noise)
+        )
+        return sample_fn(rngs, acq.bvals, acq.bvecs, xs, model_mask)
+
+    @jax.jit
+    def log_prob_thetas(params, data, num_steps=128, max_noise=40):
+        nnx.update(model, params)
+        p_mask, model_mask, thetas, xs, acq = data
+        sample_fn = partial(
+            model.log_prob_theta, num_steps=num_steps, max_noise=max_noise
+        )
+        return jax.vmap(sample_fn)(thetas, acq.bvals, acq.bvecs, xs, model_mask)
+
+    @jax.jit
+    def sample_and_log_prob_thetas(params, rng, data, num_steps=128, max_noise=40):
+        nnx.update(model, params)
+        _, model_mask, _, xs, acq = data
+        rngs = jax.random.split(rng, xs.shape[0])
+        thetas, log_probs = jax.vmap(
+            partial(
+                model.sample_and_log_prob_theta,
+                num_steps=num_steps,
+                max_noise=max_noise,
+            )
+        )(rngs, acq.bvals, acq.bvecs, xs, model_mask)
+        return thetas, log_probs
+
+    @jax.jit
+    def true_loglikelihood(data):
+        p_mask, model_mask, thetas, xs, acq = data
+
+        def single_ll(theta, model_mask, acq, x):
+            simulator = sim_type.from_theta(theta, model_mask=model_mask)
+            ll = simulator.log_likelihood(acq, x)
+            return ll
+
+        return jax.vmap(single_ll)(thetas, model_mask, acq, xs)
+
+    @jax.jit
+    def true_posterior(data):
+        _, _, thetas, _, _ = data
+        ll = true_loglikelihood(data)
+        prior_logprob = jax.scipy.stats.norm.logpdf(thetas).sum(-1)
+        return ll + prior_logprob
+
+    return Evaluator(
+        sample_masks=sample_masks,
+        log_prob_masks=log_prob_masks,
+        sample_thetas=sample_thetas,
+        log_prob_thetas=log_prob_thetas,
+        sample_and_log_prob_thetas=sample_and_log_prob_thetas,
+        true_loglikelihood=true_loglikelihood,
+        true_posterior=true_posterior,
+    )
+
+
+class Evaluator(NamedTuple):
+    sample_masks: Callable
+    log_prob_masks: Callable
+    sample_thetas: Callable
+    log_prob_thetas: Callable
+    sample_and_log_prob_thetas: Callable
+    true_loglikelihood: Callable
+    true_posterior: Callable
+    seed: int = 42
+
+    def eval_nnl_mask(self, params, loader, iters=10):
+        total_log_prob = 0.0
+        i = 0
+        for eval_data in loader:
+            total_log_prob += jnp.mean(self.log_prob_masks(params, eval_data))
+            i += 1
+            if i == iters:
+                break
+        return -float(total_log_prob) / iters
+
+    def eval_nnl_theta(self, params, loader, iters=10):
+        total_log_prob = 0.0
+        i = 0
+        for eval_data in loader:
+            total_log_prob += jnp.mean(self.log_prob_thetas(params, eval_data))
+            i += 1
+            if i == iters:
+                break
+        return -float(total_log_prob) / iters
+
+    def eval_effective_sample_size(self, params, loader, rng, K=10):
+        avg_ess = 0.0
+        i = 0
+        eval_data = next(iter(loader))
+        weights = []
+        for _ in range(K):
+            rng, rng_eval = jax.random.split(rng)
+            thetas_q, log_probs_q = self.sample_and_log_prob_thetas(
+                params, rng_eval, eval_data
+            )
+            eval_data = list(eval_data)
+            eval_data[2] = thetas_q
+            log_probs_p = self.true_posterior(eval_data)
+            log_weights = log_probs_q - log_probs_p
+            weights.append(log_weights)
+        weights = jnp.stack(weights, axis=0)
+        ess = jnp.exp(jax.scipy.special.logsumexp(weights, axis=0)) ** 2
+        avg_ess += jnp.mean(ess)
+        return float(avg_ess / K)
+
+    def eval_tarp_mask():
+        pass

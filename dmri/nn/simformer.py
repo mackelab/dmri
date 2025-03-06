@@ -198,3 +198,63 @@ class EDMSimformer(EDM):
         base_logp += -0.5 * x_final.shape[-1] * jnp.log(2 * np.pi * sigma**2)
         final = logp_final + base_logp
         return jnp.squeeze(final)
+
+    def sample_and_log_prob(
+        self,
+        rng,
+        tokenizer,
+        y,
+        dim,
+        tokens_cfg=None,
+        context=None,
+        attention_mask=None,
+        max_noise=None,
+        num_steps=16,
+    ):
+        if max_noise is not None:
+            self.max_noise = max_noise
+        eps = jax.random.normal(rng, dim) * self.marginal_std(self.max_noise)
+        ts = self.solve_schedule(num_steps)
+
+        def dx_dt_fn(t, x):
+            t = jnp.atleast_1d(t)
+            f = self.drift(t, x)
+            g = self.diffusion(t, x)
+            score = self.score(
+                t,
+                x,
+                tokenizer=tokenizer,
+                tokens_cfg=tokens_cfg,
+                y=y,
+                context=context,
+                attention_mask=attention_mask,
+            )
+            return f - 0.5 * g**2 * score
+
+        def drift(t, state):
+            x, logp = state
+            dx_dt = dx_dt_fn(t, x)
+            div = jnp.trace(jax.jacfwd(lambda z: dx_dt_fn(t, z))(x))
+            return (dx_dt, -div)
+
+        state, _ = odeint(
+            drift,
+            (eps, 0.0),
+            ts,
+            method="heun",
+            filter_state=lambda *args: None,
+            return_state=True,
+        )
+
+        y0 = state.y0
+        x, logp = y0[:-1], y0[-1]
+        # Apply final correction step
+        dx_dt = dx_dt_fn(ts[-1], x)
+        x += -dx_dt * ts[-1]
+
+        sigma = self.marginal_std(self.max_noise)
+        base_logp = -0.5 * jnp.sum(eps**2) / sigma**2
+        base_logp += -0.5 * eps.shape[-1] * jnp.log(2 * np.pi * sigma**2)
+        logp += base_logp
+
+        return x, jnp.squeeze(logp)

@@ -251,6 +251,25 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         )
         return model_mask
 
+    def log_prob_mask(
+        self,
+        model_mask,
+        bvals,
+        bvecs,
+        signals,
+        mask_prior=None,
+    ):
+        y = self.encoder(bvals, bvecs, signals)
+        if mask_prior is not None:
+            mask_prior = self.mask_prior_embed(mask_prior)
+        log_prob = self.model_decoder.log_prob(
+            model_mask,
+            self.tokenizer,
+            y=y,
+            context=mask_prior,
+        )
+        return log_prob
+
     def sample_theta(
         self,
         rng,
@@ -314,3 +333,35 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         )
 
         return log_prob
+
+    def sample_and_log_prob_theta(
+        self,
+        rng,
+        bvals,
+        bvecs,
+        signals,
+        model_mask,
+        num_steps=16,
+        max_noise=None,
+    ):
+        y = self.encoder(bvals, bvecs, signals)
+        tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
+
+        _model_mask_extended = jnp.concatenate([jnp.array([True]), model_mask])
+        attention_mask = _model_mask_extended[None, :] & _model_mask_extended[:, None]
+        attention_mask = attention_mask | jnp.eye(
+            _model_mask_extended.shape[-1], dtype=bool
+        )
+
+        theta, log_prob = self.inference_decoder.sample_and_log_prob(
+            rng,
+            y=y,
+            tokenizer=self.tokenizer,
+            dim=self.cfg.simulator.theta_dim,
+            tokens_cfg=tokens_cfg,
+            num_steps=num_steps,
+            max_noise=max_noise,
+            attention_mask=attention_mask,
+        )
+
+        return theta, log_prob
