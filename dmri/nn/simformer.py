@@ -20,7 +20,7 @@ class DMRIThetaInferenceConfig:
     widening_factor: int = 3
     attn_size: int = 16
     context_dim: int = 64
-    attn_size: int = 16
+    dropout_rate: float | None = None
 
 
 class DiffusionTransformer(nnx.Module, experimental_pytree=True):

@@ -70,6 +70,7 @@ def _main(cfg: DictConfig):
     sim_type, simulator = build_simulator(cfg)
 
     model, params = build_model(cfg, sim_type)
+    log.info(f"Model cfg: {model.cfg}")
 
     # Create evaluator for model performance metrics
     evaluator = build_pure_eval_fns(model, sim_type)
@@ -136,7 +137,7 @@ def _main(cfg: DictConfig):
 
     loader = StreamDataLoader(
         simulator,
-        batch_size=64,
+        batch_size=128,
         max_queue_size=10_000,
         num_producers=4,
     )
