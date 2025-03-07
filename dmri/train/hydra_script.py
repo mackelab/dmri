@@ -72,7 +72,7 @@ def _main(cfg: DictConfig):
     model, params = build_model(cfg, sim_type)
     log.info(f"Model cfg: {model.cfg}")
 
-    # Create evaluator for model performance metrics
+    # Create evaluator for online model performance metrics
     evaluator = build_pure_eval_fns(model, sim_type)
 
     # Train model
@@ -105,8 +105,8 @@ def _main(cfg: DictConfig):
                 log.warning("Failed to restore checkpoint. Starting from scratch.")
 
     # Learning rate scheduler and optimizer
-    max_steps = cfg.get("max_steps", 100 * 500)
-    scheduler = optax.cosine_onecycle_schedule(max_steps, 5e-4, final_div_factor=5)
+    max_steps = cfg.get("max_steps", 2000)
+    scheduler = optax.cosine_onecycle_schedule(max_steps, 1e-3, final_div_factor=10)
     optimizer = optax.chain(
         optax.adaptive_grad_clip(50.0), optax.ema(0.01), optax.adamw(scheduler)
     )
