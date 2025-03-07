@@ -93,22 +93,13 @@ def _main(cfg: DictConfig):
         keep_best=cfg.get("keep_best_checkpoint", True),
         recovery_threshold=cfg.get("recovery_threshold", float("inf")),
         continue_training=continue_training,
+        use_async=cfg.get(
+            "use_async_checkpointing", True
+        ),  # Enable async checkpointing
     )
 
     # For resuming training
     start_step = 0
-    if continue_training:
-        latest_step = checkpoint_manager.get_latest_step()
-        if latest_step > 0:
-            log.info(f"Restoring checkpoint at step {latest_step}")
-            checkpoint = checkpoint_manager.restore()
-            if checkpoint is not None:
-                params = checkpoint["params"]
-                opt_state = checkpoint["optimizer_state"]
-                start_step = checkpoint["step"] + 1
-                log.info(f"Resumed training from step {start_step}")
-            else:
-                log.warning("Failed to restore checkpoint. Starting from scratch.")
 
     # Learning rate scheduler and optimizer
     optimizer_cfg = cfg.train.optimizer
@@ -183,6 +174,26 @@ def _main(cfg: DictConfig):
     step = start_step
     datastream = iter(loader)
 
+    if continue_training:
+        latest_step = checkpoint_manager.get_latest_step()
+        print(f"latest_step: {latest_step}")
+        if latest_step is not None and latest_step > 0:
+            log.info(f"Restoring checkpoint at step {latest_step}")
+            # Pass existing params as reference structure for parameter matching
+            checkpoint = checkpoint_manager.restore(
+                step=latest_step, params=params, optimizer_state=opt_state
+            )
+            if checkpoint is not None:
+                params = checkpoint["params"]
+                opt_state = checkpoint["optimizer_state"]
+                step = checkpoint["step"]  # Update current step
+                start_step = step  # Set start_step to the restored step
+                log.info(f"Resumed training from step {step}")
+            else:
+                log.warning("Failed to restore checkpoint. Starting from scratch.")
+        else:
+            log.warning("No valid checkpoint found. Starting from scratch.")
+
     # Get maximum training time in hours (default: run forever)
     max_train_hours = cfg.train.get("max_train_hours", float("inf"))
     log.info(f"Maximum training time: {max_train_hours} hours")
@@ -219,11 +230,12 @@ def _main(cfg: DictConfig):
             # Save final checkpoint
             checkpoint_manager.save(
                 step=step,
-                model=model,
                 params=params,
                 optimizer_state=opt_state,
-                metrics={"loss_mask": float(loss[0]), "loss_theta": float(loss[1])},
+                loss=total_loss,
             )
+            # Ensure all async checkpoint operations are finished before exiting
+            checkpoint_manager.wait_until_finished()
             break
 
         # Evaluate model periodically
@@ -253,29 +265,14 @@ def _main(cfg: DictConfig):
                     }
                 )
 
-            # Add these metrics to checkpoint
-            metrics = {
-                "loss_mask": float(loss[0]),
-                "loss_theta": float(loss[1]),
-                "mask_nnl": float(mask_nnl),
-                "theta_nnl": float(theta_nnl),
-                "ess": float(ess),
-            }
-        else:
-            metrics = {
-                "loss_mask": float(loss[0]),
-                "loss_theta": float(loss[1]),
-            }
-
         # Save checkpoint periodically
         if step > 0 and step % checkpoint_freq == 0:
             log.info(f"Saving checkpoint at step {step}")
             checkpoint_manager.save(
                 step=step,
-                model=model,
                 params=params,
                 optimizer_state=opt_state,
-                metrics=metrics,
+                loss=total_loss,
             )
 
         # Check if we need to recover from a bad update
@@ -283,12 +280,30 @@ def _main(cfg: DictConfig):
             log.warning(
                 f"Recovery triggered at step {step}. Restoring from checkpoint."
             )
-            checkpoint = checkpoint_manager.restore()
-            if checkpoint is not None:
-                params = checkpoint["params"]
-                opt_state = checkpoint["optimizer_state"]
-                step = checkpoint["step"]
-                log.info(f"Recovered to step {step}")
+            try:
+                # Get the latest available checkpoint step
+                latest_step = checkpoint_manager.get_latest_step()
+                if latest_step is not None:
+                    # Pass current params as reference structure for parameter matching
+                    checkpoint = checkpoint_manager.restore(
+                        step=latest_step, params=params, optimizer_state=opt_state
+                    )
+                    if checkpoint is not None:
+                        params = checkpoint["params"]
+                        opt_state = checkpoint["optimizer_state"]
+                        step = checkpoint["step"]
+                        log.info(f"Recovered to step {step}")
+                    else:
+                        log.warning(
+                            "Failed to restore recovery checkpoint. Continuing without recovery."
+                        )
+                else:
+                    log.warning("No checkpoints available for recovery. Continuing without recovery.")
+            except Exception as e:
+                log.error(f"Error during recovery: {e}")
+                log.warning("Continuing without recovery.")
 
     # Log training completion to wandb
     log.info("Training complete")
+    # Ensure all async checkpoint operations are finished before exiting
+    checkpoint_manager.wait_until_finished()
