@@ -2,6 +2,7 @@ import threading
 import queue
 import time
 from functools import partial
+from collections import deque
 
 import jax
 import numpy as np
@@ -29,6 +30,7 @@ class StreamDataLoader:
         use_inplace_updates=False,  # New parameter for in-place updates
         ring_size=2,  # New parameter for ring buffer size
         queue_timeout=None,  # New parameter for queue timeout
+        prefetch_depth=3,  # New parameter for controlling prefetch depth
     ):
         """
         Args:
@@ -43,6 +45,7 @@ class StreamDataLoader:
             daemon:       Whether the producer threads are daemonized.
             num_producers: Number of producer threads to use.
             queue_timeout: Timeout in seconds for queue operations (None = no timeout).
+            prefetch_depth: Number of batches to prefetch to device (default=2).
         """
         self.simulator_fn = simulator_fn
         self.rng = jax.random.key(seed)
@@ -65,6 +68,7 @@ class StreamDataLoader:
             "queue_wait_time": 0.0,
         }
         self.thread_exceptions = queue.Queue()
+        self.prefetch_depth = max(1, prefetch_depth)  # Ensure at least 1
 
         # Create and start multiple producer threads
         self.producer_threads = []
@@ -169,31 +173,43 @@ class StreamDataLoader:
         Generator that:
           - Pulls CPU batches from 'cpu_stream'
           - Asynchronously copies them to `self.device` using `device_put`
-          - Yields them (already on the device)
-          - Prefetches the next batch in parallel
+          - Prefetches multiple batches to better overlap computation with I/O
+          - Yields batches that are already transferred to the device
+
+        Note: JAX's device_put is non-blocking by default, which means data transfer
+        occurs in the background while computation proceeds.
         """
         stream_iter = iter(cpu_stream)
+        prefetch_queue = deque(maxlen=self.prefetch_depth)
 
-        # Try to grab first batch
-        try:
-            # PyTree-friendly device put
-            next_batch_on_gpu = jax.device_put(next(stream_iter), self.data_device)
-        except StopIteration:
-            return  # If no data, we're done
-
-        while True:
-            current_batch = next_batch_on_gpu  # The batch to yield
-            # Prefetch the next batch
+        # Initial prefetching phase - fill the prefetch queue
+        for _ in range(self.prefetch_depth):
             try:
                 cpu_batch = next(stream_iter)
-                next_batch_on_gpu = jax.device_put(cpu_batch, self.data_device)
+                # Non-blocking device transfer
+                batch_on_device = jax.device_put(cpu_batch, self.data_device)
+                prefetch_queue.append(batch_on_device)
             except StopIteration:
-                next_batch_on_gpu = None
+                break
+
+        # If no batches were prefetched, we're done
+        if not prefetch_queue:
+            return
+
+        # Main loop - yield current batch while prefetching next
+        while prefetch_queue:
+            # Get the next batch to yield (oldest prefetched batch)
+            current_batch = prefetch_queue.popleft()
+
+            # Prefetch one more to maintain prefetch_depth
+            try:
+                cpu_batch = next(stream_iter)
+                batch_on_device = jax.device_put(cpu_batch, self.data_device)
+                prefetch_queue.append(batch_on_device)
+            except StopIteration:
+                pass  # No more batches to prefetch
 
             yield current_batch
-
-            if next_batch_on_gpu is None:
-                break
 
     # --------------------------------------------------------------------------
     # Method B: In-place updates with ring buffer

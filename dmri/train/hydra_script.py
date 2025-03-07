@@ -1,7 +1,9 @@
+import importlib
 import logging
 import os
 import random
 import socket
+import time
 
 from dmri.train.build_simulator import build_simulator
 from dmri.train.build_model import build_model
@@ -79,8 +81,12 @@ def _main(cfg: DictConfig):
     log.info("Training")
 
     # Set up checkpoint manager
-    checkpoint_dir = os.path.join(output_dir, "checkpoints")
-    continue_training = cfg.get("continue_training", False)
+    # Make sure checkpoint_dir is in results/{name}/checkpoints
+    checkpoint_dir = os.path.join("results", cfg.name, "checkpoints")
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    log.info(f"Checkpoint directory: {checkpoint_dir}")
+
+    continue_training = cfg.train.get("continue_training", False)
     checkpoint_manager = CheckpointManager(
         ckpt_dir=checkpoint_dir,
         max_to_keep=cfg.get("max_checkpoints", 3),
@@ -105,11 +111,24 @@ def _main(cfg: DictConfig):
                 log.warning("Failed to restore checkpoint. Starting from scratch.")
 
     # Learning rate scheduler and optimizer
-    max_steps = cfg.get("max_steps", 2000)
-    scheduler = optax.cosine_onecycle_schedule(max_steps, 1e-3, final_div_factor=10)
-    optimizer = optax.chain(
-        optax.adaptive_grad_clip(50.0), optax.ema(0.01), optax.adamw(scheduler)
-    )
+    optimizer_cfg = cfg.train.optimizer
+    optimizer_type = getattr(optax, optimizer_cfg.optimizer)
+    scheduler_type = getattr(optax, optimizer_cfg.scheduler)
+    use_ema = optimizer_cfg.get("ema", False)
+    use_adaptive_clip = optimizer_cfg.get("adaptive_gradient_clipping", False)
+    grad_transforms = []
+    if use_adaptive_clip:
+        grad_clip = optax.adaptive_grad_clip(
+            optimizer_cfg.get("gradient_clip_value", 10.0)
+        )
+        grad_transforms.append(grad_clip)
+    scheduler = scheduler_type(**optimizer_cfg.scheduler_params)
+    optimizer = optimizer_type(scheduler)
+
+    grad_transforms.append(optimizer)
+    if use_ema:
+        grad_transforms.append(optax.ema(optimizer_cfg.get("ema_decay", 0.8)))
+    optimizer = optax.chain(*grad_transforms)
 
     # Initialize optimizer state if not restored from checkpoint
     if not continue_training or start_step == 0:
@@ -117,7 +136,7 @@ def _main(cfg: DictConfig):
 
     def loss_fn(params, data, rng):
         p_mask, model_mask, thetas, xs, acq = data
-        return model.loss_fn(
+        losses = model.loss_fn(
             params,
             rng,
             model_mask=model_mask,
@@ -126,44 +145,88 @@ def _main(cfg: DictConfig):
             bvals=acq.bvals,
             bvecs=acq.bvecs,
             mask_prior=p_mask,
-        ).sum()
+        )
+        return sum(losses), losses
 
     @jax.jit
     def update(params, opt_state, data, rng):
-        loss, grads = jax.value_and_grad(loss_fn)(params, data, rng)
+        (_, losses), grads = jax.value_and_grad(loss_fn, has_aux=True)(
+            params, data, rng
+        )
         updates, opt_state = optimizer.update(grads, opt_state, params=params)
         new_params = optax.apply_updates(params, updates)
-        return new_params, opt_state, loss
+        return new_params, opt_state, losses
 
-    loader = StreamDataLoader(
+    # Create a data loader
+    loader_name = cfg.train.dataloader.name
+    loader_module = importlib.import_module("dmri.train.dataloader")
+    loader_type = getattr(loader_module, loader_name)
+    loader_train_params = cfg.train.dataloader.train_params
+    loader_eval_params = cfg.train.dataloader.val_params
+
+    loader = loader_type(
         simulator,
-        batch_size=128,
-        max_queue_size=10_000,
-        num_producers=4,
+        **loader_train_params,
     )
 
     # Create a separate loader for evaluation
-    eval_loader = StreamDataLoader(
+    eval_loader = loader_type(
         simulator,
-        batch_size=32,
-        max_queue_size=1000,
-        num_producers=2,
+        **loader_eval_params,
     )
 
     key = rng_key
-    checkpoint_freq = cfg.get("checkpoint_freq", 2000)  # Save checkpoint every N steps
-    eval_freq = cfg.get("eval_freq", 2000)  # Evaluate model every N steps
+    inner_steps = cfg.train.inner_steps
+    checkpoint_freq = (cfg.train.checkpoint_freq // inner_steps) * inner_steps
+    eval_freq = (cfg.train.eval_freq // inner_steps) * inner_steps
+
     step = start_step
+    datastream = iter(loader)
 
-    for data in loader:
+    # Get maximum training time in hours (default: run forever)
+    max_train_hours = cfg.train.get("max_train_hours", float("inf"))
+    log.info(f"Maximum training time: {max_train_hours} hours")
+    start_time = time.time()
+
+    while True:
         key, subkey = jax.random.split(key)
-        params, opt_state, loss = update(params, opt_state, data, subkey)
+        for _ in range(50):
+            data = next(datastream)
+            params, opt_state, loss = update(params, opt_state, data, subkey)
+            step += 1
+        total_loss = float(sum(loss))
+        queue_size = int(loader.queue.qsize())
+        log.info(
+            f"Step {step}, Loss mask: {loss[0]}, Loss theta: {loss[1]}, data_queue_size: {queue_size}"
+        )
 
-        if step % 10 == 0:  # Log every 10 steps
-            queue_size = int(loader.queue.qsize())
-            log.info(f"Step {step}, Loss: {loss}, data_queue_size: {queue_size}")
-            if cfg.use_wandb:
-                wandb.log({"loss": loss, "step": step})
+        # Log elapsed time
+        elapsed_hours = (time.time() - start_time) / 3600
+        if cfg.use_wandb:
+            wandb.log(
+                {
+                    "loss mask": float(loss[0]),
+                    "loss theta": float(loss[1]),
+                    "queue_size": queue_size,
+                    "step": step,
+                    "elapsed_hours": elapsed_hours,
+                }
+            )
+
+        # Check if we've exceeded maximum training time
+        if elapsed_hours >= max_train_hours:
+            log.info(
+                f"Reached maximum training time of {max_train_hours} hours. Stopping."
+            )
+            # Save final checkpoint
+            checkpoint_manager.save(
+                step=step,
+                model=model,
+                params=params,
+                optimizer_state=opt_state,
+                metrics={"loss_mask": float(loss[0]), "loss_theta": float(loss[1])},
+            )
+            break
 
         # Evaluate model periodically
         if step > 0 and step % eval_freq == 0:
@@ -194,12 +257,16 @@ def _main(cfg: DictConfig):
 
             # Add these metrics to checkpoint
             metrics = {
-                "loss": float(loss),
+                "loss_mask": float(loss[0]),
+                "loss_theta": float(loss[1]),
                 "mask_nnl": float(mask_nnl),
                 "theta_nnl": float(theta_nnl),
             }
         else:
-            metrics = {"loss": float(loss)}
+            metrics = {
+                "loss_mask": float(loss[0]),
+                "loss_theta": float(loss[1]),
+            }
 
         # Save checkpoint periodically
         if step > 0 and step % checkpoint_freq == 0:
@@ -213,7 +280,7 @@ def _main(cfg: DictConfig):
             )
 
         # Check if we need to recover from a bad update
-        if checkpoint_manager.should_recover(loss):
+        if checkpoint_manager.should_recover(total_loss):
             log.warning(
                 f"Recovery triggered at step {step}. Restoring from checkpoint."
             )
@@ -223,33 +290,5 @@ def _main(cfg: DictConfig):
                 opt_state = checkpoint["optimizer_state"]
                 step = checkpoint["step"]
                 log.info(f"Recovered to step {step}")
-
-        step += 1
-
-        # Check if we've reached the maximum steps
-        if step >= max_steps:
-            log.info(f"Reached maximum steps {max_steps}")
-            # Save final checkpoint with evaluation metrics
-            key, eval_key = jax.random.split(key)
-            mask_nnl = evaluator.eval_nnl_mask(params, eval_loader, iters=10)
-            theta_nnl = evaluator.eval_nnl_theta(params, eval_loader, iters=10)
-
-            final_metrics = {
-                "loss": float(loss),
-                "final_mask_nnl": float(mask_nnl),
-                "final_theta_nnl": float(theta_nnl),
-            }
-
-            checkpoint_manager.save(
-                step=step,
-                model=model,
-                params=params,
-                optimizer_state=opt_state,
-                metrics=final_metrics,
-            )
-
-            if cfg.use_wandb:
-                wandb.log(final_metrics)
-            break
 
     log.info("Training complete")
