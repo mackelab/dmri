@@ -117,25 +117,30 @@ class Evaluator(NamedTuple):
                 break
         return -float(total_log_prob) / iters
 
-    def eval_effective_sample_size(self, params, loader, rng, K=10):
+    def eval_effective_sample_size(self, params, loader, rng, iters=1, K=10):
         avg_ess = 0.0
         i = 0
-        eval_data = next(iter(loader))
-        weights = []
-        for _ in range(K):
-            rng, rng_eval = jax.random.split(rng)
-            thetas_q, log_probs_q = self.sample_and_log_prob_thetas(
-                params, rng_eval, eval_data
-            )
-            eval_data = list(eval_data)
-            eval_data[2] = thetas_q
-            log_probs_p = self.true_posterior(eval_data)
-            log_weights = log_probs_q - log_probs_p
-            weights.append(log_weights)
-        weights = jnp.stack(weights, axis=0)
-        ess = jnp.exp(jax.scipy.special.logsumexp(weights, axis=0)) ** 2
-        avg_ess += jnp.mean(ess)
-        return float(avg_ess / K)
+        for eval_data in loader:
+            log_weights = []
+            for _ in range(K):
+                rng, rng_eval = jax.random.split(rng)
+                thetas_q, log_probs_q = self.sample_and_log_prob_thetas(
+                    params, rng_eval, eval_data
+                )
+                eval_data = list(eval_data)
+                eval_data[2] = thetas_q
+                log_probs_p = self.true_posterior(eval_data)
+                log_weight = log_probs_q - log_probs_p
+                log_weights.append(log_weight)
+            log_weights = jnp.stack(log_weights, axis=0)
+            weights = jax.nn.softmax(log_weights, axis=0)
+            ess = 1.0 / jnp.sum(weights**2, axis=0)
+            normed_ess = ess / K
+            avg_ess += jnp.mean(normed_ess)
+            i += 1
+            if i == iters:
+                break
+        return float(avg_ess) / iters
 
     def eval_tarp_mask():
         pass
