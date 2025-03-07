@@ -161,7 +161,8 @@ def _main(cfg: DictConfig):
         params, opt_state, loss = update(params, opt_state, data, subkey)
 
         if step % 10 == 0:  # Log every 10 steps
-            log.info(f"Step {step}, Loss: {loss}")
+            queue_size = int(loader.queue.qsize())
+            log.info(f"Step {step}, Loss: {loss}, data_queue_size: {queue_size}")
             if cfg.use_wandb:
                 wandb.log({"loss": loss, "step": step})
 
@@ -178,7 +179,7 @@ def _main(cfg: DictConfig):
 
             # Evaluate ess
             ess = evaluator.eval_effective_sample_size(
-                params, eval_loader, eval_key, K=5
+                params, eval_loader, eval_key, K=5, iters=1
             )
 
             log.info(f"Mask NLL: {mask_nnl}, Theta NLL: {theta_nnl}, ESS: {ess}")
