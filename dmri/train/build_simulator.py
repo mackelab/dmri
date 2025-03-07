@@ -1,4 +1,4 @@
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 
 from dmri.simulators.acquisition_scheme import (
     random_advanced_reasearch_acquisition_scheme,

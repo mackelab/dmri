@@ -1,7 +1,6 @@
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 from dmri.nn.dmri_reconstruction_model import (
     DMRIInferenceModel,
-    DMRIInferenceModelConfig,
     DMRIInferenceModelConfigMaskPriorAmortized,
 )
 from flax import nnx

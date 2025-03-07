@@ -2,10 +2,8 @@ import threading
 import queue
 import time
 from functools import partial
-from contextlib import contextmanager
 
 import jax
-import jax.numpy as jnp
 import numpy as np
 
 
@@ -206,6 +204,7 @@ class StreamDataLoader:
         In-place update: copy src -> dst with .at[..].set(...)
         Works with PyTree structures.
         """
+
         # Handle PyTree structures - apply the operation to each leaf node
         def copy_leaf(d, s):
             return jax.jit(lambda x, y: x.at[:].set(y), donate_argnums=(0,))(d, s)
@@ -222,8 +221,7 @@ class StreamDataLoader:
         # Function to create zero array matching shape and dtype
         def create_zeros_like(arr):
             return jax.device_put(
-                np.zeros(arr.shape, dtype=arr.dtype),
-                self.data_device
+                np.zeros(arr.shape, dtype=arr.dtype), self.data_device
             )
 
         for _ in range(self.ring_size):

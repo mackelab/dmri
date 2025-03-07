@@ -2,6 +2,7 @@ import jax
 import jax.numpy as jnp
 from jax import lax
 
+
 def diffusion_tensor_odf(dirs, evals, evecs):
     """
     Compute the ODF for a single diffusion tensor at directions `dirs`.

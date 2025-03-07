@@ -1,6 +1,5 @@
 import os
 from typing import Any, Dict
-import jax
 import orbax.checkpoint as ocp
 from flax.training import orbax_utils
 import numpy as np
@@ -37,7 +36,7 @@ class CheckpointManager:
         # Create checkpoint manager options - updated to new API
         options = ocp.CheckpointManagerOptions(
             max_to_keep=max_to_keep,
-            create=not continue_training  # Don't delete existing checkpoints if continuing
+            create=not continue_training,  # Don't delete existing checkpoints if continuing
         )
 
         # Create checkpoint managers with updated API
@@ -48,8 +47,7 @@ class CheckpointManager:
         )
 
         best_options = ocp.CheckpointManagerOptions(
-            max_to_keep=1,
-            create=not continue_training
+            max_to_keep=1, create=not continue_training
         )
         self.best_manager = ocp.CheckpointManager(
             directory=self.best_ckpt_dir,
@@ -109,7 +107,7 @@ class CheckpointManager:
         self.manager.save(
             step,
             {"checkpoint": ckpt},
-            save_kwargs={"checkpoint": {"save_args": save_args}}
+            save_kwargs={"checkpoint": {"save_args": save_args}},
         )
 
         # Save best model if needed
@@ -123,7 +121,7 @@ class CheckpointManager:
                 self.best_manager.save(
                     0,
                     {"checkpoint": ckpt},
-                    save_kwargs={"checkpoint": {"save_args": save_args}}
+                    save_kwargs={"checkpoint": {"save_args": save_args}},
                 )
 
     def restore(self, step: int = None, from_best: bool = False):

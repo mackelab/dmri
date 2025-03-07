@@ -56,7 +56,6 @@ class Compartment(ABC):
 
 
 class SignalCompartment(Compartment):
-
     @classmethod
     def signal_fn(
         cls, acquisition_scheme: acquisition_scheme, *args, **kwargs

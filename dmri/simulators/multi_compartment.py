@@ -28,11 +28,10 @@ from dmri.simulators.local_signal_models.distributional_models import (
     SandiB,
     SandiW,
 )
-from dmri.simulators.base import SignalCompartment, NoiseCompartment
+from dmri.simulators.base import SignalCompartment
 from dmri.utils.transform import normal_to_dirichlet, dirichlet_to_normal
 
 
-import jax
 import jax.numpy as jnp
 import numpy as np
 from jax import tree_util as jtu

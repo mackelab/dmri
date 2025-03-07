@@ -23,7 +23,6 @@ import functools
 import numpy as np
 
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 
 sphere_default = get_sphere(name="symmetric724")
 hemisphere_default = HemiSphere(phi=sphere_default.phi, theta=sphere_default.theta)
@@ -321,6 +320,7 @@ class MixtureOfFODs(SphericalDistribution):
     def to_params(cls, theta: ArrayLike) -> Any:
         raise NotImplementedError()
 
+
 class Watson(SphericalDistribution):
     r"""The Watson spherical distribution model [1]_ [2]_.
 
@@ -384,8 +384,6 @@ class Watson(SphericalDistribution):
         for _ in range(keys.ndim):
             _sample_fn = jax.vmap(_sample_fn)
         return _sample_fn(keys)
-
-
 
     @classmethod
     def to_theta(cls, mu, odi) -> ArrayLike:
@@ -456,7 +454,6 @@ class Bingham(SphericalDistribution):
 
         R = rotation_matrix_100_to_theta_phi_psi(mu[0], mu[1], psi)
         mu_beta = jnp.dot(R, jnp.array([0.0, 1.0, 0.0]))
-
 
         numerator = jnp.exp(
             kappa * jnp.dot(n, mu_cart) ** 2 + beta * jnp.dot(n, mu_beta) ** 2
@@ -544,9 +541,7 @@ class Bingham(SphericalDistribution):
         return jnp.array([mu0, mu1, odi_theta, psi_theta, beta_fraction_theta])
 
 
-def deterministic_sphere_integration(
-    kappa, beta, mu, mu_beta, n_theta=400, n_phi=400
-):
+def deterministic_sphere_integration(kappa, beta, mu, mu_beta, n_theta=400, n_phi=400):
     """
     Use a 2D trapezoidal rule in spherical coords to approximate
         ∫ exp(kappa (n·mu)^2 + beta (n·mu_beta)^2 ) dΩ(n).

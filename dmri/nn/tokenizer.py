@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from functools import cache, partial
+from functools import cache
 from typing import Any, List, Optional
 import jax
 import jax.numpy as jnp
@@ -8,11 +8,6 @@ import numpy as np
 
 from flax import nnx
 
-from probjax.nn import GaussianFourierEmbedding, Transformer
-from probjax.nn.loss_fn.denoising import build_time_dependent_denoising_loss
-from probjax.nn.nets.denoising_diffusion_model import EDM
-from probjax.nn import MLP
-from probjax.nn.utils import AffineFuse
 from dmri.simulators import MultiCompartment
 from copy import deepcopy
 from collections import defaultdict

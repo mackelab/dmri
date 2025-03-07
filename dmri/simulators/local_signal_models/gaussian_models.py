@@ -1,7 +1,5 @@
-from typing import Any
 import jax.numpy as jnp
 import jax
-from abc import ABC, abstractmethod
 
 from jax.typing import ArrayLike
 
@@ -14,9 +12,9 @@ from dmri.utils.dmriutils import (
 from dmri.simulators.sphereical_distributions import (
     Uniform,
     SymmetricDirac,
-    Tensor2dFOD,
     TensorFOD,
 )
+
 
 class Dot(SignalCompartment):
     """The Dot model is a simple model that represents a single point in space.
@@ -72,7 +70,6 @@ class Ball(SignalCompartment):
         """Compute the log signal for given b-values and b-vectors."""
         logS = -aquisition_scheme.bvals * lam
         return logS
-
 
     @classmethod
     def to_params(cls, theta: ArrayLike) -> tuple:
@@ -172,6 +169,7 @@ class Zeppelin(SignalCompartment):
     """The Zeppelin model [1]_ - an axially symmetric Tensor - typically used
     for extra-axonal diffusion.
     """
+
     theta_dim = 4
     min_lam = 0.0
     max_lam = 0.01
@@ -249,13 +247,14 @@ class Zeppelin(SignalCompartment):
             jnp.eye(3) - jnp.outer(mu, mu)
         )
         eigvals, eigvecs = jnp.linalg.eigh(D)
-        return TensorFOD(eigvecs,eigvals)
+        return TensorFOD(eigvecs, eigvals)
 
 
 class Dti(SignalCompartment):
     """The Diffusion Tensor Imaging (DTI) model represents the diffusion of water
     molecules in the brain. It is a simple model that assumes Gaussian diffusion.
     """
+
     theta_dim: int = 6
     D_scale = 0.001
     min_lam: float = 0.0001
@@ -273,7 +272,6 @@ class Dti(SignalCompartment):
         bvecs = aquisition_scheme.bvecs
         logS = -bvals * jnp.einsum("bi,ij,bj->b", bvecs, D, bvecs)
         return logS
-
 
     @classmethod
     def to_theta(cls, D: ArrayLike) -> ArrayLike:
@@ -304,4 +302,4 @@ class Dti(SignalCompartment):
 
     def to_fod(self):
         eigvals, eigvecs = jnp.linalg.eigh(self.D)
-        return TensorFOD(eigvecs,eigvals)
+        return TensorFOD(eigvecs, eigvals)

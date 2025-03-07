@@ -2,7 +2,6 @@ from functools import partial
 from typing import Any
 import jax.numpy as jnp
 import jax
-from abc import ABC, abstractmethod
 
 from jax.typing import ArrayLike
 

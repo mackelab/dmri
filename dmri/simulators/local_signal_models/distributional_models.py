@@ -1,9 +1,8 @@
 from functools import partial
-from typing import Any
 from dmri.simulators.acquisition_scheme import acquisition_scheme
 import jax.numpy as jnp
 import jax
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 
 from jax.typing import ArrayLike
 from jax import tree_util as jtu
@@ -11,13 +10,11 @@ from dmri.simulators.base import Compartment, SignalCompartment
 from dmri.simulators.sphereical_distributions import (
     Bingham,
     Watson,
-    SphericalDistribution,
     inverse_sh_matrix,
     hemisphere_default,
 )
 from dmri.utils.dmriutils import cartesian_to_unitsphere
 from dmri.simulators.local_signal_models.gaussian_models import Stick, Zeppelin
-
 
 
 class SignalKernel(Compartment):
@@ -183,6 +180,7 @@ class NODDIKernel(SignalKernel):
         theta = jax.scipy.stats.norm.ppf(theta)
         return theta
 
+
 class SimpleSANDIKernel(SignalKernel):
     theta_dim: int = 5
 
@@ -250,6 +248,7 @@ class SimpleSANDIKernel(SignalKernel):
         )
         theta = jax.scipy.stats.norm.ppf(theta)
         return theta
+
 
 class DistributionalModel(SignalCompartment):
     fod_type: type
@@ -328,6 +327,7 @@ class BinghamZeppelin(DistributionalModel):
 class NoddiW(DistributionalModel):
     fod_type = Watson
     signal_kernel_type = NODDIKernel
+
 
 class NoddiB(DistributionalModel):
     fod_type = Bingham

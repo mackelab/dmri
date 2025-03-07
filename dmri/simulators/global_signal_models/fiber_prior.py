@@ -1,16 +1,8 @@
 from typing import Any
 import jax.numpy as jnp
 import jax
-from abc import ABC, abstractmethod
 
-from jax.typing import ArrayLike
 
-from dmri.simulators.base import SignalCompartment
-from dmri.utils.dmriutils import (
-    fit_diffusion_tensor_linearized,
-    cartesian_to_unitsphere,
-    unitsphere_to_cartesian,
-)
 
 from .curves3d import (
     sample_splines,
