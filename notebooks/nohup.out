@@ -1,0 +1,1183 @@
+/weka/macke/mgloeckler90/simformer_model_selection/dmri/dmri/simulators/sphereical_distributions.py:20: UserWarning: Pass ['name'] as keyword args. From version 2.0.0 passing these as positional arguments will result in an error. 
+  sphere_default = get_sphere("symmetric724")
+/weka/macke/mgloeckler90/simformer_model_selection/dmri/dmri/simulators/sphereical_distributions.py:23: UserWarning: Pass ['name'] as keyword args. From version 2.0.0 passing these as positional arguments will result in an error. 
+  big_sphere = get_sphere("repulsion724")
+/weka/macke/mgloeckler90/simformer_model_selection/dmri/dmri/simulators/sphereical_distributions.py:20: UserWarning: Pass ['name'] as keyword args. From version 2.0.0 passing these as positional arguments will result in an error. 
+  sphere_default = get_sphere("symmetric724")
+/weka/macke/mgloeckler90/simformer_model_selection/dmri/dmri/simulators/sphereical_distributions.py:23: UserWarning: Pass ['name'] as keyword args. From version 2.0.0 passing these as positional arguments will result in an error. 
+  big_sphere = get_sphere("repulsion724")
+wandb: Using wandb-core as the SDK backend.  Please refer to https://wandb.me/wandb-core for more information.
+wandb: Currently logged in as: mgloeckler to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.19.7
+wandb: Run data is saved locally in /weka/macke/mgloeckler90/simformer_model_selection/notebooks/wandb/run-20250221_184122-iqgv762o
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run smooth-pine-1
+wandb: ⭐️ View project at https://wandb.ai/mgloeckler/dmri
+wandb: 🚀 View run at https://wandb.ai/mgloeckler/dmri/runs/iqgv762o
+(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41)
+(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41)
+34.459423
+34.06724
+33.340603
+33.670986
+32.67203
+33.462845
+32.747997
+33.173286
+32.89571
+32.912457
+32.496918
+33.362617
+32.971344
+33.15467
+32.821224
+33.174614
+32.765263
+33.097046
+32.964954
+33.431683
+32.85447
+33.04192
+33.12648
+33.6032
+32.94034
+33.16395
+32.83407
+33.125256
+33.07014
+33.126522
+33.049515
+33.054523
+32.882816
+33.448467
+32.74315
+32.99986
+32.743618
+33.147717
+32.46903
+33.056324
+32.629444
+33.091442
+32.895485
+33.21085
+32.379513
+33.03137
+32.56423
+33.10171
+32.95274
+33.04929
+32.52497
+33.04305
+33.127563
+33.316666
+32.641323
+33.15383
+32.539562
+33.10118
+32.68238
+33.05432
+33.041134
+33.297283
+32.61572
+32.989853
+32.52652
+33.328613
+32.780228
+33.028545
+32.528458
+33.028667
+32.89114
+33.182426
+32.752697
+32.962044
+32.996548
+33.22127
+32.855743
+33.313168
+32.73653
+33.014225
+32.490818
+33.421036
+32.617695
+33.221626
+32.630512
+33.092808
+32.612602
+33.312275
+32.945076
+33.008854
+32.517742
+33.14932
+32.578136
+32.97073
+32.608627
+33.0425
+32.50312
+33.405453
+32.70838
+32.754665
+32.572266
+32.852795
+32.34478
+33.06595
+32.527386
+33.392406
+32.467213
+33.389168
+32.709538
+33.119816
+32.849163
+33.09673
+32.644283
+32.968227
+32.45902
+32.84329
+33.109722
+33.26024
+32.55976
+32.98151
+32.57919
+33.08673
+32.76997
+33.04071
+32.807045
+33.639465
+33.023003
+32.950954
+32.898846
+33.021175
+32.753456
+33.016575
+32.54647
+33.318005
+32.665375
+33.525013
+32.832844
+33.147198
+32.678646
+33.16355
+32.877605
+33.15796
+32.935898
+33.268917
+32.560852
+33.04835
+32.60549
+33.140667
+32.801388
+33.193047
+32.690395
+32.90144
+32.724907
+33.308315
+32.96094
+32.966732
+32.69169
+33.064796
+32.614296
+33.322372
+32.522026
+33.371216
+32.554546
+32.92283
+32.59407
+33.03892
+32.778328
+33.156532
+33.239853
+33.708595
+32.8479
+33.248543
+32.75047
+33.023346
+32.53196
+33.050854
+32.77408
+33.26896
+32.902714
+33.080242
+32.473957
+33.299553
+32.63463
+33.075367
+32.909145
+32.85505
+32.8969
+32.955826
+32.400158
+33.05466
+32.651424
+33.277256
+32.7281
+33.032375
+32.717815
+33.213215
+32.748505
+33.071266
+32.710266
+33.0608
+32.839832
+32.982742
+32.760406
+33.062122
+32.33421
+33.03428
+32.813274
+33.18704
+32.550373
+32.87713
+32.717007
+32.92714
+32.66652
+33.040497
+32.61125
+33.065372
+32.707474
+33.060787
+32.839024
+33.019585
+32.18971
+32.8205
+32.5618
+32.997948
+32.808155
+32.967945
+32.50271
+33.259033
+32.69214
+32.91905
+32.54401
+33.173347
+32.555725
+33.2777
+32.840824
+32.900616
+32.39023
+33.265472
+33.67185
+33.52156
+32.62024
+32.8175
+32.748432
+33.586365
+32.803738
+33.229824
+32.823677
+33.205227
+32.84977
+32.91842
+32.408764
+33.241615
+32.60284
+33.241425
+32.220325
+33.115356
+32.584267
+33.358536
+32.924778
+33.332523
+32.908688
+33.086117
+32.72593
+33.341976
+32.97091
+33.466618
+32.470158
+33.097435
+32.48048
+32.93778
+32.545193
+33.315693
+32.63747
+33.039238
+32.684803
+33.166927
+32.70543
+33.410923
+32.59303
+33.199398
+33.005642
+32.892197
+33.080418
+33.468357
+33.028416
+32.974224
+32.7943
+33.270798
+32.66416
+33.00741
+32.705948
+33.015926
+32.62777
+32.97063
+32.779076
+32.97553
+32.636826
+33.06222
+32.764397
+33.218185
+32.85547
+32.965054
+32.346237
+32.96672
+32.73513
+33.10586
+32.859188
+33.422016
+32.741993
+33.201653
+32.609264
+33.10629
+32.577057
+33.170425
+32.752327
+32.970753
+32.57318
+32.971813
+32.524162
+32.946136
+32.41128
+33.210823
+32.781628
+33.207138
+32.679607
+32.923336
+32.77751
+33.23008
+32.64828
+33.038925
+32.51835
+33.338696
+32.38903
+33.08503
+32.56985
+33.100105
+32.54794
+33.159065
+32.789425
+32.91607
+32.720917
+33.09161
+32.55525
+33.210163
+32.769966
+33.281948
+32.49876
+32.98235
+32.64322
+32.98592
+32.569218
+33.194744
+32.6421
+33.00295
+32.61744
+33.162308
+32.61189
+33.51991
+32.714996
+33.16343
+33.085056
+33.274372
+32.660686
+33.225937
+32.413673
+33.102425
+32.734135
+33.22328
+32.650127
+33.124527
+32.585613
+32.851467
+32.946682
+33.17856
+32.872707
+33.257717
+32.66509
+33.074856
+32.786503
+33.12027
+32.62254
+33.063408
+32.718796
+32.934345
+32.50749
+33.022522
+32.719734
+33.08054
+32.77794
+33.03923
+32.663784
+33.03265
+32.612263
+32.995815
+32.57353
+33.26736
+32.790417
+33.363274
+32.616238
+33.09492
+32.858276
+33.077698
+32.572384
+33.09198
+32.952763
+33.229477
+32.484833
+32.972095
+32.741726
+32.95892
+32.62987
+33.054085
+32.470364
+32.925823
+32.507233
+32.848747
+32.492645
+33.248333
+32.680508
+33.204174
+32.525326
+33.07984
+32.4098
+33.139137
+32.657635
+32.873627
+32.608425
+33.32864
+32.45208
+33.107307
+32.68534
+32.92065
+32.759907
+33.159607
+32.653004
+33.194218
+32.857525
+33.27598
+32.84875
+33.165054
+32.48722
+33.049175
+32.54736
+33.08331
+32.830074
+33.190742
+32.67912
+33.449448
+32.52105
+33.0599
+32.614986
+33.26308
+32.658474
+33.214245
+32.319687
+33.1838
+32.610546
+33.125057
+32.67136
+32.980404
+32.4152
+32.843224
+32.649685
+33.259014
+32.364742
+33.223938
+32.59524
+33.06587
+32.683445
+33.020405
+32.46284
+32.853584
+32.69224
+33.30035
+32.607647
+33.35339
+32.94518
+33.16087
+32.53509
+33.011547
+32.891617
+32.822224
+32.522015
+33.204536
+32.60756
+32.905445
+32.85602
+32.83755
+32.536755
+32.990665
+32.600536
+33.118202
+32.401917
+33.29562
+32.618244
+33.0562
+32.800198
+33.148067
+32.417213
+33.068558
+33.11036
+33.264793
+32.644054
+33.11468
+32.58413
+33.128796
+32.69198
+33.06561
+32.43492
+33.00686
+32.599346
+33.247784
+32.539337
+33.17006
+32.613552
+33.034527
+32.643475
+32.988125
+32.83154
+33.76359
+32.630135
+33.185863
+32.76025
+32.837425
+32.657166
+33.285137
+32.66236
+33.108387
+32.714108
+32.885647
+32.529213
+33.237003
+32.65504
+32.80182
+32.714283
+33.41229
+32.925663
+32.99415
+32.737667
+33.171387
+32.701122
+33.05122
+32.891632
+33.214104
+32.304684
+33.069946
+32.824993
+33.17155
+32.36291
+32.775436
+32.464382
+32.859646
+32.531918
+33.232147
+32.78714
+33.11378
+32.28667
+33.00778
+32.547066
+33.098507
+32.58276
+33.021885
+32.263218
+32.8319
+32.804398
+33.216103
+32.655834
+32.95211
+32.929005
+33.373135
+32.51862
+33.149746
+32.837322
+33.41681
+32.82005
+33.068897
+32.592884
+33.03438
+32.671455
+32.97299
+32.498333
+33.07295
+32.56564
+33.109512
+32.379536
+33.185925
+32.448936
+32.778698
+32.608303
+33.12635
+32.534885
+32.897552
+32.588284
+33.020184
+32.554497
+32.89471
+32.604336
+33.1459
+32.424282
+33.03716
+32.647396
+33.143383
+32.855827
+33.065468
+32.61535
+32.944164
+32.668636
+32.97053
+32.61459
+32.667095
+32.621967
+33.187634
+32.524208
+33.149273
+32.543854
+33.256725
+32.605114
+32.97798
+32.39796
+33.02197
+32.452404
+33.331623
+32.628414
+33.36592
+32.5244
+33.022354
+32.743427
+33.0377
+32.793957
+32.95053
+32.604534
+33.10626
+32.58515
+33.238297
+32.268276
+33.281067
+32.414135
+33.328316
+32.59181
+33.17441
+32.387066
+33.04476
+32.49244
+33.178814
+32.455647
+33.337543
+32.257732
+33.093304
+32.637524
+33.07844
+32.654335
+32.90852
+32.66348
+33.07816
+32.716198
+33.525455
+32.58694
+33.237026
+32.54663
+33.173813
+32.531475
+32.949
+32.735653
+33.13202
+32.723022
+33.13932
+32.49278
+33.057404
+32.64941
+32.81266
+32.523415
+33.10237
+32.662857
+32.880173
+32.66624
+32.7746
+32.45628
+33.764782
+32.78224
+33.03959
+32.654583
+33.004192
+32.75973
+32.8318
+32.478786
+33.10517
+32.502186
+32.85165
+32.791946
+32.89554
+32.745102
+33.278755
+32.623108
+33.042553
+32.688015
+33.13397
+32.322083
+33.362793
+32.326244
+32.973503
+32.516926
+32.92107
+32.31236
+32.939728
+32.59589
+33.033092
+32.691208
+32.996346
+32.66021
+32.85615
+32.505604
+32.98604
+32.633663
+33.195007
+32.665417
+33.226616
+32.55796
+33.051155
+32.797585
+32.831112
+32.662903
+33.097225
+32.379753
+32.969097
+32.706024
+33.21426
+32.71344
+32.793636
+32.411102
+33.088467
+32.473484
+33.203747
+32.628365
+33.193142
+32.58553
+33.22781
+32.638973
+33.229153
+32.877533
+33.049896
+32.69482
+33.05308
+32.3384
+33.07623
+32.26058
+33.05768
+32.68884
+33.073696
+32.486965
+33.266724
+32.600636
+33.175125
+32.55316
+32.952866
+33.046566
+33.02714
+32.68261
+33.044086
+32.45756
+33.21304
+32.847824
+33.233643
+32.515198
+33.337734
+32.549454
+33.02364
+32.795574
+32.78903
+32.87476
+33.083416
+33.400417
+33.390987
+32.635796
+33.15359
+32.591328
+33.227245
+32.741505
+33.1633
+32.693745
+33.28596
+32.720936
+33.290997
+32.793068
+33.042614
+32.79515
+33.077473
+32.736008
+33.098614
+32.70686
+32.727142
+32.455044
+32.824226
+32.52357
+32.9252
+32.703415
+33.24815
+32.62698
+32.766525
+32.54497
+33.285244
+32.879543
+33.08013
+32.488396
+33.84774
+32.7945
+33.14043
+32.64137
+33.001812
+32.500923
+32.99271
+32.61546
+33.179733
+32.54165
+32.898544
+32.726353
+33.091682
+32.34046
+32.937653
+32.500675
+32.61684
+32.491337
+33.123764
+32.704277
+33.10722
+32.633404
+32.98274
+32.65312
+33.200665
+32.594
+33.490902
+32.64343
+33.01161
+32.364445
+33.293312
+32.54482
+33.073574
+32.339996
+33.100155
+32.223766
+33.141247
+32.403763
+32.951534
+32.656837
+32.832832
+32.55974
+33.12582
+32.629772
+33.25132
+32.57501
+32.88522
+32.534443
+33.19305
+32.793823
+33.33059
+32.589138
+32.95119
+32.651234
+33.199993
+32.539948
+33.19652
+32.62682
+32.84326
+32.265755
+33.077187
+32.630875
+33.138187
+32.548748
+32.998684
+32.498207
+33.09457
+32.589275
+33.191505
+32.48947
+32.98082
+32.678455
+32.706417
+32.629333
+33.016205
+32.347813
+33.221004
+32.607075
+33.21048
+32.741993
+32.939697
+32.759327
+33.346485
+32.426422
+33.50806
+32.566902
+33.30964
+32.552357
+32.97157
+32.317635
+33.07805
+32.4955
+32.800735
+32.674015
+32.83517
+32.74885
+33.167023
+32.713566
+33.79289
+33.05964
+32.9456
+32.709385
+33.329906
+33.111927
+33.223156
+32.26015
+33.02444
+32.62903
+33.30165
+32.74358
+32.903774
+32.53114
+33.132183
+32.611397
+32.98655
+32.548187
+33.15517
+32.428295
+32.938427
+32.607296
+32.957165
+32.504215
+33.130764
+32.504044
+32.981873
+32.50908
+32.8381
+32.524467
+33.047966
+32.720264
+33.219604
+32.80122
+32.95714
+32.351986
+32.95528
+32.519257
+33.09448
+32.464947
+33.14703
+32.48652
+33.041164
+32.7053
+32.98823
+32.463726
+32.984997
+32.805416
+32.8593
+32.58456
+33.316647
+32.572723
+33.073765
+33.002872
+33.035915
+32.97175
+33.071938
+32.59965
+32.957596
+32.53796
+32.823563
+32.441242
+33.05731
+32.482433
+33.234585
+32.43243
+33.313526
+32.492382
+33.320328
+32.62259
+32.896027
+32.451164
+33.044987
+32.54745
+33.043797
+32.434696
+33.02588
+32.627895
+33.22147
+32.636913
+32.67204
+32.33082
+32.879925
+32.32124
+32.730812
+32.380054
+32.93971
+32.74937
+33.14792
+32.431843
+33.2733
+32.639492
+32.96952
+32.503494
+33.040234
+32.500668
+32.8893
+32.56324
+33.04651
+[1;34mwandb[0m: 
+[1;34mwandb[0m: 🚀 View run [33msmooth-pine-1[0m at: [34mhttps://wandb.ai/mgloeckler/dmri/runs/iqgv762o[0m
+[1;34mwandb[0m: Find logs at: [1;35m../../../../../weka/macke/mgloeckler90/simformer_model_selection/notebooks/wandb/run-20250221_184122-iqgv762o/logs[0m
+/weka/macke/mgloeckler90/simformer_model_selection/dmri/dmri/simulators/sphereical_distributions.py:20: UserWarning: Pass ['name'] as keyword args. From version 2.0.0 passing these as positional arguments will result in an error. 
+  sphere_default = get_sphere("symmetric724")
+/weka/macke/mgloeckler90/simformer_model_selection/dmri/dmri/simulators/sphereical_distributions.py:23: UserWarning: Pass ['name'] as keyword args. From version 2.0.0 passing these as positional arguments will result in an error. 
+  big_sphere = get_sphere("repulsion724")
+Traceback (most recent call last):
+  File "/home/macke/mgloeckler90/miniconda3/envs/dipy/lib/python3.11/site-packages/jax/_src/interpreters/pxla.py", line 2729, in _cached_compilation
+    xla_executable = compiler.compile_or_get_cached(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/dipy/lib/python3.11/site-packages/jax/_src/compiler.py", line 452, in compile_or_get_cached
+    return _compile_and_write_cache(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/dipy/lib/python3.11/site-packages/jax/_src/compiler.py", line 653, in _compile_and_write_cache
+    executable = backend_compile(
+                 ^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/dipy/lib/python3.11/site-packages/jax/_src/profiler.py", line 333, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/dipy/lib/python3.11/site-packages/jax/_src/compiler.py", line 309, in backend_compile
+    raise e
+  File "/home/macke/mgloeckler90/miniconda3/envs/dipy/lib/python3.11/site-packages/jax/_src/compiler.py", line 303, in backend_compile
+    return backend.compile(built_c, compile_options=options)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+jaxlib.xla_extension.XlaRuntimeError: INTERNAL: ptxas exited with non-zero error code 2, output: 
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/weka/macke/mgloeckler90/simformer_model_selection/notebooks/train.py", line 27, in <module>
+    ball_stick = AllGaussianAndConvolvedModels.from_theta(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/simformer_model_selection/dmri/dmri/simulators/base.py", line 44, in from_theta
+    args = cls.to_params(theta, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/simformer_model_selection/dmri/dmri/simulators/multi_compartment.py", line 187, in to_params
+    fractions = normal_to_dirichlet(cls.fraction_prior, fractions, component_mask)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/dipy/lib/python3.11/site-packages/jax/_src/traceback_util.py", line 180, in reraise_with_filtered_traceback
+    return fun(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/dipy/lib/python3.11/site-packages/jax/_src/pjit.py", line 337, in cache_miss
+    pgle_profiler) = _python_pjit_helper(fun, jit_info, *args, **kwargs)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/dipy/lib/python3.11/site-packages/jax/_src/pjit.py", line 195, in _python_pjit_helper
+    out_flat, compiled, profiler = _pjit_call_impl_python(*args_flat, **p.params)
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/dipy/lib/python3.11/site-packages/jax/_src/pjit.py", line 1672, in _pjit_call_impl_python
+    ).compile()
+      ^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/dipy/lib/python3.11/site-packages/jax/_src/interpreters/pxla.py", line 2415, in compile
+    executable = UnloadedMeshExecutable.from_hlo(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/dipy/lib/python3.11/site-packages/jax/_src/interpreters/pxla.py", line 2923, in from_hlo
+    xla_executable = _cached_compilation(
+                     ^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/dipy/lib/python3.11/site-packages/jax/_src/interpreters/pxla.py", line 2726, in _cached_compilation
+    with dispatch.log_elapsed_time(
+  File "/home/macke/mgloeckler90/miniconda3/envs/dipy/lib/python3.11/contextlib.py", line 141, in __exit__
+    def __exit__(self, typ, value, traceback):
+
+KeyboardInterrupt
+/weka/macke/mgloeckler90/simformer_model_selection/dmri/dmri/simulators/sphereical_distributions.py:20: UserWarning: Pass ['name'] as keyword args. From version 2.0.0 passing these as positional arguments will result in an error. 
+  sphere_default = get_sphere("symmetric724")
+/weka/macke/mgloeckler90/simformer_model_selection/dmri/dmri/simulators/sphereical_distributions.py:23: UserWarning: Pass ['name'] as keyword args. From version 2.0.0 passing these as positional arguments will result in an error. 
+  big_sphere = get_sphere("repulsion724")
+wandb: Using wandb-core as the SDK backend.  Please refer to https://wandb.me/wandb-core for more information.
+wandb: Currently logged in as: mgloeckler to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.19.7
+wandb: Run data is saved locally in /weka/macke/mgloeckler90/simformer_model_selection/notebooks/wandb/run-20250222_074642-roq86pcz
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run sage-sea-2
+wandb: ⭐️ View project at https://wandb.ai/mgloeckler/dmri
+wandb: 🚀 View run at https://wandb.ai/mgloeckler/dmri/runs/roq86pcz
+2025-02-22 07:48:18.054348: W external/xla/xla/hlo/transforms/simplifiers/hlo_rematerialization.cc:3021] Can't reduce memory use below 56.35GiB (60508440120 bytes) by rematerialization; only reduced to 58.62GiB (62946329520 bytes), down from 58.63GiB (62949312136 bytes) originally
+Traceback (most recent call last):
+  File "/weka/macke/mgloeckler90/simformer_model_selection/notebooks/train.py", line 230, in <module>
+    params, opt_state, loss = update(params, opt_state, data, subkey2)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/simformer_model_selection/notebooks/train.py", line 151, in update
+    loss, grads = jax.value_and_grad(loss_fn)(params, data, rng)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/simformer_model_selection/notebooks/train.py", line 137, in loss_fn
+    rng1, rng2 = jnp.split(rng, 2)
+                 ^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/dipy/lib/python3.11/site-packages/jax/_src/numpy/lax_numpy.py", line 3359, in split
+    return _split("split", ary, indices_or_sections, axis=axis)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/dipy/lib/python3.11/site-packages/jax/_src/numpy/lax_numpy.py", line 3272, in _split
+    size = ary.shape[axis]
+           ~~~~~~~~~^^^^^^
+IndexError: tuple index out of range
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+[1;34mwandb[0m: 
+[1;34mwandb[0m: 🚀 View run [33msage-sea-2[0m at: [34mhttps://wandb.ai/mgloeckler/dmri/runs/roq86pcz[0m
+[1;34mwandb[0m: Find logs at: [1;35m../../../../../weka/macke/mgloeckler90/simformer_model_selection/notebooks/wandb/run-20250222_074642-roq86pcz/logs[0m
+/weka/macke/mgloeckler90/simformer_model_selection/dmri/dmri/simulators/sphereical_distributions.py:20: UserWarning: Pass ['name'] as keyword args. From version 2.0.0 passing these as positional arguments will result in an error. 
+  sphere_default = get_sphere("symmetric724")
+/weka/macke/mgloeckler90/simformer_model_selection/dmri/dmri/simulators/sphereical_distributions.py:23: UserWarning: Pass ['name'] as keyword args. From version 2.0.0 passing these as positional arguments will result in an error. 
+  big_sphere = get_sphere("repulsion724")
+wandb: Using wandb-core as the SDK backend.  Please refer to https://wandb.me/wandb-core for more information.
+wandb: Currently logged in as: mgloeckler to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.19.7
+wandb: Run data is saved locally in /weka/macke/mgloeckler90/simformer_model_selection/notebooks/wandb/run-20250222_075238-cg7xfuyn
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run playful-thunder-3
+wandb: ⭐️ View project at https://wandb.ai/mgloeckler/dmri
+wandb: 🚀 View run at https://wandb.ai/mgloeckler/dmri/runs/cg7xfuyn
+2025-02-22 07:54:15.295191: W external/xla/xla/hlo/transforms/simplifiers/hlo_rematerialization.cc:3021] Can't reduce memory use below 56.35GiB (60508440120 bytes) by rematerialization; only reduced to 58.62GiB (62946329520 bytes), down from 58.63GiB (62949312136 bytes) originally
+(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41)
+(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41)
+[1;34mwandb[0m: 
+[1;34mwandb[0m: 🚀 View run [33mplayful-thunder-3[0m at: [34mhttps://wandb.ai/mgloeckler/dmri/runs/cg7xfuyn[0m
+[1;34mwandb[0m: Find logs at: [1;35m../../../../../weka/macke/mgloeckler90/simformer_model_selection/notebooks/wandb/run-20250222_075238-cg7xfuyn/logs[0m
+/weka/macke/mgloeckler90/simformer_model_selection/dmri/dmri/simulators/sphereical_distributions.py:20: UserWarning: Pass ['name'] as keyword args. From version 2.0.0 passing these as positional arguments will result in an error. 
+  sphere_default = get_sphere("symmetric724")
+/weka/macke/mgloeckler90/simformer_model_selection/dmri/dmri/simulators/sphereical_distributions.py:23: UserWarning: Pass ['name'] as keyword args. From version 2.0.0 passing these as positional arguments will result in an error. 
+  big_sphere = get_sphere("repulsion724")
+wandb: Using wandb-core as the SDK backend.  Please refer to https://wandb.me/wandb-core for more information.
+wandb: Currently logged in as: mgloeckler to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.19.7
+wandb: Run data is saved locally in /weka/macke/mgloeckler90/simformer_model_selection/notebooks/wandb/run-20250222_172708-ggks75hh
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run cerulean-brook-4
+wandb: ⭐️ View project at https://wandb.ai/mgloeckler/dmri
+wandb: 🚀 View run at https://wandb.ai/mgloeckler/dmri/runs/ggks75hh
+2025-02-22 17:28:48.709223: W external/xla/xla/hlo/transforms/simplifiers/hlo_rematerialization.cc:3021] Can't reduce memory use below 56.35GiB (60508440120 bytes) by rematerialization; only reduced to 58.62GiB (62946329520 bytes), down from 58.63GiB (62949312136 bytes) originally
+/weka/macke/mgloeckler90/simformer_model_selection/dmri/dmri/simulators/sphereical_distributions.py:20: UserWarning: Pass ['name'] as keyword args. From version 2.0.0 passing these as positional arguments will result in an error. 
+  sphere_default = get_sphere("symmetric724")
+/weka/macke/mgloeckler90/simformer_model_selection/dmri/dmri/simulators/sphereical_distributions.py:23: UserWarning: Pass ['name'] as keyword args. From version 2.0.0 passing these as positional arguments will result in an error. 
+  big_sphere = get_sphere("repulsion724")
+wandb: Using wandb-core as the SDK backend.  Please refer to https://wandb.me/wandb-core for more information.
+wandb: Currently logged in as: mgloeckler to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.19.7
+wandb: Run data is saved locally in /weka/macke/mgloeckler90/simformer_model_selection/notebooks/wandb/run-20250224_075902-goleq13d
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run decent-tree-5
+wandb: ⭐️ View project at https://wandb.ai/mgloeckler/dmri
+wandb: 🚀 View run at https://wandb.ai/mgloeckler/dmri/runs/goleq13d
+2025-02-24 08:00:31.847977: W external/xla/xla/hlo/transforms/simplifiers/hlo_rematerialization.cc:3021] Can't reduce memory use below 56.35GiB (60508440120 bytes) by rematerialization; only reduced to 58.62GiB (62946329520 bytes), down from 58.63GiB (62949312136 bytes) originally
+(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41)
+(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41)
+[1;34mwandb[0m: 
+[1;34mwandb[0m: 🚀 View run [33mdecent-tree-5[0m at: [34mhttps://wandb.ai/mgloeckler/dmri/runs/goleq13d[0m
+[1;34mwandb[0m: Find logs at: [1;35m../../../../../weka/macke/mgloeckler90/simformer_model_selection/notebooks/wandb/run-20250224_075902-goleq13d/logs[0m
+/weka/macke/mgloeckler90/simformer_model_selection/dmri/dmri/simulators/sphereical_distributions.py:20: UserWarning: Pass ['name'] as keyword args. From version 2.0.0 passing these as positional arguments will result in an error. 
+  sphere_default = get_sphere("symmetric724")
+/weka/macke/mgloeckler90/simformer_model_selection/dmri/dmri/simulators/sphereical_distributions.py:23: UserWarning: Pass ['name'] as keyword args. From version 2.0.0 passing these as positional arguments will result in an error. 
+  big_sphere = get_sphere("repulsion724")
+wandb: Using wandb-core as the SDK backend.  Please refer to https://wandb.me/wandb-core for more information.
+wandb: Currently logged in as: mgloeckler to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.19.7
+wandb: Run data is saved locally in /weka/macke/mgloeckler90/simformer_model_selection/notebooks/wandb/run-20250224_104742-blq8q62j
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run kind-sponge-6
+wandb: ⭐️ View project at https://wandb.ai/mgloeckler/dmri
+wandb: 🚀 View run at https://wandb.ai/mgloeckler/dmri/runs/blq8q62j
+2025-02-24 10:49:45.348183: W external/xla/xla/hlo/transforms/simplifiers/hlo_rematerialization.cc:3021] Can't reduce memory use below 56.35GiB (60508440120 bytes) by rematerialization; only reduced to 58.63GiB (62949279360 bytes), down from 58.63GiB (62949279360 bytes) originally
+(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41)
+(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41)
+[1;34mwandb[0m: 
+[1;34mwandb[0m: 🚀 View run [33mkind-sponge-6[0m at: [34mhttps://wandb.ai/mgloeckler/dmri/runs/blq8q62j[0m
+[1;34mwandb[0m: Find logs at: [1;35m../../../../../weka/macke/mgloeckler90/simformer_model_selection/notebooks/wandb/run-20250224_104742-blq8q62j/logs[0m
