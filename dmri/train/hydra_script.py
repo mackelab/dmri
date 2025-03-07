@@ -82,7 +82,7 @@ def _main(cfg: DictConfig):
 
     # Set up checkpoint manager
     # Make sure checkpoint_dir is in results/{name}/checkpoints
-    checkpoint_dir = os.path.join("results", cfg.name, "checkpoints")
+    checkpoint_dir = os.path.join(output_super_dir,"checkpoints")
     os.makedirs(checkpoint_dir, exist_ok=True)
     log.info(f"Checkpoint directory: {checkpoint_dir}")
 
