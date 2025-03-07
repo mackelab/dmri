@@ -19,5 +19,6 @@ defaults:
   - _self_
   - simulator: simple
   - model: mask_amortized
+  - train: default
   - launcher: slurm
   - partition: none
