@@ -19,8 +19,6 @@ class DMRIModelSelectionConfig:
     widening_factor: int = 3
     attn_size: int = 16
     dropout_rate: float | None = None
-    widening_factor: int = 3
-    attn_size: int = 16
     context_dim = None
 
 
