@@ -198,10 +198,10 @@ def _main(cfg: DictConfig):
     max_train_hours = cfg.train.get("max_train_hours", float("inf"))
     log.info(f"Maximum training time: {max_train_hours} hours")
     start_time = time.time()
-
+    model.train()
     while True:
         key, subkey = jax.random.split(key)
-        for _ in range(50):
+        for _ in range(inner_steps):
             data = next(datastream)
             params, opt_state, loss = update(params, opt_state, data, subkey)
             step += 1
@@ -241,6 +241,7 @@ def _main(cfg: DictConfig):
         # Evaluate model periodically
         if step > 0 and step % eval_freq == 0:
             log.info(f"Evaluating model at step {step}")
+            model.eval()
 
             # Evaluate negative log-likelihood for masks
             key, eval_key = jax.random.split(key)
@@ -255,7 +256,7 @@ def _main(cfg: DictConfig):
             )
 
             log.info(f"Mask NLL: {mask_nnl}, Theta NLL: {theta_nnl}, ESS: {ess}")
-
+            model.train()
             if cfg.use_wandb:
                 wandb.log(
                     {
@@ -264,6 +265,7 @@ def _main(cfg: DictConfig):
                         "effective_sample_size": float(ess),
                     }
                 )
+
 
         # Save checkpoint periodically
         if step > 0 and step % checkpoint_freq == 0:
