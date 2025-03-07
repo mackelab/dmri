@@ -2,10 +2,7 @@ from typing import Callable, Optional, Tuple
 
 import jax
 import jax.numpy as jnp
-#from jax.scipy.stats import ks_2samp
-
-
-
+# from jax.scipy.stats import ks_2samp
 
 
 def run_tarp(
@@ -24,7 +21,10 @@ def run_tarp(
     if references is None:
         references = get_tarp_references(thetas_true)
 
-    return _run_tarp(posterior_samples, thetas_true, references, distance, num_bins, z_score_theta)
+    return _run_tarp(
+        posterior_samples, thetas_true, references, distance, num_bins, z_score_theta
+    )
+
 
 def _run_tarp(
     posterior_samples: jnp.ndarray,
@@ -49,10 +49,12 @@ def _run_tarp(
         posterior_samples = (posterior_samples - lo) / (hi - lo + 1e-10)
         thetas = (thetas - lo) / (hi - lo + 1e-10)
 
-    sample_dists = distance(references-posterior_samples, axis=-1)
-    theta_dists = distance(references-thetas, axis=-1)
+    sample_dists = distance(references - posterior_samples, axis=-1)
+    theta_dists = distance(references - thetas, axis=-1)
 
-    coverage_values = jnp.sum(sample_dists < theta_dists, axis=0) / num_posterior_samples
+    coverage_values = (
+        jnp.sum(sample_dists < theta_dists, axis=0) / num_posterior_samples
+    )
     hist, alpha_grid = jnp.histogram(coverage_values, bins=num_bins, density=True)
     ecp = jnp.cumsum(hist) / jnp.sum(hist)
     ecp = jnp.concatenate([jnp.array([0]), ecp])
@@ -64,7 +66,9 @@ def get_tarp_references(thetas: jnp.ndarray) -> jnp.ndarray:
     """Returns reference points for the TARP diagnostic, sampled from a uniform."""
     lo = jnp.min(thetas, axis=0)
     hi = jnp.max(thetas, axis=0)
-    return jax.random.uniform(jax.random.PRNGKey(0), shape=thetas.shape, minval=lo, maxval=hi)
+    return jax.random.uniform(
+        jax.random.PRNGKey(0), shape=thetas.shape, minval=lo, maxval=hi
+    )
 
 
 def check_tarp(

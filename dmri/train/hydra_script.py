@@ -2,8 +2,6 @@ import logging
 import os
 import random
 import socket
-import sys
-import time
 
 from dmri.train.build_simulator import build_simulator
 from dmri.train.build_model import build_model
@@ -153,7 +151,7 @@ def _main(cfg: DictConfig):
 
     key = rng_key
     checkpoint_freq = cfg.get("checkpoint_freq", 2000)  # Save checkpoint every N steps
-    eval_freq = cfg.get("eval_freq", 500)  # Evaluate model every N steps
+    eval_freq = cfg.get("eval_freq", 2000)  # Evaluate model every N steps
     step = start_step
 
     for data in loader:

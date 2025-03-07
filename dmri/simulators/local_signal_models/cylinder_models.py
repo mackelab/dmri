@@ -1,15 +1,12 @@
 import math
-from typing import Any
 from dmri.simulators.local_signal_models.gaussian_models import Stick
 import jax.numpy as jnp
 import jax
-from abc import ABC, abstractmethod
 
 from jax.typing import ArrayLike
 
 from dmri.simulators.base import SignalCompartment
 from dmri.utils.dmriutils import (
-    fit_diffusion_tensor_linearized,
     unitsphere_to_cartesian,
 )
 

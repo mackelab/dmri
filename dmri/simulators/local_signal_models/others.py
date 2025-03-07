@@ -2,7 +2,6 @@ from dmri.utils.dmriutils import fit_diffusion_tensor_linearized
 import jax.numpy as jnp
 import jax
 
-from jax.typing import ArrayLike
 
 from dmri.simulators.base import SignalCompartment
 

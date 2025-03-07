@@ -1,4 +1,3 @@
-from functools import partial
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -6,18 +5,25 @@ import numpy as np
 from flax import nnx
 
 from probjax.nn import GaussianFourierEmbedding, Transformer
-from probjax.nn.loss_fn.denoising import build_time_dependent_denoising_loss
 from probjax.nn.nets.denoising_diffusion_model import EDM
-from probjax.nn import MLP
-from probjax.nn.utils import AffineFuse
 
 from dmri.nn.tokenizer import Tokenizer
 
 from probjax.utils.odeint import odeint
+from dataclasses import dataclass
+
+
+@dataclass
+class DMRIThetaInferenceConfig:
+    num_layers: int = 6
+    num_heads: int = 4
+    widening_factor: int = 3
+    attn_size: int = 16
+    context_dim: int = 64
+    attn_size: int = 16
 
 
 class DiffusionTransformer(nnx.Module, experimental_pytree=True):
-
     def __init__(
         self,
         rngs,
@@ -27,6 +33,7 @@ class DiffusionTransformer(nnx.Module, experimental_pytree=True):
         num_layers=6,
         attn_size=16,
         widening_factor=3,
+        dropout_rate=None,
         enable_cross_attention=True,
     ) -> None:
         self.time_embedding = GaussianFourierEmbedding(1, context_dim, rngs=rngs)
@@ -37,6 +44,7 @@ class DiffusionTransformer(nnx.Module, experimental_pytree=True):
             attn_size=attn_size,
             widening_factor=widening_factor,
             enable_cross_attention=enable_cross_attention,
+            dropout_rate=dropout_rate,
             rngs=rngs,
             context_dim=context_dim,
         )
@@ -57,6 +65,7 @@ class DiffusionTransformer(nnx.Module, experimental_pytree=True):
             time_embed = time_embed[..., None, :]
         _context = time_embed
 
+        # Additional context
         if context is not None:
             while context.ndim < input_embed.ndim:
                 context = context[..., None, :]
@@ -79,6 +88,7 @@ class EDMSimformer(EDM):
         num_layers=4,
         attn_size=16,
         widening_factor=3,
+        dropout_rate=None,
         enable_cross_attention=True,
     ):
         transformer = DiffusionTransformer(
@@ -89,6 +99,7 @@ class EDMSimformer(EDM):
             num_layers=num_layers,
             attn_size=attn_size,
             widening_factor=widening_factor,
+            dropout_rate=dropout_rate,
             enable_cross_attention=enable_cross_attention,
         )
         # Prevent automatic parameter updates
@@ -168,11 +179,7 @@ class EDMSimformer(EDM):
             )
             return f_ - 0.5 * g_**2 * s_
 
-        # Euler step forward from t=0 (including logp)
-        # dx0 = dx_dt_fn(0.0, x)
-        # div0 = jnp.trace(jax.jacfwd(lambda z: dx_dt_fn(0.0, z))(x))
-        # x = x + dx0 * ts[0]
-        # logp0 = -div0 * ts[0]
+
         x = x
         logp0 = 0.0
 

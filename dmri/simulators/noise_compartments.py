@@ -25,6 +25,7 @@ class RicianNoise(NoiseCompartment):
         log_i0_value = x + jnp.log(jax.scipy.special.i0e(x))
         log_likelihood += log_i0_value
         return log_likelihood.sum(-1)
+
     @classmethod
     def to_theta(cls, *args) -> ArrayLike:
         """Transforms the natural parameters to the optimization parameters which are
@@ -36,7 +37,6 @@ class RicianNoise(NoiseCompartment):
     def to_params(cls, theta: ArrayLike) -> Any:
         """Transforms the optimization parameters to the natural parameters."""
         return (jnp.exp(theta),)
-
 
 
 class GaussianNoise(NoiseCompartment):
@@ -69,7 +69,7 @@ class GaussianNoise(NoiseCompartment):
 
 class BoundedRicianNoise(RicianNoise):
     theta_dim = 1
-    min_sigma_g = 0.
+    min_sigma_g = 0.0
     max_sigma_g = 0.5
 
     def __init__(self, sigma_g):
@@ -88,15 +88,18 @@ class BoundedRicianNoise(RicianNoise):
         # Apply inverse sigmoid
         return jnp.log(theta_sig / (1 - theta_sig))
 
-
     @classmethod
     def to_params(cls, theta: ArrayLike) -> Any:
         """Transforms the optimization parameters to the natural parameters."""
-        return jax.nn.sigmoid(theta) * (cls.max_sigma_g - cls.min_sigma_g) + cls.min_sigma_g,
+        return (
+            jax.nn.sigmoid(theta) * (cls.max_sigma_g - cls.min_sigma_g)
+            + cls.min_sigma_g,
+        )
+
 
 class BoundedGaussianNoise(GaussianNoise):
     theta_dim = 1
-    min_sigma_g = 0.
+    min_sigma_g = 0.0
     max_sigma_g = 0.5
 
     def __init__(self, sigma_g):
@@ -115,23 +118,29 @@ class BoundedGaussianNoise(GaussianNoise):
         # Apply inverse sigmoid
         return jnp.log(theta_sig / (1 - theta_sig))
 
-
     @classmethod
     def to_params(cls, theta: ArrayLike) -> Any:
         """Transforms the optimization parameters to the natural parameters."""
-        return jax.nn.sigmoid(theta) * (cls.max_sigma_g - cls.min_sigma_g) + cls.min_sigma_g,
+        return (
+            jax.nn.sigmoid(theta) * (cls.max_sigma_g - cls.min_sigma_g)
+            + cls.min_sigma_g,
+        )
+
 
 class LowRicianNoise(BoundedRicianNoise):
-    min_sigma_g = 0.
+    min_sigma_g = 0.0
     max_sigma_g = 0.05
+
 
 class MediumRicianNoise(BoundedRicianNoise):
     min_sigma_g = 0.05
     max_sigma_g = 0.1
 
+
 class LargeRicianNoise(BoundedRicianNoise):
     min_sigma_g = 0.1
     max_sigma_g = 0.2
+
 
 class VeryLargeRicianNoise(BoundedRicianNoise):
     min_sigma_g = 0.2
@@ -139,23 +148,23 @@ class VeryLargeRicianNoise(BoundedRicianNoise):
 
 
 class LowGaussianNoise(BoundedGaussianNoise):
-    min_sigma_g = 0.
+    min_sigma_g = 0.0
     max_sigma_g = 0.05
+
 
 class MediumGaussianNoise(BoundedGaussianNoise):
     min_sigma_g = 0.05
     max_sigma_g = 0.1
 
+
 class LargeGaussianNoise(BoundedGaussianNoise):
     min_sigma_g = 0.1
     max_sigma_g = 0.2
 
+
 class VeryLargeGaussianNoise(BoundedGaussianNoise):
     min_sigma_g = 0.2
     max_sigma_g = 0.5
-
-
-
 
 
 def add_rician_noise(rng, signal, sigma_g):

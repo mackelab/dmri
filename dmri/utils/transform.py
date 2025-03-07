@@ -1,11 +1,9 @@
-from functools import partial
 from probjax.utils.stats import betainc, betaincinv
 
 import jax
 import jax.numpy as jnp
 from jax import lax
 
-import numpy as np
 
 
 @jax.jit
@@ -89,6 +87,7 @@ def dirichlet_to_normal(alpha, pi, mask=None):
     eps = jnp.nan_to_num(eps)
 
     return eps
+
 
 # Forward function (returns output and residuals for backward pass)
 @jax.custom_vjp

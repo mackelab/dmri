@@ -3,17 +3,36 @@ from typing import Optional
 from dmri.nn.tokenizer import Tokenizer
 import jax
 import jax.numpy as jnp
-import numpy as np
 
 from flax import nnx
 
-from probjax.nn import GaussianFourierEmbedding, Transformer
-from probjax.nn.loss_fn.denoising import build_time_dependent_denoising_loss
-from probjax.nn.nets.denoising_diffusion_model import EDM
-from probjax.nn import MLP
-from probjax.nn.utils import AffineFuse
+from probjax.nn import Transformer
 
 import optax
+from dataclasses import dataclass
+
+
+@dataclass
+class DMRIModelSelectionConfig:
+    num_layers: int = 4
+    num_heads: int = 4
+    widening_factor: int = 3
+    attn_size: int = 16
+    dropout_rate: float | None = None
+    widening_factor: int = 3
+    attn_size: int = 16
+    context_dim = None
+
+
+@dataclass
+class DMRIModelSelectionAmortizedPriorConfig:
+    num_layers: int = 4
+    num_heads: int = 4
+    widening_factor: int = 3
+    attn_size: int = 16
+    dropout_rate: float | None = None
+    context_dim: int = 64  # Context dimension embedding
+    mask_prior_dim: int = 1  # Scalar mask probability
 
 
 class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
@@ -100,7 +119,9 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
         )
 
     def sample(self, key, tokenizer, y, dim, context=None):
-        return naive_autoregressive_decoding(self, key, tokenizer, y, dim, context=context)
+        return naive_autoregressive_decoding(
+            self, key, tokenizer, y, dim, context=context
+        )
 
     def log_prob(self, model_mask, tokenizer, y, **kwargs):
         model_mask_logits = self(model_mask, tokenizer, y=y, **kwargs)
@@ -108,7 +129,13 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
         return jnp.sum(log_prob, axis=-1)
 
 
-@partial(jax.jit, static_argnums=(2,4,))
+@partial(
+    jax.jit,
+    static_argnums=(
+        2,
+        4,
+    ),
+)
 def naive_autoregressive_decoding(model, key, tokenizer, y, dim, context=None):
     x = jnp.zeros((dim,), dtype=jnp.bool_)
 

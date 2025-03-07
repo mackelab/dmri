@@ -1,5 +1,4 @@
 from dataclasses import dataclass, field
-from typing import NamedTuple, Optional
 from jax.typing import ArrayLike
 import numpy as np
 import jax.numpy as jnp
@@ -91,8 +90,7 @@ def random_clinical_acquisition(rng, num_acquisitions=35) -> acquisition_scheme:
 
     # Choose one of the above randomly
     bvals = jax.random.choice(
-        rng3,
-        jnp.stack([bvals_typical, bvals_rand_int, bvals_float])
+        rng3, jnp.stack([bvals_typical, bvals_rand_int, bvals_float])
     )
     bvals = jnp.sort(bvals)
     # Create a mask for b0 images

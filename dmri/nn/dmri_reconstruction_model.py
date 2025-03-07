@@ -1,13 +1,14 @@
-from .autoregressive import BinaryAutoregressiveDecoder
-from .embedding_net import BvalBvecSignalEmbeddingNet
-from .simformer import EDMSimformer, GaussianFourierEmbedding
-from .tokenizer import StructuredTokenizer, DMRITokenizer
+from .autoregressive import (
+    BinaryAutoregressiveDecoder,
+    DMRIModelSelectionAmortizedPriorConfig,
+    DMRIModelSelectionConfig,
+)
+from .embedding_net import BvalBvecSignalEmbeddingNet, DMRIEmbeddingConfig
+from .simformer import EDMSimformer, GaussianFourierEmbedding, DMRIThetaInferenceConfig
+from .tokenizer import DMRITokenizer
 
-from functools import partial
 from typing import List, Optional
-import jax
 import jax.numpy as jnp
-import numpy as np
 
 from flax import nnx
 
@@ -16,41 +17,8 @@ from jax.typing import ArrayLike
 from dataclasses import dataclass, field
 
 from dmri.simulators import MultiCompartment
-import optax
-
-@dataclass
-class DMRIEmbeddingConfig:
-    num_layers: int = 3
-    num_heads: int = 4
-    widening_factor: int = 2
-    attn_size: int = 16
 
 
-@dataclass
-class DMRIModelSelectionConfig:
-    num_layers: int = 4
-    num_heads: int = 4
-    widening_factor: int = 3
-    attn_size: int = 16
-    context_dim = None
-
-
-@dataclass
-class DMRIModelSelectionAmortizedPriorConfig:
-    num_layers: int = 4
-    num_heads: int = 4
-    widening_factor: int = 3
-    attn_size: int = 16
-    context_dim: int = 64
-    mask_prior_dim: int = 1
-
-
-@dataclass
-class DMRIThetaInferenceConfig:
-    num_layers: int = 6
-    num_heads: int = 4
-    widening_factor: int = 3
-    attn_size: int = 16
 
 @dataclass
 class DMRIInferenceModelConfig:
@@ -63,6 +31,7 @@ class DMRIInferenceModelConfig:
     theta_inference_cfg: DMRIThetaInferenceConfig = field(
         default_factory=DMRIThetaInferenceConfig
     )
+
 
 @dataclass
 class DMRIInferenceModelConfigMaskPriorAmortized:
@@ -95,7 +64,6 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         params = cfg.model_selection_cfg.__dict__
         if cfg.model_selection_cfg.context_dim is not None:
             # We expect a mask prior input
-
             self.mask_prior_need = True
             mask_prior_dim = params.pop("mask_prior_dim")
             self.mask_prior_embed = GaussianFourierEmbedding(
@@ -235,7 +203,6 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         theta_loss /= jnp.sqrt(theta.shape[-1])
 
         return jnp.concatenate([model_mask_loss[None], theta_loss[None]])
-
 
     def sample_mask(self, rng, bvals, bvecs, signals, mask_prior=None):
         # Update for different model configs
