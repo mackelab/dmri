@@ -2,6 +2,6 @@ name: DMRIThetaInferenceConfig
 params:
   num_layers: 6
   num_heads: 4
-  widening_factor: 3
+  widening_factor: 4
   attn_size: 16
   context_dim: 64

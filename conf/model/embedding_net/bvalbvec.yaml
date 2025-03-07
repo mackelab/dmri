@@ -1,11 +1,11 @@
 name: DMRIEmbeddingConfig
 params:
-  num_layers: 3
+  num_layers: 2
   num_heads: 4
-  widening_factor: 2
+  widening_factor: 4
   attn_size: 16
   dropout_rate: null
-  bvals_embed_dim: 3
-  signals_embed_dim: 3
-  bvec_repeats: 1
-  log_transform_signals: False
+  bvals_embed_dim: 6
+  signals_embed_dim: 6
+  bvec_repeats: 2
+  log_transform_signals: True
