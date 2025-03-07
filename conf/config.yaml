@@ -13,7 +13,7 @@ hydra:
 
 wandb:
   project: dmri
-  entity: ${name}
+  entity: null
 
 defaults:
   - _self_

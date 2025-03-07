@@ -208,8 +208,6 @@ def _main(cfg: DictConfig):
                     "loss mask": float(loss[0]),
                     "loss theta": float(loss[1]),
                     "queue_size": queue_size,
-                    "step": step,
-                    "elapsed_hours": elapsed_hours,
                 }
             )
 
@@ -251,7 +249,7 @@ def _main(cfg: DictConfig):
                     {
                         "mask_negative_log_likelihood": float(mask_nnl),
                         "theta_negative_log_likelihood": float(theta_nnl),
-                        "step": step,
+                        "effective_sample_size": float(ess),
                     }
                 )
 
@@ -261,6 +259,7 @@ def _main(cfg: DictConfig):
                 "loss_theta": float(loss[1]),
                 "mask_nnl": float(mask_nnl),
                 "theta_nnl": float(theta_nnl),
+                "ess": float(ess),
             }
         else:
             metrics = {
@@ -291,4 +290,5 @@ def _main(cfg: DictConfig):
                 step = checkpoint["step"]
                 log.info(f"Recovered to step {step}")
 
+    # Log training completion to wandb
     log.info("Training complete")
