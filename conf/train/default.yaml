@@ -1,9 +1,9 @@
-inner_steps: 50
-checkpoint_freq: 2000
-eval_freq: 2000
+inner_steps: 500
+checkpoint_freq: 20_000
+eval_freq: 20_000
 continue_training: false
-max_train_hours: 12
+max_train_hours: 24
 
 defaults:
   - optimizer: default
-  - dataloader: datastream
+  - dataloader: datastream_large_batch

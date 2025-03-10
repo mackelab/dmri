@@ -5,3 +5,4 @@ params:
   widening_factor: 4
   attn_size: 16
   context_dim: 64
+  dropout_rate: null

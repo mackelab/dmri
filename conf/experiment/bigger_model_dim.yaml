@@ -1,0 +1,12 @@
+# @package _global_
+hydra:
+  mode: MULTIRUN
+  sweeper:
+    params:
+      name: dmri_bigger
+      use_wandb: true
+      model.model_dim: 128
+
+defaults:
+  - _self_
+  - override /partition: h100

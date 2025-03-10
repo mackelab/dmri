@@ -15,6 +15,7 @@ import numpy as np
 import jax
 from omegaconf import DictConfig, OmegaConf
 import optax
+from flax import nnx
 
 import wandb
 
@@ -61,7 +62,7 @@ def _main(cfg: DictConfig):
     # Init wandb
     if cfg.use_wandb:
         wandb.config = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
-        wandb.init(entity=cfg.wandb.entity, project=cfg.wandb.project)
+        wandb.init(entity=cfg.wandb.entity, project=cfg.wandb.project, name=cfg.name)
 
     seed = cfg.seed
     random.seed(seed)
@@ -71,11 +72,14 @@ def _main(cfg: DictConfig):
 
     sim_type, simulator = build_simulator(cfg)
 
-    model, params = build_model(cfg, sim_type)
+    model = build_model(cfg, sim_type)
+    model.train()
     log.info(f"Model cfg: {model.cfg}")
+    # Split to functional
+    graphdef, params, static, state = nnx.split(model, nnx.Param, nnx.Intermediate, ...)
 
     # Create evaluator for online model performance metrics
-    evaluator = build_pure_eval_fns(model, sim_type)
+    evaluator = build_pure_eval_fns(graphdef, static, sim_type)
 
     # Train model
     log.info("Training")
@@ -125,10 +129,12 @@ def _main(cfg: DictConfig):
     if not continue_training or start_step == 0:
         opt_state = optimizer.init(params)
 
-    def loss_fn(params, data, rng):
+    def loss_fn(params, state, data, rng):
         p_mask, model_mask, thetas, xs, acq = data
+        model = nnx.merge(graphdef, params, static, state)
+        model.train()
         losses = model.loss_fn(
-            params,
+            None,
             rng,
             model_mask=model_mask,
             theta=thetas,
@@ -137,16 +143,17 @@ def _main(cfg: DictConfig):
             bvecs=acq.bvecs,
             mask_prior=p_mask,
         )
-        return sum(losses), losses
+        _, _, _, new_state = nnx.split(model, nnx.Param, nnx.Intermediate, ...)
+        return sum(losses), (losses, new_state)
 
     @jax.jit
-    def update(params, opt_state, data, rng):
-        (_, losses), grads = jax.value_and_grad(loss_fn, has_aux=True)(
-            params, data, rng
+    def update(params, state, opt_state, data, rng):
+        (_, (losses, new_state)), grads = jax.value_and_grad(loss_fn, has_aux=True)(
+            params, state, data, rng
         )
         updates, opt_state = optimizer.update(grads, opt_state, params=params)
         new_params = optax.apply_updates(params, updates)
-        return new_params, opt_state, losses
+        return new_params, new_state, opt_state, losses
 
     # Create a data loader
     loader_name = cfg.train.dataloader.name
@@ -198,12 +205,14 @@ def _main(cfg: DictConfig):
     max_train_hours = cfg.train.get("max_train_hours", float("inf"))
     log.info(f"Maximum training time: {max_train_hours} hours")
     start_time = time.time()
-    model.train()
+
     while True:
         key, subkey = jax.random.split(key)
         for _ in range(inner_steps):
             data = next(datastream)
-            params, opt_state, loss = update(params, opt_state, data, subkey)
+            params, state, opt_state, loss = update(
+                params, state, opt_state, data, subkey
+            )
             step += 1
         total_loss = float(sum(loss))
         queue_size = int(loader.queue.qsize())
@@ -241,22 +250,19 @@ def _main(cfg: DictConfig):
         # Evaluate model periodically
         if step > 0 and step % eval_freq == 0:
             log.info(f"Evaluating model at step {step}")
-            model.eval()
-
             # Evaluate negative log-likelihood for masks
             key, eval_key = jax.random.split(key)
-            mask_nnl = evaluator.eval_nnl_mask(params, eval_loader, iters=5)
+            mask_nnl = evaluator.eval_nnl_mask(params, state, eval_loader, iters=5)
 
             # Evaluate negative log-likelihood for thetas
-            theta_nnl = evaluator.eval_nnl_theta(params, eval_loader, iters=5)
+            theta_nnl = evaluator.eval_nnl_theta(params, state, eval_loader, iters=5)
 
             # Evaluate ess
             ess = evaluator.eval_effective_sample_size(
-                params, eval_loader, eval_key, K=5, iters=1
+                params, state, eval_loader, eval_key, K=5, iters=1
             )
 
             log.info(f"Mask NLL: {mask_nnl}, Theta NLL: {theta_nnl}, ESS: {ess}")
-            model.train()
             if cfg.use_wandb:
                 wandb.log(
                     {

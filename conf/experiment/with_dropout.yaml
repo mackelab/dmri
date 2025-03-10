@@ -1,0 +1,15 @@
+# @package _global_
+
+hydra:
+  mode: MULTIRUN
+  sweeper:
+    params:
+      name: dmri_dropout
+      use_wandb: true
+      model.embedding_net.params.dropout_rate: 0.1
+      model.inference_net.params.dropout_rate: 0.1
+      model.model_selection_net.params.dropout_rate: 0.1
+
+defaults:
+  - _self_
+  - override /partition: h100
