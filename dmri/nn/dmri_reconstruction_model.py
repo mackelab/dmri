@@ -158,7 +158,6 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         model_types=None,
         noise_types=None,
     ):
-        nnx.update(self, params)
         # Embed model configuration
         tokens_cfg = self.tokenizer.embed_cfgs(
             model_mask, alpha_prior, model_types=model_types, noise_types=noise_types

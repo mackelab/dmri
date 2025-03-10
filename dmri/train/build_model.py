@@ -34,6 +34,4 @@ def build_model(cfg: DictConfig, sim_type):
     )
     model = DMRIInferenceModel(cfg_m, nnx.Rngs(cfg.model.init_seed))
 
-    params = nnx.state(model, nnx.Param)
-
-    return model, params
+    return model

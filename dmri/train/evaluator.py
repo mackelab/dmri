@@ -6,10 +6,11 @@ from flax import nnx
 from functools import partial
 
 
-def build_pure_eval_fns(model, sim_type):
+def build_pure_eval_fns(graphdef, static, sim_type):
     @jax.jit
-    def sample_masks(params, rng, data):
-        nnx.update(model, params)
+    def sample_masks(params, state, rng, data):
+        model = nnx.merge(graphdef, params, static, state)
+        model.eval()
         p_mask, _, thetas, xs, acq = data
         sample_fn = jax.vmap(model.sample_mask)
         rngs = jax.random.split(rng, len(thetas))
@@ -17,16 +18,20 @@ def build_pure_eval_fns(model, sim_type):
         return masks_sampled
 
     @jax.jit
-    def log_prob_masks(params, data):
-        nnx.update(model, params)
+    def log_prob_masks(params, state, data):
+        model = nnx.merge(graphdef, params, static, state)
+        model.eval()
+
         p_mask, model_mask, thetas, xs, acq = data
         return jax.vmap(model.log_prob_mask)(
             model_mask, acq.bvals, acq.bvecs, xs, p_mask
         )
 
     @jax.jit
-    def sample_thetas(params, rng, data, num_steps=128, max_noise=40):
-        nnx.update(model, params)
+    def sample_thetas(params, state, rng, data, num_steps=128, max_noise=40):
+        model = nnx.merge(graphdef, params, static, state)
+        model.eval()
+
         _, model_mask, thetas, xs, acq = data
         sample_fn = jax.vmap(model.sample_theta)
         rngs = jax.random.split(rng, len(thetas))
@@ -36,8 +41,10 @@ def build_pure_eval_fns(model, sim_type):
         return sample_fn(rngs, acq.bvals, acq.bvecs, xs, model_mask)
 
     @jax.jit
-    def log_prob_thetas(params, data, num_steps=128, max_noise=40):
-        nnx.update(model, params)
+    def log_prob_thetas(params, state, data, num_steps=128, max_noise=40):
+        model = nnx.merge(graphdef, params, static, state)
+        model.eval()
+
         p_mask, model_mask, thetas, xs, acq = data
         sample_fn = partial(
             model.log_prob_theta, num_steps=num_steps, max_noise=max_noise
@@ -45,8 +52,11 @@ def build_pure_eval_fns(model, sim_type):
         return jax.vmap(sample_fn)(thetas, acq.bvals, acq.bvecs, xs, model_mask)
 
     @jax.jit
-    def sample_and_log_prob_thetas(params, rng, data, num_steps=128, max_noise=40):
-        nnx.update(model, params)
+    def sample_and_log_prob_thetas(
+        params, state, rng, data, num_steps=128, max_noise=40
+    ):
+        model = nnx.merge(graphdef, params, static, state)
+        model.eval()
         _, model_mask, _, xs, acq = data
         rngs = jax.random.split(rng, xs.shape[0])
         thetas, log_probs = jax.vmap(
@@ -97,27 +107,27 @@ class Evaluator(NamedTuple):
     true_posterior: Callable
     seed: int = 42
 
-    def eval_nnl_mask(self, params, loader, iters=10):
+    def eval_nnl_mask(self, params, state, loader, iters=10):
         total_log_prob = 0.0
         i = 0
         for eval_data in loader:
-            total_log_prob += jnp.mean(self.log_prob_masks(params, eval_data))
+            total_log_prob += jnp.mean(self.log_prob_masks(params, state, eval_data))
             i += 1
             if i == iters:
                 break
         return -float(total_log_prob) / iters
 
-    def eval_nnl_theta(self, params, loader, iters=10):
+    def eval_nnl_theta(self, params, state, loader, iters=10):
         total_log_prob = 0.0
         i = 0
         for eval_data in loader:
-            total_log_prob += jnp.mean(self.log_prob_thetas(params, eval_data))
+            total_log_prob += jnp.mean(self.log_prob_thetas(params, state, eval_data))
             i += 1
             if i == iters:
                 break
         return -float(total_log_prob) / iters
 
-    def eval_effective_sample_size(self, params, loader, rng, iters=1, K=10):
+    def eval_effective_sample_size(self, params, state, loader, rng, iters=1, K=10):
         avg_ess = 0.0
         i = 0
         for eval_data in loader:
@@ -125,7 +135,7 @@ class Evaluator(NamedTuple):
             for _ in range(K):
                 rng, rng_eval = jax.random.split(rng)
                 thetas_q, log_probs_q = self.sample_and_log_prob_thetas(
-                    params, rng_eval, eval_data
+                    params, state, rng_eval, eval_data
                 )
                 eval_data = list(eval_data)
                 eval_data[2] = thetas_q

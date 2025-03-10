@@ -1,0 +1,6 @@
+
+prior_mask_alpha: 1.
+prior_mask_beta: 1.
+defaults:
+  - sim_type: all_gaussian
+  - acquisition_scheme: hardi

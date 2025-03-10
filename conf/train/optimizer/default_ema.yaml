@@ -1,7 +1,7 @@
 optimizer: adamw
 scheduler: cosine_onecycle_schedule
 scheduler_params:
-  transition_steps: 20_000
+  transition_steps: 50_000
   peak_value: 1e-3
   pct_start: 0.3
   div_factor: 100.

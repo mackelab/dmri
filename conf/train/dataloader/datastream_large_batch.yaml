@@ -5,5 +5,5 @@ train_params:
   num_producers: 6
 val_params:
   batch_size: 512
-  max_queue_size: 1_000
+  max_queue_size: 100
   num_producers: 1

@@ -173,15 +173,15 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
             theta_encode_nets (Optional[List[nnx.Module]], optional): Encoding modules for parameters. Defaults to None.
             theta_decode_nets (Optional[List[nnx.Module]], optional): Decoding modules for parameters. Defaults to None.
         """
-        self.simulator = nnx.Variable(simulator)
+        self.simulator = nnx.Intermediate(simulator)
         self.num_models = len(simulator.model_types)
         self.num_noises = len(simulator.noise_types)
         self.params_dims = tuple(simulator.split_idx())
 
-        self.model_types_to_idx = nnx.Variable(
+        self.model_types_to_idx = nnx.Intermediate(
             map_classes_to_indices(self.simulator.value.model_types)
         )
-        self.noise_types_to_idx = nnx.Variable(
+        self.noise_types_to_idx = nnx.Intermediate(
             map_classes_to_indices(
                 self.simulator.value.noise_types,
                 start_idx=len(self.simulator.value.model_types),
