@@ -123,8 +123,9 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
 
     def log_prob(self, model_mask, tokenizer, y, **kwargs):
         model_mask_logits = self(model_mask, tokenizer, y=y, **kwargs)
-        log_prob = jax.nn.log_sigmoid(model_mask_logits)
-        return jnp.sum(log_prob, axis=-1)
+        # Correct Bernoulli log probability is negative binary cross entropy
+        bernoulli_log_prob = -optax.sigmoid_binary_cross_entropy(model_mask_logits, model_mask)
+        return jnp.sum(bernoulli_log_prob, axis=-1)
 
 
 @partial(
