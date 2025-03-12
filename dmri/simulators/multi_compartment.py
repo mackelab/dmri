@@ -268,14 +268,23 @@ class Ball2Stick2Zeppelin2Dti(MultiCompartment):
     fraction_prior = jnp.ones(7)
 
 
+class Ball3Stick3ZeppelinNoise(MultiCompartment):
+    model_types = [Ball] + 3 * [Stick] + 3 * [Zeppelin]
+    noise_types = [
+        LowRicianNoise,
+        MediumRicianNoise,
+    ]
+    fraction_prior = jnp.ones(1 + 3 + 3)
+
+
 class AllGaussianModels(MultiCompartment):
     model_types = [Ball] + 3 * [Stick] + 3 * [Zeppelin] + 3 * [Dti]
     noise_types = [
-        LowGaussianNoise,
-        MediumGaussianNoise,
-        LargeGaussianNoise,
-        VeryLargeGaussianNoise,
-    ] + [LowRicianNoise, MediumRicianNoise, LargeRicianNoise, VeryLargeRicianNoise]
+        LowRicianNoise,
+        MediumRicianNoise,
+        LargeRicianNoise,
+        VeryLargeRicianNoise,
+    ]
     fraction_prior = jnp.ones(1 + 3 + 3 + 3)
 
 

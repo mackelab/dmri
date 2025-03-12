@@ -119,15 +119,19 @@ def _main(cfg: DictConfig):
         grad_transforms.append(grad_clip)
     scheduler = scheduler_type(**optimizer_cfg.scheduler_params)
     optimizer = optimizer_type(scheduler)
-
     grad_transforms.append(optimizer)
     if use_ema:
         grad_transforms.append(optax.ema(optimizer_cfg.get("ema_decay", 0.8)))
+
+    # Initialize optimizer
     optimizer = optax.chain(*grad_transforms)
 
     # Initialize optimizer state if not restored from checkpoint
     if not continue_training or start_step == 0:
         opt_state = optimizer.init(params)
+
+    # If restarts are required:
+    restart_every = cfg.train.get("restart_every", None)
 
     def loss_fn(params, state, data, rng):
         p_mask, model_mask, thetas, xs, acq = data
@@ -177,6 +181,8 @@ def _main(cfg: DictConfig):
     inner_steps = cfg.train.inner_steps
     checkpoint_freq = (cfg.train.checkpoint_freq // inner_steps) * inner_steps
     eval_freq = (cfg.train.eval_freq // inner_steps) * inner_steps
+    if restart_every:
+        restart_every = (restart_every // inner_steps) * inner_steps
 
     step = start_step
     datastream = iter(loader)
@@ -219,6 +225,10 @@ def _main(cfg: DictConfig):
         log.info(
             f"Step {step}, Loss mask: {loss[0]}, Loss theta: {loss[1]}, data_queue_size: {queue_size}"
         )
+
+        if restart_every is not None and (step % restart_every == 0):
+            log.info(f"Restarting optimizer at step {step}")
+            opt_state = optimizer.init(params)
 
         # Log elapsed time
         elapsed_hours = (time.time() - start_time) / 3600
