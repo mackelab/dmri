@@ -426,3 +426,59 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
         out = jnp.concatenate(x, axis=-1)
         out = jnp.squeeze(out, axis=-2)
         return out
+
+
+class DMRITokenizerPP(DMRITokenizer):
+    def __init__(
+        self,
+        simulator,
+        rngs,
+        token_dim=64,
+        theta_encode_nets=None,
+        theta_decode_nets=None,
+    ):
+        super().__init__(
+            simulator, rngs, token_dim, theta_encode_nets, theta_decode_nets
+        )
+        # In theta space we have split the model fractions into len(model_types) - 1
+        # tokens
+
+    def embed_theta(self, theta, tokens_cfg, model_types=None, noise_types=None):
+        if model_types is None:
+            model_types = tuple(self.simulator.value.model_types)
+        if noise_types is None:
+            noise_types = tuple(self.simulator.value.noise_types)
+
+        model_idx = self.get_model_idx(model_types)
+        noise_idx = self.get_noise_idx(noise_types)
+        idx = model_idx + noise_idx
+
+        # First dim -> Model fractions
+        # Other dims -> Component parameters
+        dims_per_component = [self.params_dims[0]]
+        dims_per_component += [
+            self.params_dims[i + 1]
+            for i in idx  # 0 is the fraction prior
+        ]
+
+        assert sum(dims_per_component) == theta.shape[-1], (
+            f"theta shape last axis {theta.shape} does not match the number of model components {sum(dims_per_component)}"
+        )
+
+        # Split theta into components
+        dims = np.asarray(dims_per_component, dtype=np.int32)
+        split_dims = np.cumsum(dims)[:-1]
+        theta_split = jnp.split(theta, split_dims, axis=-1)
+
+        # H
+
+        # Get the val embeddings
+        val_embeddings = jax.tree_util.tree_map(
+            lambda x, net: net(x)[..., None, :], theta_split, self.theta_encode_nets
+        )
+        val_tokens = jnp.concatenate(val_embeddings, axis=-2)
+
+        # Combine the tokens
+        tokens = val_tokens + tokens_cfg
+
+        return tokens

@@ -6,5 +6,5 @@ hydra:
     timeout_min: 1440
     gres: gpu
     partition: h100-ferranti
-    cpus_per_task: 8
-    mem_gb: 32
+    cpus_per_task: 12
+    mem_gb: 64
