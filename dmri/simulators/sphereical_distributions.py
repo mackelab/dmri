@@ -111,6 +111,7 @@ class SphericalDistribution(Compartment):
         ax=None,
         color=None,
         levels=3,
+        alpha=None,
     ):
         r"""Visualize the spherical distribution model on the sphere."""
         if plot_type == "polar":
@@ -170,6 +171,52 @@ class SphericalDistribution(Compartment):
             )
             plt.colorbar(sc, label="PDF value")
             ax.set_title("Spherical Distribution PDF")
+        elif plot_type == "fod":
+            fod = self
+
+            # Create a grid of points on a sphere
+            samples = self.sample(jax.random.key(0), (10,))
+            u_samples = jax.vmap(cartesian_to_unitsphere)(samples)
+
+            u = np.linspace(0, 2 * np.pi, 200)
+            u = np.concatenate([u, u_samples[:, 1]])
+            v = np.linspace(0, np.pi, 200)
+            v = np.concatenate([v, u_samples[:, 0]])
+            u = np.sort(u)
+            v = np.sort(v)
+            x = np.outer(np.cos(u), np.sin(v))
+            y = np.outer(np.sin(u), np.sin(v))
+            z = np.outer(np.ones(np.size(u)), np.cos(v))
+
+            # Reshape for evaluation
+            points = np.vstack([x.flatten(), y.flatten(), z.flatten()]).T
+
+            # Evaluate PDF at sphere points
+            pdf_values = fod.pdf(points)
+            #pdf_values = pdf_values / pdf_values.max()
+            radius = pdf_values.reshape(x.shape)
+
+            # Scale the sphere by the pdf values
+            x_surf = x * radius
+            y_surf = y * radius
+            z_surf = z * radius
+
+            # Plot the surface
+            if ax is None:
+                fig = plt.figure()
+                ax = fig.add_subplot(111, projection="3d")
+            ax.plot_surface(x_surf, y_surf, z_surf, alpha=alpha)
+            # Plot the maxima of the PDF as stick
+            dir_max = points[np.argmax(pdf_values)]
+            #ax.quiver(0, 0, 0, dir_max[0], dir_max[1], dir_max[2], color="C0", arrow_length_ratio=0)
+            #ax.quiver(0, 0, 0, -dir_max[0], -dir_max[1], -dir_max[2], color="C0", arrow_length_ratio=0)
+
+            ax.set_xlim([-1, 1])
+            ax.set_ylim([-1, 1])
+            ax.set_zlim([-1, 1])
+            ax.set_box_aspect([1, 1, 1])  # Equal aspect ratio
+            ax.axis("off")
+            return ax
 
     def to_pmf(self, sphere=None, n_samples=1_000):
         sphere = sphere_default if sphere is None else sphere
@@ -217,7 +264,7 @@ class SymmetricDirac(SphericalDistribution):
         self.mu = mu
 
     def pdf(self, n):
-        return jnp.where(jnp.all(n == self.mu, axis=-1), 1.0, 0.0)
+        return jnp.where(jnp.all((n == self.mu) | (n == -self.mu), axis=-1), 1.0, 0.0)
 
     def sample(self, key, shape):
         # Point symmetric on origin
