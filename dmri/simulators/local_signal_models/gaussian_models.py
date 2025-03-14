@@ -130,7 +130,9 @@ class Stick(SignalCompartment):
     def to_theta(cls, mu: ArrayLike, lam_par: float) -> ArrayLike:
         """Convert the parameters to the parameter space theta."""
         lam_par = (lam_par - cls.min_lam) / (cls.max_lam - cls.min_lam)
-        mu0_normalized = mu[0] / jnp.pi
+        mu0_normalized = 1 - jnp.cos(
+            mu[0]
+        )  # Ensures uniform distribution on upper hemisphere
         mu1_normalized = (mu[1] + jnp.pi) / (2 * jnp.pi)
         theta = jnp.array([lam_par, mu0_normalized, mu1_normalized])
         theta = jax.scipy.stats.norm.ppf(theta)
@@ -141,7 +143,7 @@ class Stick(SignalCompartment):
         """Convert the parameter space theta to the lambda value and eigenvector."""
         theta = jax.scipy.stats.norm.cdf(theta)
         lam_par = theta[0] * (cls.max_lam - cls.min_lam) + cls.min_lam
-        mu1 = theta[1] * jnp.pi
+        mu1 = jnp.arccos(1 - theta[1])  # Ensures output is in upper hemisphere
         mu2 = theta[2] * 2 * jnp.pi - jnp.pi
 
         mu = jnp.array([mu1, mu2])
@@ -211,7 +213,10 @@ class Zeppelin(SignalCompartment):
         """Convert the parameters to the parameter space theta."""
         lambda_par = (lambda_par - cls.min_lam) / (cls.max_lam - cls.min_lam)
         lambda_perp = (lambda_perp - cls.min_lam) / (cls.max_lam - cls.min_lam)
-        mu1_normalized = mu[0] / jnp.pi
+        # Uniform sampling on the upper hemisphere
+        mu1_normalized = 1 - jnp.cos(
+            mu[0]
+        )  # Ensures uniform distribution on upper hemisphere
         mu2_normalized = (mu[1] + jnp.pi) / (2 * jnp.pi)
         theta = jnp.array([lambda_par, lambda_perp, mu1_normalized, mu2_normalized])
         theta = jax.scipy.stats.norm.ppf(theta)
@@ -223,7 +228,7 @@ class Zeppelin(SignalCompartment):
         theta = jax.scipy.stats.norm.cdf(theta)
         lambda_par = theta[0] * (cls.max_lam - cls.min_lam) + cls.min_lam
         lambda_perp = theta[1] * (cls.max_lam - cls.min_lam) + cls.min_lam
-        mu1 = theta[2] * jnp.pi
+        mu1 = jnp.arccos(1 - theta[2])  # Ensures output is in upper hemisphere
         mu2 = theta[3] * 2 * jnp.pi - jnp.pi
         mu = jnp.array([mu1, mu2])
         return mu, lambda_par, lambda_perp
