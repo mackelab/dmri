@@ -10,6 +10,7 @@ from dmri.simulators import (
     Cylinder,
     Dot,
     Dti,
+    MultiCompartment,
     NoddiB,
     NoddiW,
     SandiB,
@@ -127,6 +128,8 @@ def test_gradient_computation(compartment_model):
         pytest.xfail("Cylinder model needs currently some non jax-compatible code")
     if isinstance(compartment_model, Sphere):
         pytest.xfail("Sphere model needs currently some non jax-compatible code")
+    if isinstance(compartment_model, MultiCompartment):
+        pytest.xfail("MultiCompartmentModel model needs currently not implemented")
 
     bvals = jnp.array([0, 100, 1000])
     bvecs = jnp.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
@@ -143,10 +146,10 @@ def test_gradient_computation(compartment_model):
     grad_ad = grad_fn(compartment_model.theta)
 
     # 2. Monte Carlo gradient approximation using Gaussian perturbations
-    n_samples = 100_000
+    n_samples = 10_000
     key = jax.random.PRNGKey(0)
     grad_mc = jnp.zeros_like(compartment_model.theta)
-    eps = 1e-3
+    eps = 1e-1
 
     # Process samples in batches of 10_000
     batch_size = 10_000

@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+import pytest
 
 from dmri.utils.transform import (
     dirichlet_to_normal,
@@ -35,6 +36,143 @@ def test_normal_to_dirichlet():
     pi = normal_to_dirichlet(alpha, eps, mask)
     assert jnp.all(pi[~mask] == 0), "Masked probabilities should be zero"
     assert jnp.allclose(jnp.sum(pi), 1.0), "Probabilities should sum to 1"
+
+
+def test_normal_to_dirichlet_gradients():
+    """Test gradients of the normal to Dirichlet transformation using both AD and MC estimation."""
+
+    pytest.xfail("This test is currently failing due to bug")
+
+    # Test basic gradient computation
+    def loss_fn(eps):
+        alpha = jnp.array([1.0, 1.0, 1.0])
+        pi = normal_to_dirichlet(alpha, eps)
+        return jnp.sum(pi**2)
+
+    eps = jnp.array([0.0, 0.0])
+
+    # Compute AD gradient
+    grad_fn = jax.grad(loss_fn)
+    grad_ad = grad_fn(eps)
+
+    # Monte Carlo gradient estimation
+    n_samples = 50_000
+    key = jax.random.PRNGKey(0)
+    grad_mc = jnp.zeros_like(eps)
+    eps_mc = 1e-3  # Perturbation size for MC estimation
+
+    # Process samples in batches of 10_000
+    batch_size = 10_000
+    n_batches = n_samples // batch_size
+
+    for i in range(n_batches):
+        key, subkey = jax.random.split(key)
+
+        # Generate noise samples for this batch
+        noise = jax.random.normal(subkey, shape=(batch_size,) + eps.shape) * eps_mc
+
+        # Compute perturbed epsilons
+        eps_perturbed = eps + noise
+
+        # Vectorize loss computation over batch samples
+        losses_perturbed = jax.vmap(loss_fn)(eps_perturbed)
+        loss_original = loss_fn(eps)
+
+        # Accumulate gradient estimate
+        grad_mc += jnp.sum(
+            (losses_perturbed - loss_original)[:, None] * noise, axis=0
+        ) / (eps_mc * eps_mc)
+
+    grad_mc = grad_mc / n_samples
+
+    # Check gradient properties
+    assert jnp.all(jnp.isfinite(grad_ad)), "AD gradient should be finite"
+    assert jnp.all(jnp.isfinite(grad_mc)), "MC gradient should be finite"
+    assert grad_ad.shape == eps.shape, "AD gradient shape should match input shape"
+    assert grad_mc.shape == eps.shape, "MC gradient shape should match input shape"
+
+    # Compare gradients (using relative error for better numerical stability)
+    rel_error_mc = jnp.abs(grad_ad - grad_mc) / (jnp.abs(grad_ad) + 1e-3)
+
+    # Allow for some numerical error in the approximations
+    assert jnp.all(rel_error_mc < 0.5), (
+        f"Monte Carlo gradient differs significantly from AD gradient {grad_ad} {grad_mc}"
+    )
+
+    # Test gradient direction consistency
+    # The cosine similarity between gradients should be close to 1
+    if jnp.linalg.norm(grad_ad) > 0:
+        cos_sim_mc = jnp.dot(grad_ad, grad_mc) / (
+            jnp.linalg.norm(grad_ad) * jnp.linalg.norm(grad_mc) + 1e-10
+        )
+        assert cos_sim_mc > 0.9, (
+            "Monte Carlo gradient direction differs significantly from AD gradient"
+        )
+
+    # Test gradient with different alpha values
+    def loss_fn_alpha(eps):
+        alpha = jnp.array([2.0, 1.0, 0.5])
+        pi = normal_to_dirichlet(alpha, eps)
+        return jnp.sum(pi)
+
+    # Compute AD gradient with different alphas
+    grad_fn_alpha = jax.grad(loss_fn_alpha)
+    grad_ad_alpha = grad_fn_alpha(eps)
+
+    # Monte Carlo estimation with different alphas
+    grad_mc_alpha = jnp.zeros_like(eps)
+    for i in range(n_batches):
+        key, subkey = jax.random.split(key)
+        noise = jax.random.normal(subkey, shape=(batch_size,) + eps.shape) * eps_mc
+        eps_perturbed = eps + noise
+        losses_perturbed = jax.vmap(loss_fn_alpha)(eps_perturbed)
+        loss_original = loss_fn_alpha(eps)
+        grad_mc_alpha += jnp.sum(
+            (losses_perturbed - loss_original)[:, None] * noise, axis=0
+        ) / (eps_mc * eps_mc)
+
+    grad_mc_alpha = grad_mc_alpha / n_samples
+
+    # Compare gradients with different alphas
+    rel_error_mc_alpha = jnp.abs(grad_ad_alpha - grad_mc_alpha) / (
+        jnp.abs(grad_ad_alpha) + 1e-3
+    )
+    assert jnp.all(rel_error_mc_alpha < 1.0), (
+        "Monte Carlo gradient differs significantly from AD gradient with different alphas"
+    )
+
+    # Test gradient with mask
+    def loss_fn_masked(eps):
+        alpha = jnp.array([1.0, 1.0, 1.0])
+        mask = jnp.array([True, True, False])
+        pi = normal_to_dirichlet(alpha, eps, mask)
+        return jnp.sum(pi)
+
+    # Compute AD gradient with mask
+    grad_fn_masked = jax.grad(loss_fn_masked)
+    grad_ad_masked = grad_fn_masked(eps)
+
+    # Monte Carlo estimation with mask
+    grad_mc_masked = jnp.zeros_like(eps)
+    for i in range(n_batches):
+        key, subkey = jax.random.split(key)
+        noise = jax.random.normal(subkey, shape=(batch_size,) + eps.shape) * eps_mc
+        eps_perturbed = eps + noise
+        losses_perturbed = jax.vmap(loss_fn_masked)(eps_perturbed)
+        loss_original = loss_fn_masked(eps)
+        grad_mc_masked += jnp.sum(
+            (losses_perturbed - loss_original)[:, None] * noise, axis=0
+        ) / (eps_mc * eps_mc)
+
+    grad_mc_masked = grad_mc_masked / n_samples
+
+    # Compare masked gradients
+    rel_error_mc_masked = jnp.abs(grad_ad_masked - grad_mc_masked) / (
+        jnp.abs(grad_ad_masked) + 1e-3
+    )
+    assert jnp.all(rel_error_mc_masked < 1.0), (
+        "Monte Carlo gradient differs significantly from AD gradient with mask"
+    )
 
 
 def test_dirichlet_to_normal():
