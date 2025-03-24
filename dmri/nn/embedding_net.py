@@ -1,11 +1,9 @@
-import jax.numpy as jnp
-
-from flax import nnx
-
-from probjax.nn import GaussianFourierEmbedding, Transformer
-
-from jax.typing import ArrayLike
 from dataclasses import dataclass
+
+import jax.numpy as jnp
+from flax import nnx
+from jax.typing import ArrayLike
+from probjax.nn import GaussianFourierEmbedding, Transformer
 
 
 @dataclass

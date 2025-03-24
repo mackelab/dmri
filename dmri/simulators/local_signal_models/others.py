@@ -1,9 +1,8 @@
-from dmri.utils.dmriutils import fit_diffusion_tensor_linearized
-import jax.numpy as jnp
 import jax
-
+import jax.numpy as jnp
 
 from dmri.simulators.base import SignalCompartment
+from dmri.utils.dmriutils import fit_diffusion_tensor_linearized
 
 
 class TemporalZeppelin(SignalCompartment):

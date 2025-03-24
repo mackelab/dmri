@@ -1,17 +1,16 @@
 import math
-from dmri.simulators.local_signal_models.gaussian_models import Stick
-import jax.numpy as jnp
-import jax
 
+import jax
+import jax.numpy as jnp
+import numpy as np
 from jax.typing import ArrayLike
+from scipy.special import j1 as j1_scipy
 
 from dmri.simulators.base import SignalCompartment
+from dmri.simulators.local_signal_models.gaussian_models import Stick
 from dmri.utils.dmriutils import (
     unitsphere_to_cartesian,
 )
-
-import numpy as np
-from scipy.special import j1 as j1_scipy
 
 x_l = np.linspace(0, 5, 1000)
 y_l = j1_scipy(x_l)

@@ -5,24 +5,23 @@ import random
 import socket
 import time
 
-from dmri.train.build_simulator import build_simulator
+import hydra
+import jax
+import numpy as np
+import optax
+import wandb
+from flax import nnx
+from omegaconf import DictConfig, OmegaConf
+
 from dmri.train.build_model import build_model
-from dmri.train.dataloader import StreamDataLoader
+from dmri.train.build_simulator import build_simulator
 from dmri.train.checkpointing import CheckpointManager
 from dmri.train.evaluator import build_pure_eval_fns
-import hydra
-import numpy as np
-import jax
-from omegaconf import DictConfig, OmegaConf
-import optax
-from flax import nnx
-
-import wandb
 
 # Backends
 
 
-logo = """
+logo = r"""
 
  /$$$$$$$  /$$      /$$ /$$$$$$$  /$$$$$$
 | $$__  $$| $$$    /$$$| $$__  $$|_  $$_/
@@ -55,7 +54,7 @@ def _main(cfg: DictConfig):
 
     log.info(f"Working directory : {os.getcwd()}")
     log.info(f"Output directory  : {output_dir}")
-    log.info("Output super directory: {}".format(output_super_dir))
+    log.info(f"Output super directory: {output_super_dir}")
     log.info(f"Hostname: {socket.gethostname()}")
     log.info(f"Jax devices: {jax.devices()}")
 
@@ -86,7 +85,7 @@ def _main(cfg: DictConfig):
 
     # Set up checkpoint manager
     # Make sure checkpoint_dir is in results/{name}/checkpoints
-    checkpoint_dir = os.path.join(output_super_dir,"checkpoints")
+    checkpoint_dir = os.path.join(output_super_dir, "checkpoints")
     os.makedirs(checkpoint_dir, exist_ok=True)
     log.info(f"Checkpoint directory: {checkpoint_dir}")
 
@@ -282,7 +281,6 @@ def _main(cfg: DictConfig):
                     }
                 )
 
-
         # Save checkpoint periodically
         if step > 0 and step % checkpoint_freq == 0:
             log.info(f"Saving checkpoint at step {step}")
@@ -316,7 +314,9 @@ def _main(cfg: DictConfig):
                             "Failed to restore recovery checkpoint. Continuing without recovery."
                         )
                 else:
-                    log.warning("No checkpoints available for recovery. Continuing without recovery.")
+                    log.warning(
+                        "No checkpoints available for recovery. Continuing without recovery."
+                    )
             except Exception as e:
                 log.error(f"Error during recovery: {e}")
                 log.warning("Continuing without recovery.")

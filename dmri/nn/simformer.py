@@ -1,16 +1,14 @@
+from dataclasses import dataclass
+
 import jax
 import jax.numpy as jnp
 import numpy as np
-
 from flax import nnx
-
 from probjax.nn import GaussianFourierEmbedding, Transformer
 from probjax.nn.nets.denoising_diffusion_model import EDM
+from probjax.utils.odeint import odeint
 
 from dmri.nn.tokenizer import Tokenizer
-
-from probjax.utils.odeint import odeint
-from dataclasses import dataclass
 
 
 @dataclass
@@ -178,7 +176,6 @@ class EDMSimformer(EDM):
                 attention_mask=attention_mask,
             )
             return f_ - 0.5 * g_**2 * s_
-
 
         x = x
         logp0 = 0.0

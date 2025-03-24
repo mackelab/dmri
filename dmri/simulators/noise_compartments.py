@@ -1,4 +1,5 @@
 from typing import Any
+
 import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike

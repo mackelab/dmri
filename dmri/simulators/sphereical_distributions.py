@@ -1,34 +1,224 @@
-from abc import abstractmethod
+import functools
 import math
+from abc import abstractmethod
 from typing import Any
-import jax.numpy as jnp
+
 import jax
+import jax.numpy as jnp
+import numpy as np
+from dipy.data import HemiSphere, get_sphere
 from jax.typing import ArrayLike
+
+from dmri.simulators.base import Compartment
 from dmri.utils.dmriutils import (
-    cartesian_to_unitsphere,
     rotation_matrix_100_to_theta_phi_psi,
     unitsphere_to_cartesian,
 )
-
-from dmri.simulators.base import Compartment
-from dmri.utils.odf import (
-    diffusion_tensor_odf,
-    diffusion_tensor2d_odf,
-    sample_single_from_odf_jax,
-)
-from dmri.utils.shm import real_sh
 from dmri.utils.sample_fns import sample_watson_ar_1
-from dipy.data import get_sphere, HemiSphere
-import functools
-import numpy as np
-
-import matplotlib.pyplot as plt
+from dmri.utils.shm import real_sh
+from dmri.utils.viz import (
+    plot_spherical_distribution_cartesian,
+    plot_spherical_distribution_fod,
+    plot_spherical_distribution_polar,
+)
 
 sphere_default = get_sphere(name="symmetric724")
 hemisphere_default = HemiSphere(phi=sphere_default.phi, theta=sphere_default.theta)
 
 big_sphere = get_sphere(name="repulsion724")
 bigger_hemisphere = HemiSphere(phi=big_sphere.phi, theta=big_sphere.theta)
+
+
+def diffusion_tensor_odf(dirs, evals, evecs):
+    """
+    Compute the ODF for a single diffusion tensor at directions `dirs`.
+    """
+    R = jnp.asarray(evecs)
+    eigvals_inv = 1.0 / evals
+    D_inv = R @ jnp.diag(eigvals_inv) @ R.T
+    det_factor = jnp.sqrt(jnp.prod(evals))
+
+    # Quadratic form u^T D_inv u
+    quad = jnp.sum(dirs @ D_inv * dirs, axis=1)
+    # ODF(u) = 1 / (4*pi * sqrt(det(D)) * (quad)^(3/2))
+    odf_vals = 1.0 / (4.0 * jnp.pi * det_factor * (quad**1.5))
+    return odf_vals
+
+
+def diffusion_tensor2d_odf(dirs, evals, evecs):
+    """
+    Compute the ODF for a single diffusion tensor at directions `dirs`.
+    Handles the degenerate case, where the last eigenvalue is 0, by
+    restricting the evaluation to the plane spanned by the first two eigenvectors.
+    For directions falling outside the plane, returns 0.
+    """
+    assert evals.shape == (2,)
+    assert evecs.shape == (3, 2)
+
+    evec1, evec2 = evecs.T
+    evec3 = jnp.cross(evec1, evec2)
+
+    # Build the inverse tensor in the plane.
+    inv_vals = jnp.array([1.0 / evals[0], 1.0 / evals[1]])
+    mat_perp = jnp.column_stack([evec1, evec2])
+    D_perp_inv = mat_perp @ jnp.diag(inv_vals) @ mat_perp.T
+
+    # Compute projection on the degenerate (normal) vector.
+    proj = jnp.abs(dirs @ evec3)
+    tol = 1e-6
+
+    # Quadratic form for each direction.
+    quad = jnp.sum(dirs @ D_perp_inv * dirs, axis=1)
+
+    # In-plane ODF (ignoring the vanished normalization factor).
+    odf_inplane = 1.0 / (4.0 * jnp.pi * (quad**1.5))
+
+    # Set ODF to 0 for directions not in the plane.
+    odf_vals = jnp.where(proj < tol, odf_inplane, 0.0)
+    return odf_vals
+
+
+def sample_single_from_odf_jax(evals, evecs, rng):
+    """
+    Sample a single unit direction from the ODF defined by the diffusion tensor
+    using naive rejection sampling in JAX, implemented with jax.lax.while_loop.
+    Parameters
+    ----------
+    evals : array-like, shape (3,)
+        Eigenvalues of the diffusion tensor (assumed positive).
+    evecs : array-like, shape (3, 3)
+        Eigenvectors of the diffusion tensor (columns = eigenvectors).
+    rng : jax.random.PRNGKey
+        Random key for JAX.
+    max_iter : int, optional
+        Maximum proposals for rejection sampling.
+    Returns
+    -------
+    direction : jnp.ndarray, shape (3,)
+        A single sampled unit direction, or None (a Python object) if rejected
+        in all attempts.
+    """
+
+    R = jnp.asarray(evecs)
+    D = R @ jnp.diag(evals) @ R.T
+    mv_norm = jax.random.multivariate_normal(rng, jnp.zeros(3), D)
+    sample = mv_norm / jnp.linalg.norm(mv_norm)
+    return sample
+
+
+def sample_single_from_odf_jax_degenerate(evals, evecs, rng, max_iter=10000):
+    """
+    Sample a direction from the ODF of a 'degenerate' diffusion tensor
+    with eigenvalues [lambda1, lambda2, 0] using naive rejection sampling
+    in the plane of nonzero diffusion.
+    Parameters
+    ----------
+    evals : array-like of shape (3,)
+        Eigenvalues of the diffusion tensor. We assume evals[2] == 0 and
+        evals[0], evals[1] > 0 (ordered or not).
+    evecs : array-like of shape (3,3)
+        Eigenvectors (columns) of the diffusion tensor.
+        evecs[:,2] is the direction corresponding to the zero eigenvalue.
+    rng : jax.random.PRNGKey
+        Random key for JAX.
+    max_iter : int, optional
+        Maximum proposals for rejection sampling in the plane.
+    Returns
+    -------
+    direction : jnp.ndarray of shape (3,)
+        A sampled unit direction in the plane spanned by the two nonzero
+        eigenvalues, or None (Python object) if rejected in all attempts.
+    """
+    # --- 1. Identify the plane vectors & eigenvalues ---
+    # Sort the eigenvalues just to be sure we know which is zero.
+    # Alternatively, you can skip sorting if you already know the order.
+    idx_sorted = jnp.argsort(evals)  # ascending order
+    evals_sorted = evals[idx_sorted]
+    evecs_sorted = evecs[:, idx_sorted]
+
+    # rename them for clarity
+    lam1, lam2, lam3 = evals_sorted
+    # evec1, evec2, evec3
+    evec1 = evecs_sorted[:, 0]
+    evec2 = evecs_sorted[:, 1]
+    evec3 = evecs_sorted[:, 2]
+
+    # We assume lam3 == 0, lam1>0, lam2>0
+    # Build the 2D inverse sub-tensor in that plane:
+    #    D_perp_inv = [evec1 evec2] diag(1/lam1, 1/lam2) [evec1 evec2]^T
+    mat_perp = jnp.column_stack([evec1, evec2])  # shape (3,2)
+    inv_vals = jnp.array([1.0 / lam1, 1.0 / lam2])  # (2,)
+    D_perp_inv = mat_perp @ jnp.diag(inv_vals) @ mat_perp.T  # shape (3,3)
+
+    # --- 2. Define the ODF function restricted to the plane ---
+    # ignoring normalization constants for rejection sampling
+    def in_plane_odf(theta):
+        """
+        Return ODF(theta) ~ 1 / ( u^T D_perp_inv u )^(3/2 ),
+        where u(theta) = cos(theta)*evec1 + sin(theta)*evec2.
+        """
+        # direction in-plane
+        u = jnp.cos(theta) * evec1 + jnp.sin(theta) * evec2
+        quad = u @ D_perp_inv @ u
+        # We only need it up to a scale factor for acceptance
+        return 1.0 / (quad**1.5)
+
+    # --- 3. Find a crude upper bound by sampling angles ---
+    angles_grid = jnp.linspace(0.0, 2 * jnp.pi, num=1000, endpoint=False)
+    odf_grid = jax.vmap(in_plane_odf)(angles_grid)
+    max_odf_est = jnp.max(odf_grid) * 1.2  # a small safety margin
+
+    # --- 4. Naive rejection sampling in [0, 2*pi) ---
+    # We'll do a while_loop that tries up to `max_iter` times
+
+    def cond_fun(state):
+        i, done, theta_accepted, key = state
+        return (i < max_iter) & (~done)
+
+    def body_fun(state):
+        i, done, theta_acc, key = state
+        key, subkey1, subkey2 = jax.random.split(key, 3)
+
+        # Propose an angle uniformly in [0, 2*pi)
+        theta_prop = jax.random.uniform(subkey1, minval=0.0, maxval=2 * jnp.pi)
+        # Evaluate acceptance probability
+        accept_prob = in_plane_odf(theta_prop) / max_odf_est
+        # Accept if uniform(0,1) < accept_prob
+        accept = (jax.random.uniform(subkey2) < accept_prob) & (~done)
+
+        new_done = done | accept
+        new_theta = jnp.where(accept, theta_prop, theta_acc)
+        return (i + 1, new_done, new_theta, key)
+
+    init_state = (0, False, 0.0, rng)
+    final_state = jax.lax.while_loop(cond_fun, body_fun, init_state)
+    i_final, done_final, theta_final, _ = final_state
+
+    # --- 5. Return the result in Python space ---
+    if bool(done_final):
+        # Convert the accepted angle to a 3D unit vector in-plane
+        u = jnp.cos(theta_final) * evec1 + jnp.sin(theta_final) * evec2
+        # (Should already be unit in principle if evec1, evec2 are orthonormal.)
+        return u / jnp.linalg.norm(u)
+    else:
+        # If no acceptance, return None
+        return None
+
+
+def diffusion_tensor_odf(dirs, evals, evecs):
+    """
+    Compute the ODF for a single diffusion tensor at directions `dirs`.
+    """
+    R = jnp.asarray(evecs)
+    eigvals_inv = 1.0 / evals
+    D_inv = R @ jnp.diag(eigvals_inv) @ R.T
+    det_factor = jnp.sqrt(jnp.prod(evals))
+
+    # Quadratic form u^T D_inv u
+    quad = jnp.sum(dirs @ D_inv * dirs, axis=1)
+    # ODF(u) = 1 / (4*pi * sqrt(det(D)) * (quad)^(3/2))
+    odf_vals = 1.0 / (4.0 * jnp.pi * det_factor * (quad**1.5))
+    return odf_vals
 
 
 def odi2kappa(odi):
@@ -111,69 +301,66 @@ class SphericalDistribution(Compartment):
         ax=None,
         color=None,
         levels=3,
+        alpha=None,
     ):
-        r"""Visualize the spherical distribution model on the sphere."""
+        r"""Visualize the spherical distribution model on the sphere.
+
+        Parameters
+        ----------
+        plot_type : str, optional
+            Type of plot to generate. Options are:
+            - "polar": Plot in polar coordinates (theta, phi)
+            - "cartesian": Plot in Cartesian coordinates (x, y, z)
+            - "fod": Plot as a fiber orientation distribution
+        sphere : object, optional
+            Sphere object for vertices (used in cartesian plot)
+        n_samples : int, optional
+            Number of samples to generate
+        ax : matplotlib.axes.Axes, optional
+            Matplotlib axis to plot on
+        color : str, optional
+            Colormap to use
+        levels : int, optional
+            Number of contour levels for polar plot
+        alpha : float, optional
+            Transparency of the surface for FOD plot
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+            The matplotlib axis containing the plot
+        """
         if plot_type == "polar":
-            samples = self.sample(jax.random.key(0), (n_samples,))
-            grid_y = np.linspace(0, np.pi, 100)
-            grid_x = np.linspace(-np.pi, np.pi, 200)
-            grid_x, grid_y = np.meshgrid(grid_x, grid_y)
-            samples_rand = np.stack([grid_y.flatten(), grid_x.flatten()], axis=-1)
-            samples_cart = jax.vmap(unitsphere_to_cartesian)(samples_rand)
-            samples = jnp.concatenate([samples, samples_cart], axis=0)
-            pdf = self.pdf(samples)
-            mu = jax.vmap(cartesian_to_unitsphere)(samples)
-            pdf = pdf / jnp.max(pdf)
-            # Add some jitter to avoid overlapping points
-
-            if ax is None:
-                fig = plt.figure()
-                ax = plt.gca()
-
-            cmap = "viridis" if color is None else color
-            ax.tricontour(
-                mu[:, 1],
-                mu[:, 0],
-                pdf,
-                cmap=cmap,
-                levels=levels,
+            return plot_spherical_distribution_polar(
+                self, n_samples=n_samples, ax=ax, color=color, levels=levels
             )
-            ax.set_ylim(0, np.pi)
-            ax.set_xlim(-np.pi, np.pi)
-            ax.set_aspect("equal")
-            ax.set_title("Spherical Distribution PDF")
-            ax.set_xlabel("Azimuthal Angle (phi)")
-            ax.set_ylabel("Polar Angle (theta)")
         elif plot_type == "cartesian":
-            sphere = sphere_default if sphere is None else sphere
-            fig = plt.figure()
-            ax = fig.add_subplot(projection="3d")
-            pdfs = self.pdf(sphere.vertices)
-            samples = self.sample(jax.random.key(0), (n_samples,))
-            # plot sphere vertices colored by their pdf
-            sc = ax.scatter(
-                sphere.vertices[:, 0],
-                sphere.vertices[:, 1],
-                sphere.vertices[:, 2],
-                c=pdfs,
-                cmap="viridis",
+            return plot_spherical_distribution_cartesian(
+                self, n_samples=n_samples, sphere=sphere, ax=ax
             )
-            # overlay sample points in red
-            ax.scatter(
-                samples[:, 0],
-                samples[:, 1],
-                samples[:, 2],
-                color="red",
-                s=10,
-                alpha=0.1,
-                label="Samples",
-            )
-            plt.colorbar(sc, label="PDF value")
-            ax.set_title("Spherical Distribution PDF")
+        elif plot_type == "fod":
+            return plot_spherical_distribution_fod(self, ax=ax, alpha=alpha)
+        else:
+            raise ValueError(f"Unknown plot type: {plot_type}")
 
     def to_pmf(self, sphere=None, n_samples=1_000):
+        """Convert the continuous distribution to a discrete probability mass function.
+
+        Parameters
+        ----------
+        sphere : object, optional
+            Sphere object for vertices
+        n_samples : int, optional
+            Number of samples to generate
+
+        Returns
+        -------
+        tuple
+            (vertices, probabilities) where vertices are the sphere points and
+            probabilities are the corresponding PMF values
+        """
         sphere = sphere_default if sphere is None else sphere
-        samples = self.sample(jax.random.PRNGKey(0), (n_samples,))
+        samples = self.sample(jax.random.key(0), (n_samples,))
         pdfs = self.pdf(samples)
         vertices = sphere.vertices
 
@@ -217,7 +404,7 @@ class SymmetricDirac(SphericalDistribution):
         self.mu = mu
 
     def pdf(self, n):
-        return jnp.where(jnp.all(n == self.mu, axis=-1), 1.0, 0.0)
+        return jnp.where(jnp.all((n == self.mu) | (n == -self.mu), axis=-1), 1.0, 0.0)
 
     def sample(self, key, shape):
         # Point symmetric on origin
