@@ -1,11 +1,25 @@
 import jax
 import jax.numpy as jnp
 from jax import lax
+from jax.typing import ArrayLike
 from probjax.utils.stats import betainc, betaincinv
 
 
 @jax.jit
-def _normal_to_dirichlet(alpha, eps, mask=None):
+def _normal_to_dirichlet(
+    alpha: ArrayLike, eps: ArrayLike, mask: ArrayLike | None = None
+) -> ArrayLike:
+    """
+    Internal implementation of the normal to Dirichlet transformation.
+
+    Args:
+        alpha: Dirichlet concentration parameters, shape (K,)
+        eps: Normal samples, shape (K-1,)
+        mask: Optional boolean mask of shape (K,) to zero out certain components
+
+    Returns:
+        Array of shape (K,) representing a Dirichlet sample
+    """
     assert len(eps) == len(alpha) - 1, "eps should be of size len(alpha) - 1"
     u = jax.scipy.stats.norm.cdf(eps)
 
@@ -16,7 +30,6 @@ def _normal_to_dirichlet(alpha, eps, mask=None):
             a = alpha[i]
             larger_i = jnp.arange(len(alpha)) > i
             _alpha = alpha if mask is None else jnp.where(mask, alpha, 0.0)
-            # jax.debug.print("{a}", a=a)
             b = jnp.sum(_alpha * larger_i)
             phi_i = betaincinv(a, b, u[i])
             phi_i = jnp.nan_to_num(phi_i)  # If b is 0
@@ -29,7 +42,6 @@ def _normal_to_dirichlet(alpha, eps, mask=None):
             phi_i = new_phi(alpha, u, i)
         else:
             phi_i = jax.lax.cond(mask[i], new_phi, masked_phi, alpha, u, i)
-            # jax.debug.print("{phi_i}", phi_i=phi_i)
 
         pi_i = phi_i * (1 - pi_sum)
         pi_sum += pi_i
@@ -41,29 +53,30 @@ def _normal_to_dirichlet(alpha, eps, mask=None):
     pis = jnp.append(pis, pi_K)
     if mask is not None:
         last_entry = -jnp.argmax(mask[::-1]) - 1
-        # jax.debug.print("{last_entry}", last_entry=last_entry)
         zero = jnp.array(0.0)
         pis = pis.at[-1].set(zero)
         pis = pis.at[last_entry].set(pi_K)
         pis = jnp.where(~mask, zero, pis)
-        # jax.debug.print("{pis}", pis=pis)
         pis /= jnp.sum(pis)
         pis = jnp.nan_to_num(pis)
     return pis
 
 
 @jax.jit
-def dirichlet_to_normal(alpha, pi, mask=None):
+def dirichlet_to_normal(
+    alpha: ArrayLike, pi: ArrayLike, mask: ArrayLike | None = None
+) -> ArrayLike:
     """
     Inverse of the normal_to_dirichlet stick-breaking transform.
 
     Args:
-        alpha (array_like): Dirichlet concentration parameters, shape (K,)
-        pi    (array_like): A Dirichlet sample, shape (K,), sums to 1.
+        alpha: Dirichlet concentration parameters, shape (K,)
+        pi: A Dirichlet sample, shape (K,), sums to 1
+        mask: Optional boolean mask of shape (K,) to zero out certain components
 
     Returns:
-        eps   (array): Shape (K - 1,), the Normal samples that would map
-                       back to `pi` under `normal_to_dirichlet(alpha, eps)`.
+        Array of shape (K-1,) containing the Normal samples that would map
+        back to `pi` under `normal_to_dirichlet(alpha, eps)`
     """
     zero = jnp.array(0.0)
     if mask is not None:
@@ -89,39 +102,43 @@ def dirichlet_to_normal(alpha, pi, mask=None):
 
 # Forward function (returns output and residuals for backward pass)
 @jax.custom_vjp
-def normal_to_dirichlet(alpha, eps, mask=None):
-    """Forward function that we want a custom backward (VJP) for."""
+def normal_to_dirichlet(
+    alpha: ArrayLike, eps: ArrayLike, mask: ArrayLike | None = None
+) -> ArrayLike:
+    """
+    Custom VJP implementation of normal to Dirichlet transformation.
+
+    Args:
+        alpha: Dirichlet concentration parameters, shape (K,)
+        eps: Normal samples, shape (K-1,)
+        mask: Optional boolean mask of shape (K,) to zero out certain components
+
+    Returns:
+        Array of shape (K,) representing a Dirichlet sample
+    """
     return _normal_to_dirichlet(alpha, eps, mask)
 
 
 # Forward pass for custom VJP. Return (output, residuals_for_bwd).
-def normal_to_dirichlet_fwd(alpha, eps, mask):
+def normal_to_dirichlet_fwd(
+    alpha: ArrayLike, eps: ArrayLike, mask: ArrayLike | None
+) -> tuple[ArrayLike, tuple]:
     out = _normal_to_dirichlet(alpha, eps, mask)
-    # We save (alpha, eps, mask, out) so we can use them in backward pass.
     return out, (alpha, eps, mask, out)
 
 
 # Backward pass. Given residuals and the gradient w.r.t. output (g),
 # return the gradient w.r.t. each input: (grad_alpha, grad_eps, grad_mask).
-def normal_to_dirichlet_bwd(res, g):
+def normal_to_dirichlet_bwd(res: tuple, g: ArrayLike) -> tuple[None, ArrayLike, None]:
     alpha, eps, mask, out = res
 
-    # Suppose we define an "inverse" function that recovers normal coords
-    # from the final dirichlet coords:
-    def f_inv(dirichlet_out):
+    def f_inv(dirichlet_out: ArrayLike) -> ArrayLike:
         return dirichlet_to_normal(alpha, dirichlet_out, mask=mask)
 
-    # J is the Jacobian of f_inv at "out"
     J = jax.jacfwd(f_inv)(out)
     J_inv = jnp.linalg.pinv(J)
-    print(J_inv.shape, g.shape)
 
-    # For demonstration, we treat everything as if we only care about eps.
-    # So, example chain rule: grad w.r.t. eps = J_inv * g
     grad_eps = jnp.dot(g, J_inv)
-
-    # Return (grad_alpha, grad_eps, grad_mask)
-    # If alpha/mask are not trainable or not used, return None for them:
     return (None, grad_eps, None)
 
 
@@ -129,7 +146,16 @@ def normal_to_dirichlet_bwd(res, g):
 normal_to_dirichlet.defvjp(normal_to_dirichlet_fwd, normal_to_dirichlet_bwd)
 
 
-def uniform_rotation(rng_key):
+def uniform_rotation(rng_key: jax.random.PRNGKey) -> ArrayLike:
+    """
+    Generate a uniform random rotation matrix using quaternions.
+
+    Args:
+        rng_key: JAX PRNG key for random number generation
+
+    Returns:
+        Array of shape (3, 3) representing a random rotation matrix in SO(3)
+    """
     # Generate a random quaternion
     q = jax.random.uniform(rng_key, (4,))
     q /= jnp.linalg.norm(q)
@@ -139,13 +165,17 @@ def uniform_rotation(rng_key):
     return R
 
 
-def r3_to_s3(v: jnp.ndarray) -> jnp.ndarray:
+def r3_to_s3(v: ArrayLike) -> ArrayLike:
     """
     Stereographic projection from R^3 to S^3 (minus one point).
-    Output is a quaternion (w,x,y,z) of norm 1.
 
-    The origin maps to (1,0,0,0).
-    The 'north pole' is (-1,0,0,0) and is not reached by any finite v.
+    Args:
+        v: Array of shape (3,) representing a point in R^3
+
+    Returns:
+        Array of shape (4,) representing a quaternion (w,x,y,z) of norm 1
+        The origin maps to (1,0,0,0).
+        The 'north pole' is (-1,0,0,0) and is not reached by any finite v.
     """
     x, y, z = v
     r_sq = x * x + y * y + z * z
@@ -157,25 +187,23 @@ def r3_to_s3(v: jnp.ndarray) -> jnp.ndarray:
     k = (2.0 * z) / denom
     q = jnp.array([w, i, j, k])
 
-    # Optional: enforce w >= 0 if you want a unique “branch”
-    # but that will cause a discontinuity near w=0.
-    # q = jnp.where(q[0] < 0, -q, q)
-
     return q
 
 
-def s3_to_r3(q: jnp.ndarray) -> jnp.ndarray:
+def s3_to_r3(q: ArrayLike) -> ArrayLike:
     """
-    Inverse stereographic projection from a quaternion (w,x,y,z) in S^3
-    back to R^3.  The excluded point on S^3 is (-1,0,0,0).
+    Inverse stereographic projection from a quaternion in S^3 back to R^3.
+
+    Args:
+        q: Array of shape (4,) representing a quaternion (w,x,y,z) in S^3
+           The excluded point on S^3 is (-1,0,0,0)
+
+    Returns:
+        Array of shape (3,) representing a point in R^3
     """
     w, x, y, z = q
-    # Solve for r^2 using w = (1 - r^2)/(1 + r^2)
-    # => r^2 = (1 - w)/(1 + w)
-    # If w ~ -1, then r^2 -> infinity (that is the 'north pole').
     r_sq = (1.0 - w) / (1.0 + w)
 
-    # Then x_3D = i * (1 + r^2) / 2, etc.
     factor = 0.5 * (1.0 + r_sq)
     x_3D = x * factor
     y_3D = y * factor
@@ -183,9 +211,15 @@ def s3_to_r3(q: jnp.ndarray) -> jnp.ndarray:
     return jnp.array([x_3D, y_3D, z_3D])
 
 
-def transform_quaternion_to_S03(q: jnp.ndarray) -> jnp.ndarray:
+def transform_quaternion_to_S03(q: ArrayLike) -> ArrayLike:
     """
-    Convert a unit quaternion (w, x, y, z) to a 3x3 rotation matrix in SO(3).
+    Convert a unit quaternion to a 3x3 rotation matrix in SO(3).
+
+    Args:
+        q: Array of shape (4,) representing a unit quaternion (w, x, y, z)
+
+    Returns:
+        Array of shape (3, 3) representing a rotation matrix in SO(3)
     """
     w, x, y, z = q
     R = jnp.array(
@@ -198,13 +232,17 @@ def transform_quaternion_to_S03(q: jnp.ndarray) -> jnp.ndarray:
     return R
 
 
-def transform_S03_to_quaternion(R: jnp.ndarray) -> jnp.ndarray:
+def transform_S03_to_quaternion(R: ArrayLike) -> ArrayLike:
     """
-    Convert rotation matrix in SO(3) to a unit quaternion (w,x,y,z), enforcing w >= 0.
+    Convert rotation matrix in SO(3) to a unit quaternion, enforcing w >= 0.
+
+    Args:
+        R: Array of shape (3, 3) representing a rotation matrix in SO(3)
+
+    Returns:
+        Array of shape (4,) representing a unit quaternion (w,x,y,z) with w >= 0
     """
-    # Typically you might check det(R) ~ 1 and R^T R ~ I for validity.
     w = jnp.sqrt(1.0 + R[0, 0] + R[1, 1] + R[2, 2]) / 2
-    # To avoid division by zero, you might want an epsilon check if w is extremely small.
     w4 = 4.0 * w
     x = (R[2, 1] - R[1, 2]) / w4
     y = (R[0, 2] - R[2, 0]) / w4

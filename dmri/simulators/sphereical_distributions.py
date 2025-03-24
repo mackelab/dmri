@@ -14,11 +14,6 @@ from dmri.utils.dmriutils import (
     rotation_matrix_100_to_theta_phi_psi,
     unitsphere_to_cartesian,
 )
-from dmri.utils.odf import (
-    diffusion_tensor2d_odf,
-    diffusion_tensor_odf,
-    sample_single_from_odf_jax,
-)
 from dmri.utils.sample_fns import sample_watson_ar_1
 from dmri.utils.shm import real_sh
 from dmri.utils.viz import (
@@ -32,6 +27,22 @@ hemisphere_default = HemiSphere(phi=sphere_default.phi, theta=sphere_default.the
 
 big_sphere = get_sphere(name="repulsion724")
 bigger_hemisphere = HemiSphere(phi=big_sphere.phi, theta=big_sphere.theta)
+
+
+def diffusion_tensor_odf(dirs, evals, evecs):
+    """
+    Compute the ODF for a single diffusion tensor at directions `dirs`.
+    """
+    R = jnp.asarray(evecs)
+    eigvals_inv = 1.0 / evals
+    D_inv = R @ jnp.diag(eigvals_inv) @ R.T
+    det_factor = jnp.sqrt(jnp.prod(evals))
+
+    # Quadratic form u^T D_inv u
+    quad = jnp.sum(dirs @ D_inv * dirs, axis=1)
+    # ODF(u) = 1 / (4*pi * sqrt(det(D)) * (quad)^(3/2))
+    odf_vals = 1.0 / (4.0 * jnp.pi * det_factor * (quad**1.5))
+    return odf_vals
 
 
 def odi2kappa(odi):
