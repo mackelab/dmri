@@ -19,7 +19,6 @@ from dataclasses import dataclass, field
 from dmri.simulators import MultiCompartment
 
 
-
 @dataclass
 class DMRIInferenceModelConfig:
     simulator: type[MultiCompartment]

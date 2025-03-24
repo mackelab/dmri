@@ -193,7 +193,7 @@ class SphericalDistribution(Compartment):
 
             # Evaluate PDF at sphere points
             pdf_values = fod.pdf(points)
-            #pdf_values = pdf_values / pdf_values.max()
+            # pdf_values = pdf_values / pdf_values.max()
             radius = pdf_values.reshape(x.shape)
 
             # Scale the sphere by the pdf values
@@ -208,8 +208,8 @@ class SphericalDistribution(Compartment):
             ax.plot_surface(x_surf, y_surf, z_surf, alpha=alpha)
             # Plot the maxima of the PDF as stick
             dir_max = points[np.argmax(pdf_values)]
-            #ax.quiver(0, 0, 0, dir_max[0], dir_max[1], dir_max[2], color="C0", arrow_length_ratio=0)
-            #ax.quiver(0, 0, 0, -dir_max[0], -dir_max[1], -dir_max[2], color="C0", arrow_length_ratio=0)
+            # ax.quiver(0, 0, 0, dir_max[0], dir_max[1], dir_max[2], color="C0", arrow_length_ratio=0)
+            # ax.quiver(0, 0, 0, -dir_max[0], -dir_max[1], -dir_max[2], color="C0", arrow_length_ratio=0)
 
             ax.set_xlim([-1, 1])
             ax.set_ylim([-1, 1])
