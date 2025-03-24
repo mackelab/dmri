@@ -17,6 +17,8 @@ This project provides tools for:
 - Poetry for dependency management
 
 ### Setup
+
+
 ```bash
 # Clone the repository
 git clone https://github.com/your-username/dmri.git
@@ -24,9 +26,13 @@ cd dmri
 
 # Install dependencies with Poetry
 poetry install
-
 # For development installation
 poetry install --with dev
+# Alternatively, you can install the package using pip:
+pip install -e .
+pip install -e .[dev]
+```
+
 ```
 
 ## Usage
@@ -39,31 +45,15 @@ import dmri
 ```
 
 ### Command-line Interface
-The package provides a command-line interface via Hydra:
+The package provides a command-line interface via Hydra. This mainly allows to configure
+training and evaluation of models.
 
 ```bash
-# Run with default configuration
-poetry run dmri
-
-# Override configuration parameters
-poetry run dmri hydra.job.name=experiment_name model=tensor dataset=hcp
+# For a list of available commands
+dmri --help
 ```
 
-## Project Structure
 
-```
-dmri/
-├── dmri/                  # Main package
-│   ├── data/              # Data loading and preprocessing
-│   ├── models/            # Diffusion models implementation
-│   ├── train/             # Training and evaluation code
-│   │   └── hydra_script.py  # Hydra entry point
-│   └── viz/               # Visualization utilities
-├── conf/                  # Hydra configuration files
-├── tests/                 # Test suite
-├── notebooks/             # Jupyter notebooks for examples
-└── scripts/               # Utility scripts
-```
 
 ## Configuration
 
@@ -73,54 +63,13 @@ Key configuration components:
 - Model parameters
 - Dataset specifications
 - Training parameters
-- Evaluation metrics
-
-## Features
-
-- **JAX-based Implementations**: Leveraging JAX for auto-differentiation and fast numerical computing
-- **Hydra Integration**: Flexible configuration management
-- **Experiment Tracking**: Integration with Weights & Biases for experiment tracking
-- **Hyperparameter Optimization**: Using Optuna via Hydra's sweeper
-- **Parallel Processing**: Distributed training with Submitit
-
-## Development
-
-### Testing
-```bash
-# Run tests
-poetry run pytest
-
-# With coverage report
-poetry run pytest --cov
-```
-
-### Code Quality
-```bash
-# Run linting
-poetry run ruff check .
-
-# Format code
-poetry run black .
-poetry run isort .
-
-# Type checking
-poetry run mypy dmri
-```
-
-### Pre-commit Hooks
-This project uses pre-commit hooks for code quality checks:
-
-```bash
-poetry run pre-commit install
-```
+- Evaluation parameters
 
 ### Continuous Integration
 
 This project uses GitHub Actions for continuous integration. The following workflows are available:
 
 - **CI**: Runs tests and linting on multiple Python versions (3.9, 3.10, 3.11)
-- **JAX GPU Tests**: Runs JAX-specific tests on GPU infrastructure
-- **Publish**: Publishes the package to PyPI when a new release is created
 
 Status badges:
 ![CI](https://github.com/your-username/dmri/actions/workflows/ci.yml/badge.svg)
