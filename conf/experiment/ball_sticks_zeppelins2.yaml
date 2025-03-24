@@ -1,5 +1,5 @@
 # @package _global_
-name: dmri_ball_sticks_zeppelins
+name: dmri_ball_sticks_zeppelins2
 use_wandb: true
 
 hydra:
@@ -12,6 +12,6 @@ hydra:
 
 defaults:
   - _self_
-  - override /partition: h100
+  # - override /partition: h100
   - override /simulator: ball3sticks3zeppelins
   - override /train/optimizer: default_new

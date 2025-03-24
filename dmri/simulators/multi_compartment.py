@@ -192,10 +192,17 @@ class MultiCompartment(SignalCompartment):
         ]
         return fractions, model_compartments, noise_compartments, model_mask
 
-    def to_fod(self):
-        fods = [m.to_fod() for m in self.model_compartments]
-        fractions = self.model_fractions
-        return MixtureOfFODs(fractions, fods)
+    def to_fod(self, no_isotropic=False):
+        if not no_isotropic:
+            fods = [m.to_fod() for m in self.model_compartments]
+            fractions = self.model_fractions
+            return MixtureOfFODs(fractions, fods)
+        else:
+            fods = [m.to_fod() for m in self.model_compartments if not isinstance(m, Ball)]
+            fractions = self.model_fractions[1:]
+            fractions = fractions / jnp.sum(fractions)
+            return MixtureOfFODs(fractions, fods)
+
 
     def log_likelihood(self, aquisition_scheme, signal_observed):
         # Compute the signal for each compartment

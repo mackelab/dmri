@@ -2,7 +2,7 @@ optimizer: adamw
 scheduler: cosine_onecycle_schedule
 scheduler_params:
   transition_steps: 80_000
-  peak_value: 1e-4
+  peak_value: 5e-4
   pct_start: 0.3
   div_factor: 25.0
   final_div_factor: 10000.0
@@ -10,4 +10,4 @@ ema: false
 ema_decay: 0.9
 adaptive_gradient_clipping: true
 gradient_clip_value: 10.0
-restart_every: 80_000
+restart_every: 100_000
