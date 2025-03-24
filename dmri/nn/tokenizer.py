@@ -344,6 +344,7 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
         tokens_cfg: ArrayLike,
         model_types: Optional[List[type]] = None,
         noise_types: Optional[List[type]] = None,
+        model_mask: Optional[ArrayLike] = None,
     ) -> ArrayLike:
         """
         Embeds the continuous parameter vector theta into token representation.
@@ -398,6 +399,7 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
         tokens: ArrayLike,
         model_types: Optional[List[type]] = None,
         noise_types: Optional[List[type]] = None,
+        model_mask: Optional[ArrayLike] = None,
         **kwargs,
     ) -> ArrayLike:
         """
@@ -442,9 +444,9 @@ class DMRITokenizerPP(DMRITokenizer):
         super().__init__(
             simulator, rngs, token_dim, theta_encode_nets, theta_decode_nets
         )
-        # In theta space we have split the model fractions into len(model_types) - 1
-        # tokens
-        self.model_fraction_theta_embed = nnx.Embed(
+        self.theta_encode_nets[0] = nnx.Linear(1, token_dim, rngs=rngs)
+        self.theta_decode_nets[0] = nnx.Linear(token_dim, 1, rngs=rngs)
+        self.fraction_embed = nnx.Embed(
             len(self.simulator.value.model_types) - 1, token_dim, rngs=rngs
         )
 
@@ -487,18 +489,44 @@ class DMRITokenizerPP(DMRITokenizer):
         theta_split = jnp.split(theta, split_dims, axis=-1)
 
         # Get model components mask
-        theta_fractions, theta_models = theta_split[0]
+        theta_fractions = theta_split[0]
         model_component_mask = model_mask[..., : len(model_types)]
-        # theta_fraction_mask = self.transform_model_to_theta_mask(model_component_mask)
-        # TODO Split it further
+        theta_fraction_mask = self.transform_model_to_theta_mask(model_component_mask)
+        # For present models get the fraction embedding
+        fraction_id = self.fraction_embed(jnp.array(model_idx[:-1], dtype=jnp.int32))
+        fraction_val = self.theta_encode_nets[0](theta_fractions[..., None])
+        fraction_tokens = fraction_id * theta_fraction_mask[..., None]
+        fraction_tokens = fraction_tokens + fraction_val
 
         # Get the val embeddings
+        theta_models = theta_split[1:]
         val_embeddings = jax.tree_util.tree_map(
-            lambda x, net: net(x)[..., None, :], theta_models, self.theta_encode_nets
+            lambda x, net: net(x)[..., None, :],
+            theta_models,
+            self.theta_encode_nets[1:],
         )
         val_tokens = jnp.concatenate(val_embeddings, axis=-2)
-
+        val_tokens = val_tokens + tokens_cfg[..., 1:, :]
         # Combine the tokens
-        tokens = val_tokens + tokens_cfg
+        tokens = jnp.concatenate([fraction_tokens, val_tokens], axis=-2)
 
         return tokens
+
+    def decode_theta(self, tokens, model_types=None, noise_types=None, model_mask=None):
+        if model_types is None:
+            model_types = tuple(self.simulator.value.model_types)
+        if noise_types is None:
+            noise_types = tuple(self.simulator.value.noise_types)
+
+        model_idx = self.get_model_idx(model_types)
+        noise_idx = self.get_noise_idx(noise_types)
+        idx = model_idx + noise_idx
+
+        tokens_split = jnp.split(tokens, tokens.shape[-2], axis=-2)
+        net_subs = [self.theta_decode_nets[0]] * (len(model_types) - 1) + [
+            self.theta_decode_nets[i + 1] for i in idx
+        ]
+        x = jax.tree_util.tree_map(lambda x, net: net(x), tokens_split, net_subs)
+        out = jnp.concatenate(x, axis=-1)
+        out = jnp.squeeze(out, axis=-2)
+        return out
