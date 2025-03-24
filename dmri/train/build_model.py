@@ -1,7 +1,6 @@
 from omegaconf import DictConfig
 from dmri.nn.dmri_reconstruction_model import (
     DMRIInferenceModel,
-    DMRIInferenceModelConfigMaskPriorAmortized,
 )
 from flax import nnx
 import importlib
@@ -14,7 +13,7 @@ def build_model(cfg: DictConfig, sim_type):
     params_model_selection_net = cfg.model.model_selection_net.params
     name_inference_net = cfg.model.inference_net.name
     params_inference_net = cfg.model.inference_net.params
-    module_embed = importlib.import_module(f"dmri.nn.dmri_reconstruction_model")
+    module_embed = importlib.import_module("dmri.nn.dmri_reconstruction_model")
 
     cfg_embed = getattr(module_embed, name_embed)(**params_embed)
     cfg_model_selection_net = getattr(module_embed, name_model_selection_net)(

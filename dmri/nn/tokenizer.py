@@ -12,6 +12,8 @@ from dmri.simulators import MultiCompartment
 from copy import deepcopy
 from collections import defaultdict
 
+from dmri.utils.transform import dirichlet_to_normal
+
 
 def map_classes_to_indices(class_list: list, start_idx: int = 0):
     """
@@ -442,8 +444,22 @@ class DMRITokenizerPP(DMRITokenizer):
         )
         # In theta space we have split the model fractions into len(model_types) - 1
         # tokens
+        self.model_fraction_theta_embed = nnx.Embed(
+            len(self.simulator.value.model_types) - 1, token_dim, rngs=rngs
+        )
 
-    def embed_theta(self, theta, tokens_cfg, model_types=None, noise_types=None):
+    @staticmethod
+    def transform_model_to_theta_mask(model_mask):
+        eps = dirichlet_to_normal(
+            jnp.ones(model_mask.shape[0]),
+            jnp.ones(model_mask.shape[0]) / model_mask.shape[0],
+            model_mask,
+        )
+        return eps != 0
+
+    def embed_theta(
+        self, theta, tokens_cfg, model_types=None, noise_types=None, model_mask=None
+    ):
         if model_types is None:
             model_types = tuple(self.simulator.value.model_types)
         if noise_types is None:
@@ -470,11 +486,15 @@ class DMRITokenizerPP(DMRITokenizer):
         split_dims = np.cumsum(dims)[:-1]
         theta_split = jnp.split(theta, split_dims, axis=-1)
 
-        # H
+        # Get model components mask
+        theta_fractions, theta_models = theta_split[0]
+        model_component_mask = model_mask[..., : len(model_types)]
+        # theta_fraction_mask = self.transform_model_to_theta_mask(model_component_mask)
+        # TODO Split it further
 
         # Get the val embeddings
         val_embeddings = jax.tree_util.tree_map(
-            lambda x, net: net(x)[..., None, :], theta_split, self.theta_encode_nets
+            lambda x, net: net(x)[..., None, :], theta_models, self.theta_encode_nets
         )
         val_tokens = jnp.concatenate(val_embeddings, axis=-2)
 

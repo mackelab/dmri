@@ -3,7 +3,6 @@ import jax.numpy as jnp
 import jax
 
 
-
 from .curves3d import (
     sample_splines,
     VoxelGrid,

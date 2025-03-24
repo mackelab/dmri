@@ -5,7 +5,6 @@ import jax.numpy as jnp
 from jax import lax
 
 
-
 @jax.jit
 def _normal_to_dirichlet(alpha, eps, mask=None):
     assert len(eps) == len(alpha) - 1, "eps should be of size len(alpha) - 1"

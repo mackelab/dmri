@@ -179,7 +179,6 @@ class EDMSimformer(EDM):
             )
             return f_ - 0.5 * g_**2 * s_
 
-
         x = x
         logp0 = 0.0
 
