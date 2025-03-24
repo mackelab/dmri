@@ -1,8 +1,8 @@
-import threading
 import queue
+import threading
 import time
-from functools import partial
 from collections import deque
+from functools import partial
 
 import jax
 import numpy as np

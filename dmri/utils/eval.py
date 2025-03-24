@@ -2,6 +2,7 @@ from typing import Callable, Optional, Tuple
 
 import jax
 import jax.numpy as jnp
+
 # from jax.scipy.stats import ks_2samp
 
 

@@ -1,9 +1,11 @@
+import importlib
+
+from flax import nnx
 from omegaconf import DictConfig
+
 from dmri.nn.dmri_reconstruction_model import (
     DMRIInferenceModel,
 )
-from flax import nnx
-import importlib
 
 
 def build_model(cfg: DictConfig, sim_type):

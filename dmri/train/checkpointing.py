@@ -1,9 +1,10 @@
+import logging
 import os
 from typing import Any
+
+import numpy as np
 import orbax.checkpoint as ocp
 from flax.training import orbax_utils
-import numpy as np
-import logging
 
 
 class CheckpointManager:

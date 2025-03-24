@@ -1,16 +1,15 @@
+import importlib
+from functools import partial
+
+import jax
+import jax.numpy as jnp
 from omegaconf import DictConfig
 
 from dmri.simulators.acquisition_scheme import (
     random_advanced_reasearch_acquisition_scheme,
-    random_hardi_acquisition,
     random_clinical_acquisition,
+    random_hardi_acquisition,
 )
-
-import jax
-import jax.numpy as jnp
-import importlib
-
-from functools import partial
 
 
 def build_simulator(cfg: DictConfig):

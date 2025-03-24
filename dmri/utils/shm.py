@@ -1,10 +1,10 @@
 from functools import partial
+
 import jax
 import jax.numpy as jnp
-from jax.scipy.special import sph_harm  # Key function
 import numpy as np  # optional, for generating test data, etc.
-
 from dipy.reconst.shm import sph_harm_ind_list
+from jax.scipy.special import sph_harm  # Key function
 
 
 def real_sh_descoteaux_from_index_jax(

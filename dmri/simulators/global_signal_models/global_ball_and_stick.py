@@ -1,12 +1,12 @@
 from functools import partial
 from typing import Any
-import jax.numpy as jnp
-import jax
 
+import jax
+import jax.numpy as jnp
 from jax.typing import ArrayLike
 
+from dmri.simulators import Ball, BallStick, Stick
 from dmri.simulators.base import SignalCompartment
-from dmri.simulators import BallStick, Ball, Stick
 
 from .fiber_prior import FiberPrior
 

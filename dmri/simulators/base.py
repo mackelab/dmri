@@ -1,10 +1,10 @@
-from typing import Any
-import jax.numpy as jnp
-import jax
 from abc import ABC, abstractmethod
+from typing import Any
 
-from jax.typing import ArrayLike
+import jax
+import jax.numpy as jnp
 import jax.tree_util as jtu
+from jax.typing import ArrayLike
 
 from dmri.simulators.acquisition_scheme import acquisition_scheme
 

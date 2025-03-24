@@ -1,7 +1,6 @@
-from jax.typing import ArrayLike
-
 import jax
 import jax.numpy as jnp
+from jax.typing import ArrayLike
 
 
 def fit_diffusion_tensor_linearized(

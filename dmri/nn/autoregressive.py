@@ -1,15 +1,14 @@
+from dataclasses import dataclass
 from functools import partial
 from typing import Optional
-from dmri.nn.tokenizer import Tokenizer
+
 import jax
 import jax.numpy as jnp
-
+import optax
 from flax import nnx
-
 from probjax.nn import Transformer
 
-import optax
-from dataclasses import dataclass
+from dmri.nn.tokenizer import Tokenizer
 
 
 @dataclass

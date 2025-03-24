@@ -1,28 +1,31 @@
-from abc import abstractmethod
+import functools
 import math
+from abc import abstractmethod
 from typing import Any
-import jax.numpy as jnp
+
 import jax
+import jax.numpy as jnp
+import numpy as np
+from dipy.data import HemiSphere, get_sphere
 from jax.typing import ArrayLike
+
+from dmri.simulators.base import Compartment
 from dmri.utils.dmriutils import (
-    cartesian_to_unitsphere,
     rotation_matrix_100_to_theta_phi_psi,
     unitsphere_to_cartesian,
 )
-
-from dmri.simulators.base import Compartment
 from dmri.utils.odf import (
-    diffusion_tensor_odf,
     diffusion_tensor2d_odf,
+    diffusion_tensor_odf,
     sample_single_from_odf_jax,
 )
-from dmri.utils.shm import real_sh
 from dmri.utils.sample_fns import sample_watson_ar_1
-from dipy.data import get_sphere, HemiSphere
-import functools
-import numpy as np
-
-import matplotlib.pyplot as plt
+from dmri.utils.shm import real_sh
+from dmri.utils.viz import (
+    plot_spherical_distribution_cartesian,
+    plot_spherical_distribution_fod,
+    plot_spherical_distribution_polar,
+)
 
 sphere_default = get_sphere(name="symmetric724")
 hemisphere_default = HemiSphere(phi=sphere_default.phi, theta=sphere_default.theta)
@@ -113,114 +116,64 @@ class SphericalDistribution(Compartment):
         levels=3,
         alpha=None,
     ):
-        r"""Visualize the spherical distribution model on the sphere."""
+        r"""Visualize the spherical distribution model on the sphere.
+
+        Parameters
+        ----------
+        plot_type : str, optional
+            Type of plot to generate. Options are:
+            - "polar": Plot in polar coordinates (theta, phi)
+            - "cartesian": Plot in Cartesian coordinates (x, y, z)
+            - "fod": Plot as a fiber orientation distribution
+        sphere : object, optional
+            Sphere object for vertices (used in cartesian plot)
+        n_samples : int, optional
+            Number of samples to generate
+        ax : matplotlib.axes.Axes, optional
+            Matplotlib axis to plot on
+        color : str, optional
+            Colormap to use
+        levels : int, optional
+            Number of contour levels for polar plot
+        alpha : float, optional
+            Transparency of the surface for FOD plot
+
+        Returns
+        -------
+        matplotlib.axes.Axes
+            The matplotlib axis containing the plot
+        """
         if plot_type == "polar":
-            samples = self.sample(jax.random.key(0), (n_samples,))
-            grid_y = np.linspace(0, np.pi, 100)
-            grid_x = np.linspace(-np.pi, np.pi, 200)
-            grid_x, grid_y = np.meshgrid(grid_x, grid_y)
-            samples_rand = np.stack([grid_y.flatten(), grid_x.flatten()], axis=-1)
-            samples_cart = jax.vmap(unitsphere_to_cartesian)(samples_rand)
-            samples = jnp.concatenate([samples, samples_cart], axis=0)
-            pdf = self.pdf(samples)
-            mu = jax.vmap(cartesian_to_unitsphere)(samples)
-            pdf = pdf / jnp.max(pdf)
-            # Add some jitter to avoid overlapping points
-
-            if ax is None:
-                fig = plt.figure()
-                ax = plt.gca()
-
-            cmap = "viridis" if color is None else color
-            ax.tricontour(
-                mu[:, 1],
-                mu[:, 0],
-                pdf,
-                cmap=cmap,
-                levels=levels,
+            return plot_spherical_distribution_polar(
+                self, n_samples=n_samples, ax=ax, color=color, levels=levels
             )
-            ax.set_ylim(0, np.pi)
-            ax.set_xlim(-np.pi, np.pi)
-            ax.set_aspect("equal")
-            ax.set_title("Spherical Distribution PDF")
-            ax.set_xlabel("Azimuthal Angle (phi)")
-            ax.set_ylabel("Polar Angle (theta)")
         elif plot_type == "cartesian":
-            sphere = sphere_default if sphere is None else sphere
-            fig = plt.figure()
-            ax = fig.add_subplot(projection="3d")
-            pdfs = self.pdf(sphere.vertices)
-            samples = self.sample(jax.random.key(0), (n_samples,))
-            # plot sphere vertices colored by their pdf
-            sc = ax.scatter(
-                sphere.vertices[:, 0],
-                sphere.vertices[:, 1],
-                sphere.vertices[:, 2],
-                c=pdfs,
-                cmap="viridis",
+            return plot_spherical_distribution_cartesian(
+                self, n_samples=n_samples, sphere=sphere, ax=ax
             )
-            # overlay sample points in red
-            ax.scatter(
-                samples[:, 0],
-                samples[:, 1],
-                samples[:, 2],
-                color="red",
-                s=10,
-                alpha=0.1,
-                label="Samples",
-            )
-            plt.colorbar(sc, label="PDF value")
-            ax.set_title("Spherical Distribution PDF")
         elif plot_type == "fod":
-            fod = self
-
-            # Create a grid of points on a sphere
-            samples = self.sample(jax.random.key(0), (10,))
-            u_samples = jax.vmap(cartesian_to_unitsphere)(samples)
-
-            u = np.linspace(0, 2 * np.pi, 200)
-            u = np.concatenate([u, u_samples[:, 1]])
-            v = np.linspace(0, np.pi, 200)
-            v = np.concatenate([v, u_samples[:, 0]])
-            u = np.sort(u)
-            v = np.sort(v)
-            x = np.outer(np.cos(u), np.sin(v))
-            y = np.outer(np.sin(u), np.sin(v))
-            z = np.outer(np.ones(np.size(u)), np.cos(v))
-
-            # Reshape for evaluation
-            points = np.vstack([x.flatten(), y.flatten(), z.flatten()]).T
-
-            # Evaluate PDF at sphere points
-            pdf_values = fod.pdf(points)
-            # pdf_values = pdf_values / pdf_values.max()
-            radius = pdf_values.reshape(x.shape)
-
-            # Scale the sphere by the pdf values
-            x_surf = x * radius
-            y_surf = y * radius
-            z_surf = z * radius
-
-            # Plot the surface
-            if ax is None:
-                fig = plt.figure()
-                ax = fig.add_subplot(111, projection="3d")
-            ax.plot_surface(x_surf, y_surf, z_surf, alpha=alpha)
-            # Plot the maxima of the PDF as stick
-            dir_max = points[np.argmax(pdf_values)]
-            # ax.quiver(0, 0, 0, dir_max[0], dir_max[1], dir_max[2], color="C0", arrow_length_ratio=0)
-            # ax.quiver(0, 0, 0, -dir_max[0], -dir_max[1], -dir_max[2], color="C0", arrow_length_ratio=0)
-
-            ax.set_xlim([-1, 1])
-            ax.set_ylim([-1, 1])
-            ax.set_zlim([-1, 1])
-            ax.set_box_aspect([1, 1, 1])  # Equal aspect ratio
-            ax.axis("off")
-            return ax
+            return plot_spherical_distribution_fod(self, ax=ax, alpha=alpha)
+        else:
+            raise ValueError(f"Unknown plot type: {plot_type}")
 
     def to_pmf(self, sphere=None, n_samples=1_000):
+        """Convert the continuous distribution to a discrete probability mass function.
+
+        Parameters
+        ----------
+        sphere : object, optional
+            Sphere object for vertices
+        n_samples : int, optional
+            Number of samples to generate
+
+        Returns
+        -------
+        tuple
+            (vertices, probabilities) where vertices are the sphere points and
+            probabilities are the corresponding PMF values
+        """
         sphere = sphere_default if sphere is None else sphere
-        samples = self.sample(jax.random.PRNGKey(0), (n_samples,))
+        samples = self.sample(jax.random.key(0), (n_samples,))
         pdfs = self.pdf(samples)
         vertices = sphere.vertices
 
