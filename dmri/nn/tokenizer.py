@@ -2,7 +2,7 @@ from abc import abstractmethod
 from collections import defaultdict
 from copy import deepcopy
 from functools import cache
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Callable
 
 import jax
 import jax.numpy as jnp
@@ -89,13 +89,13 @@ class ScalarTokenizer(Tokenizer):
 class StructuredTokenizer(Tokenizer):
     def __init__(
         self,
-        dims_by_id: List[int],
+        dims_by_id: list[int],
         value_dim: int = 32,
         id_dim: int = 32,
         cond_dim: int = 0,
-        encode_nets: Optional[List[nnx.Module]] = None,
-        decode_nets: Optional[List[nnx.Module]] = None,
-        rngs=None,
+        encode_nets: Optional[list[nnx.Module]] = None,
+        decode_nets: Optional[list[nnx.Module]] = None,
+        rngs: nnx.RngStream = None,
     ):
         self.dims_by_id = dims_by_id
         self.num_nodes = len(dims_by_id)
@@ -160,8 +160,9 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
         simulator: type[MultiCompartment],
         rngs: Any,
         token_dim: int = 64,
-        theta_encode_nets: Optional[List[nnx.Module]] = None,
-        theta_decode_nets: Optional[List[nnx.Module]] = None,
+        theta_encode_nets: Optional[list[nnx.Module]] = None,
+        theta_decode_nets: Optional[list[nnx.Module]] = None,
+        init_component_embeddings: Callable = nnx.initializers.orthogonal(),
     ) -> None:
         """
         Initializes a DMRITokenizer instance.
@@ -192,6 +193,7 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
             rngs=rngs,
             num_embeddings=len(simulator.model_types) + len(simulator.noise_types),
             features=token_dim,
+            embedding_init=init_component_embeddings,
         )
         self.embed_fraction = nnx.Linear(
             len(simulator.model_types), token_dim, rngs=rngs
@@ -215,8 +217,8 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
         model_mask: Optional[ArrayLike] = None,
         tokens_cfg: Optional[ArrayLike] = None,
         alpha_prior: Optional[ArrayLike] = None,
-        model_types: Optional[List[type]] = None,
-        noise_types: Optional[List[type]] = None,
+        model_types: Optional[list[type]] = None,
+        noise_types: Optional[list[type]] = None,
     ):
         if model_types is None:
             model_types = tuple(self.simulator.value.model_types)
@@ -243,8 +245,8 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
     def decode(
         self,
         tokens: ArrayLike,
-        model_types: Optional[List[type]] = None,
-        noise_types: Optional[List[type]] = None,
+        model_types: Optional[list[type]] = None,
+        noise_types: Optional[list[type]] = None,
         **kwargs,
     ):
         if model_types is None:
@@ -256,7 +258,7 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
         return theta
 
     @cache
-    def get_model_idx(self, model_types: List[type]) -> List[int]:
+    def get_model_idx(self, model_types: list[type]) -> list[int]:
         """
         Returns a list of model indices corresponding to the provided model types.
         """
@@ -288,8 +290,8 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
         self,
         model_mask: ArrayLike,
         alpha_prior: Optional[ArrayLike] = None,
-        model_types: Optional[List[type]] = None,
-        noise_types: Optional[List[type]] = None,
+        model_types: Optional[list[type]] = None,
+        noise_types: Optional[list[type]] = None,
     ) -> ArrayLike:
         """
         Embeds the configuration of model and noise types into tokens.
@@ -341,8 +343,8 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
         self,
         theta: ArrayLike,
         tokens_cfg: ArrayLike,
-        model_types: Optional[List[type]] = None,
-        noise_types: Optional[List[type]] = None,
+        model_types: Optional[list[type]] = None,
+        noise_types: Optional[list[type]] = None,
         model_mask: Optional[ArrayLike] = None,
     ) -> ArrayLike:
         """
@@ -412,6 +414,8 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
         Returns:
             ArrayLike: The decoded parameter vector.
         """
+        del model_mask
+
         if model_types is None:
             model_types = tuple(self.simulator.value.model_types)
         if noise_types is None:
@@ -441,13 +445,49 @@ class DMRITokenizerPP(DMRITokenizer):
         theta_decode_nets=None,
     ):
         super().__init__(
-            simulator, rngs, token_dim, theta_encode_nets, theta_decode_nets
+            simulator,
+            rngs,
+            token_dim,
+            theta_encode_nets,
+            theta_decode_nets,
+            init_component_embeddings=self._init_class_embeddings,
         )
+        # Override the first linear layer for the fraction prior
+        # Shared linear value embedding applied to all fractions
         self.theta_encode_nets[0] = nnx.Linear(1, token_dim, rngs=rngs)
         self.theta_decode_nets[0] = nnx.Linear(token_dim, 1, rngs=rngs)
+        # Embedding to distinguish between model and noise components
         self.fraction_embed = nnx.Embed(
-            len(self.simulator.value.model_types) - 1, token_dim, rngs=rngs
+            len(self.simulator.value.model_types) - 1,
+            token_dim,
+            rngs=rngs,
+            embedding_init=nnx.initializers.orthogonal(),
         )
+
+    def _init_class_embeddings(self, key, shape, dtype=jnp.float32):
+        """Custom initializer that makes embeddings for same classes identical
+        but orthogonal between different classes.
+
+        Args:
+            key: PRNG key
+            shape: Shape of embeddings (num_embeddings, embedding_dim)
+            dtype: Data type of embeddings
+        """
+        # Get unique class indices from model_types_to_idx
+        class_to_indices = self.model_types_to_idx.value
+        num_classes = len(class_to_indices)
+
+        # Initialize orthogonal embeddings for each unique class
+        class_embeddings = jax.random.orthogonal(
+            key, n=shape[1], shape=(num_classes,), m=1
+        ).squeeze(axis=-1)
+
+        # Create full embedding matrix by mapping class embeddings to all indices
+        embeddings = jnp.zeros(shape, dtype=dtype)
+        for i, (_, indices) in enumerate(class_to_indices.items()):
+            embeddings = embeddings.at[tuple(indices), ...].set(class_embeddings[i])
+
+        return embeddings
 
     @staticmethod
     def transform_model_to_theta_mask(model_mask):
