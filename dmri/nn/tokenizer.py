@@ -1,17 +1,16 @@
 from abc import abstractmethod
+from collections import defaultdict
+from copy import deepcopy
 from functools import cache
 from typing import Any, List, Optional
+
 import jax
 import jax.numpy as jnp
-from jax.typing import ArrayLike
 import numpy as np
-
 from flax import nnx
+from jax.typing import ArrayLike
 
 from dmri.simulators import MultiCompartment
-from copy import deepcopy
-from collections import defaultdict
-
 from dmri.utils.transform import dirichlet_to_normal
 
 

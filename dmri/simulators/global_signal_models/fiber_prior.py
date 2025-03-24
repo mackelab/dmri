@@ -1,13 +1,13 @@
 from typing import Any
-import jax.numpy as jnp
-import jax
 
+import jax
+import jax.numpy as jnp
 
 from .curves3d import (
-    sample_splines,
     VoxelGrid,
     get_average_tangent_in_voxels,
     get_spline_volume_fraction_in_voxels,
+    sample_splines,
 )
 
 

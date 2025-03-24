@@ -1,18 +1,17 @@
-import jax.numpy as jnp
 import jax
-
+import jax.numpy as jnp
 from jax.typing import ArrayLike
 
 from dmri.simulators.base import SignalCompartment, acquisition_scheme
-from dmri.utils.dmriutils import (
-    fit_diffusion_tensor_linearized,
-    cartesian_to_unitsphere,
-    unitsphere_to_cartesian,
-)
 from dmri.simulators.sphereical_distributions import (
-    Uniform,
     SymmetricDirac,
     TensorFOD,
+    Uniform,
+)
+from dmri.utils.dmriutils import (
+    cartesian_to_unitsphere,
+    fit_diffusion_tensor_linearized,
+    unitsphere_to_cartesian,
 )
 
 

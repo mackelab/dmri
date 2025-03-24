@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
-from jax.typing import ArrayLike
 from jax.random import PRNGKey
+from jax.typing import ArrayLike
 
 
 class Spline3D:

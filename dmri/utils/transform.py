@@ -1,8 +1,7 @@
-from probjax.utils.stats import betainc, betaincinv
-
 import jax
 import jax.numpy as jnp
 from jax import lax
+from probjax.utils.stats import betainc, betaincinv
 
 
 @jax.jit

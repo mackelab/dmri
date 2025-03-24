@@ -1,16 +1,14 @@
+from dataclasses import dataclass
+
 import jax
 import jax.numpy as jnp
 import numpy as np
-
 from flax import nnx
-
 from probjax.nn import GaussianFourierEmbedding, Transformer
 from probjax.nn.nets.denoising_diffusion_model import EDM
+from probjax.utils.odeint import odeint
 
 from dmri.nn.tokenizer import Tokenizer
-
-from probjax.utils.odeint import odeint
-from dataclasses import dataclass
 
 
 @dataclass

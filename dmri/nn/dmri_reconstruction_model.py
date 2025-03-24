@@ -1,22 +1,20 @@
+from dataclasses import dataclass, field
+from typing import List, Optional
+
+import jax.numpy as jnp
+from flax import nnx
+from jax.typing import ArrayLike
+
+from dmri.simulators import MultiCompartment
+
 from .autoregressive import (
     BinaryAutoregressiveDecoder,
     DMRIModelSelectionAmortizedPriorConfig,
     DMRIModelSelectionConfig,
 )
 from .embedding_net import BvalBvecSignalEmbeddingNet, DMRIEmbeddingConfig
-from .simformer import EDMSimformer, GaussianFourierEmbedding, DMRIThetaInferenceConfig
+from .simformer import DMRIThetaInferenceConfig, EDMSimformer, GaussianFourierEmbedding
 from .tokenizer import DMRITokenizer
-
-from typing import List, Optional
-import jax.numpy as jnp
-
-from flax import nnx
-
-
-from jax.typing import ArrayLike
-from dataclasses import dataclass, field
-
-from dmri.simulators import MultiCompartment
 
 
 @dataclass
