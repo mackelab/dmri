@@ -1,9 +1,9 @@
+from functools import partial
 from typing import Callable, NamedTuple
+
 import jax
 import jax.numpy as jnp
 from flax import nnx
-
-from functools import partial
 
 
 def build_pure_eval_fns(graphdef, static, sim_type):

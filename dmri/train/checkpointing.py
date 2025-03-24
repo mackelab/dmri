@@ -1,13 +1,10 @@
+import logging
 import os
-from typing import Any, Dict, Optional, Union, Tuple, Type
+from typing import Any
+
+import numpy as np
 import orbax.checkpoint as ocp
 from flax.training import orbax_utils
-import numpy as np
-from flax.core.frozen_dict import freeze, unfreeze
-from flax import nnx
-import jax
-import logging
-from flax import traverse_util  # For flattening and restructuring parameters
 
 
 class CheckpointManager:
@@ -85,7 +82,6 @@ class CheckpointManager:
             self.latest_step = self.manager.latest_step() or 0
             logging.info(f"Continuing from step {self.latest_step}")
 
-
     def save(
         self,
         step: int,
@@ -154,7 +150,7 @@ class CheckpointManager:
         abstract_ckpt = {
             "params": params,
             "optimizer_state": optimizer_state,  # This will be fully restored
-            "step": step, # This will be fully restored
+            "step": step,  # This will be fully restored
             "loss": float("inf"),  # This will be fully restored
         }
 

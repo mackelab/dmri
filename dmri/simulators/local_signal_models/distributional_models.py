@@ -1,20 +1,21 @@
-from functools import partial
-from dmri.simulators.acquisition_scheme import acquisition_scheme
-import jax.numpy as jnp
-import jax
 from abc import abstractmethod
+from functools import partial
 
-from jax.typing import ArrayLike
+import jax
+import jax.numpy as jnp
 from jax import tree_util as jtu
+from jax.typing import ArrayLike
+
+from dmri.simulators.acquisition_scheme import acquisition_scheme
 from dmri.simulators.base import Compartment, SignalCompartment
+from dmri.simulators.local_signal_models.gaussian_models import Stick, Zeppelin
 from dmri.simulators.sphereical_distributions import (
     Bingham,
     Watson,
-    inverse_sh_matrix,
     hemisphere_default,
+    inverse_sh_matrix,
 )
 from dmri.utils.dmriutils import cartesian_to_unitsphere
-from dmri.simulators.local_signal_models.gaussian_models import Stick, Zeppelin
 
 
 class SignalKernel(Compartment):

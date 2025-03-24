@@ -1,42 +1,40 @@
 from typing import Optional
 
-from dmri.simulators.sphereical_distributions import MixtureOfFODs
+import jax.numpy as jnp
+import numpy as np
+from jax import tree_util as jtu
+from jax.typing import ArrayLike
+
 from dmri.simulators import acquisition_scheme
-from dmri.simulators.noise_compartments import (
-    LowGaussianNoise,
-    LowRicianNoise,
-    MediumGaussianNoise,
-    MediumRicianNoise,
-    LargeGaussianNoise,
-    LargeRicianNoise,
-    VeryLargeGaussianNoise,
-    VeryLargeRicianNoise,
-)
-from dmri.simulators.local_signal_models.gaussian_models import (
-    Ball,
-    Stick,
-    Zeppelin,
-    Dti,
-)
+from dmri.simulators.base import SignalCompartment
 from dmri.simulators.local_signal_models.distributional_models import (
-    WatsonStick,
-    WatsonZeppelin,
     BinghamStick,
     BinghamZeppelin,
     NoddiB,
     NoddiW,
     SandiB,
     SandiW,
+    WatsonStick,
+    WatsonZeppelin,
 )
-from dmri.simulators.base import SignalCompartment
-from dmri.utils.transform import normal_to_dirichlet, dirichlet_to_normal
-
-
-import jax.numpy as jnp
-import numpy as np
-from jax import tree_util as jtu
-
-from jax.typing import ArrayLike
+from dmri.simulators.local_signal_models.gaussian_models import (
+    Ball,
+    Dti,
+    Stick,
+    Zeppelin,
+)
+from dmri.simulators.noise_compartments import (
+    LargeGaussianNoise,
+    LargeRicianNoise,
+    LowGaussianNoise,
+    LowRicianNoise,
+    MediumGaussianNoise,
+    MediumRicianNoise,
+    VeryLargeGaussianNoise,
+    VeryLargeRicianNoise,
+)
+from dmri.simulators.sphereical_distributions import MixtureOfFODs
+from dmri.utils.transform import dirichlet_to_normal, normal_to_dirichlet
 
 
 class MultiCompartment(SignalCompartment):
