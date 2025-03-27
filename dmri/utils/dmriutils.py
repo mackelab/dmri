@@ -1,6 +1,8 @@
 import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
+import nibabel as nb
+import os
 
 
 def fit_diffusion_tensor_linearized(
@@ -60,7 +62,7 @@ def normalize_bvecs(bvecs: ArrayLike) -> ArrayLike:
     return bvecs / norms
 
 
-def compute_FA(D: ArrayLike) -> float:
+def compute_FA(D: ArrayLike) -> ArrayLike:
     """Compute fractional anisotropy (FA) from a diffusion tensor."""
     evals = jnp.linalg.eigvalsh(D)
     mean_diffusivity = jnp.mean(evals)
@@ -68,19 +70,19 @@ def compute_FA(D: ArrayLike) -> float:
     return fa
 
 
-def compute_MD(D: ArrayLike) -> float:
+def compute_MD(D: ArrayLike) -> ArrayLike:
     """Compute mean diffusivity (MD) from a diffusion tensor."""
     evals = jnp.linalg.eigvalsh(D)
     return jnp.mean(evals)
 
 
-def compute_RD(D: ArrayLike) -> float:
+def compute_RD(D: ArrayLike) -> ArrayLike:
     """Compute radial diffusivity (RD) from a diffusion tensor."""
     evals = jnp.linalg.eigvalsh(D)
     return jnp.mean(evals[:2])
 
 
-def compute_AD(D: ArrayLike) -> float:
+def compute_AD(D: ArrayLike) -> ArrayLike:
     """Compute axial diffusivity (AD) from a diffusion tensor."""
     evals = jnp.linalg.eigvalsh(D)
     return evals[2]
@@ -198,3 +200,207 @@ def canonical_bingham_normalization_series(kappa, beta, max_terms=30):
     terms = A**n / (jax.scipy.special.gamma(n + 1) * (n + 0.5))
     summation = jnp.sum(terms)
     return 2.0 * jnp.pi * jnp.exp(beta) * summation
+
+
+def make_dyads(
+    theta_samples: ArrayLike, phi_samples: ArrayLike, percentile: float = None
+) -> tuple[ArrayLike, float]:
+    """
+    Uses fibre orientation samples (in spherical coordinates) from the posterior to estimate the mean fibre orientation
+    (in cartesian coordinates [x,y,z]) and the uncertainty (dispersion) around it.
+
+    Args:
+        theta_samples: Array of inclination angles
+        phi_samples: Array of azimuthal angles
+        percentile: Optional percentile for dispersion calculation
+
+    Returns:
+        tuple: (v, disp) where v is the mean orientation and disp is the dispersion
+    """
+    v = jnp.stack(
+        [
+            jnp.sin(theta_samples) * jnp.cos(phi_samples),
+            jnp.sin(theta_samples) * jnp.sin(phi_samples),
+            jnp.cos(theta_samples),
+        ],
+        axis=0,
+    )
+
+    dyadic_tensor = jnp.matmul(v, v.T) / len(theta_samples)
+    L, E = jnp.linalg.eigh(dyadic_tensor)
+
+    ind = jnp.argsort(-L)
+    v1 = E[:, ind[0]]
+    disp = 1 - jnp.max(jnp.abs(L))
+
+    if percentile is not None:
+        # Calculate angular deviations from the principal eigenvector
+        dot_prod = jnp.matmul(v.T, v1)
+        angles = jnp.arccos(jnp.clip(dot_prod, -1, 1)) * (
+            180 / jnp.pi
+        )  # Convert to degrees
+        angles = jnp.where(angles > 90, 180 - angles, angles)
+        # Determine the cone angle at the specified percentile
+        disp = jnp.percentile(angles, percentile)
+
+    return v, disp
+
+
+def cart2sph(x: float, y: float, z: float) -> tuple[float, float]:
+    """
+    Convert Cartesian coordinates to spherical coordinates.
+
+    Args:
+        x, y, z: Cartesian coordinates
+
+    Returns:
+        tuple: (theta, phi) spherical coordinates
+    """
+    r = jnp.sqrt(x * x + y * y + z * z)
+    theta = jnp.where(
+        r == 0,
+        jnp.arccos(z),  # To avoid NaN when r==0
+        jnp.arccos(z / r),
+    )
+    phi = jnp.arctan2(y, x)
+    return theta, phi
+
+
+def sph2cart(theta: ArrayLike, phi: ArrayLike) -> ArrayLike:
+    """
+    Convert spherical coordinates to Cartesian coordinates.
+
+    Args:
+        theta: Inclination angle
+        phi: Azimuthal angle
+
+    Returns:
+        Array: Cartesian coordinates [x, y, z]
+    """
+    x = jnp.sin(theta) * jnp.cos(phi)
+    y = jnp.sin(theta) * jnp.sin(phi)
+    z = jnp.cos(theta)
+    return jnp.stack([x, y, z], axis=-1)
+
+
+def export_nifti(data, orig_data, output_path, name):
+    """
+    Args:
+        data:
+        orig_data:
+        output_path:
+        name:
+    """
+    # Copy the header of the original image
+    aff_mat = orig_data.affine
+    nb.save(nb.Nifti2Image(data, affine=aff_mat), os.path.join(output_path, name))
+
+
+def export_SBI_estimates(
+    samples: ArrayLike,
+    mask: ArrayLike,
+    data_brain_orig: ArrayLike,
+    outPath: str,
+    nfib: int = 3,
+    modelnum: int = 1,
+) -> None:
+    """
+    Export SBI estimates to NIfTI files.
+
+    Args:
+        samples: Array of samples
+        mask: Brain mask
+        data_brain_orig: Original brain data for header information
+        outPath: Output directory path
+        nfib: Number of fiber components
+        modelnum: Model number
+    """
+    # d
+    export_nifti(samples[..., 0], data_brain_orig, outPath, "merged_dsamples.nii.gz")
+    export_nifti(
+        jnp.median(samples[..., 0], axis=3),
+        data_brain_orig,
+        outPath,
+        "mean_dsamples.nii.gz",
+    )
+    export_nifti(
+        jnp.std(samples[..., 0], axis=3),
+        data_brain_orig,
+        outPath,
+        "std_dsamples.nii.gz",
+    )
+
+    # fibre components
+    mean_fsumsamples = jnp.zeros((samples.shape[0], samples.shape[1], samples.shape[2]))
+    for i in range(nfib):
+        # f
+        export_nifti(
+            samples[..., 1 + 3 * i],
+            data_brain_orig,
+            outPath,
+            f"merged_f{i + 1}samples.nii.gz",
+        )
+        export_nifti(
+            jnp.median(samples[..., 1 + 3 * i], axis=3),
+            data_brain_orig,
+            outPath,
+            f"mean_f{i + 1}samples.nii.gz",
+        )
+        export_nifti(
+            jnp.std(samples[..., 1 + 3 * i], axis=3),
+            data_brain_orig,
+            outPath,
+            f"std_f{i + 1}samples.nii.gz",
+        )
+        mean_fsumsamples += jnp.median(samples[..., 1 + 3 * i], axis=3)
+
+        # v
+        export_nifti(
+            samples[..., 2 + 3 * i],
+            data_brain_orig,
+            outPath,
+            f"merged_th{i + 1}samples.nii.gz",
+        )
+        export_nifti(
+            samples[..., 3 + 3 * i],
+            data_brain_orig,
+            outPath,
+            f"merged_ph{i + 1}samples.nii.gz",
+        )
+
+        v, disp = make_dyads(samples[..., 2 + 3 * i], samples[..., 3 + 3 * i])
+        export_nifti(v, data_brain_orig, outPath, f"dyads{i + 1}.nii.gz")
+        export_nifti(disp, data_brain_orig, outPath, f"dyads{i + 1}_dispersion.nii.gz")
+
+    # SNR
+    export_nifti(samples[..., -1], data_brain_orig, outPath, "merged_SNRsamples.nii.gz")
+    export_nifti(
+        jnp.median(samples[..., -1], axis=3),
+        data_brain_orig,
+        outPath,
+        "mean_SNRsamples.nii.gz",
+    )
+    export_nifti(
+        jnp.std(samples[..., -1], axis=3),
+        data_brain_orig,
+        outPath,
+        "std_SNRsamples.nii.gz",
+    )
+
+    if modelnum == 2:
+        # d_std
+        export_nifti(
+            samples[..., -2], data_brain_orig, outPath, "merged_d_stdsamples.nii.gz"
+        )
+        export_nifti(
+            jnp.median(samples[..., -2], axis=3),
+            data_brain_orig,
+            outPath,
+            "mean_d_stdsamples.nii.gz",
+        )
+        export_nifti(
+            jnp.std(samples[..., -2], axis=3),
+            data_brain_orig,
+            outPath,
+            "std_d_stdsamples.nii.gz",
+        )
