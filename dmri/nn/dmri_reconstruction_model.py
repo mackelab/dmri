@@ -169,7 +169,6 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
             mask_prior = self.mask_prior_embed(mask_prior)
 
         model_mask_loss = self.model_decoder.loss_fn(
-            None,
             model_mask,
             self.tokenizer,
             y=y,
@@ -188,7 +187,6 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         )
 
         theta_loss = self.inference_decoder.loss(
-            None,
             rng,
             theta,
             self.tokenizer,
