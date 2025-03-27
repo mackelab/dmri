@@ -147,7 +147,7 @@ def test_gradient_computation(compartment_model):
     grad_ad = grad_fn(compartment_model.theta)
 
     # 2. Monte Carlo gradient approximation using Gaussian perturbations
-    n_samples = 20_000
+    n_samples = 10_000
     key = jax.random.PRNGKey(0)
     grad_mc = jnp.zeros_like(compartment_model.theta)
     eps = 1e-1

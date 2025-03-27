@@ -28,7 +28,7 @@ def dirichlet_to_normal(
     # Apply mask to both alpha and pi
     if mask is not None:
         alpha = jnp.where(mask, alpha, zero)
-
+        pi = jnp.where(mask, pi, zero)
     # We need to reverse the stick-breaking process
     # For masked components, we'll just return zeros
     def scan_fn(carry, i):
@@ -113,6 +113,7 @@ def _normal_to_dirichlet_and_phi(alpha, eps, mask=None):
 
 
 @jax.custom_vjp
+@jax.jit
 def normal_to_dirichlet(alpha, eps, mask=None):
     pi, _phi = _normal_to_dirichlet_and_phi(alpha, eps, mask)
     return pi
