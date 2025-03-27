@@ -198,11 +198,12 @@ class MultiCompartment(SignalCompartment):
             fractions = self.model_fractions
             return MixtureOfFODs(fractions, fods)
         else:
-            fods = [m.to_fod() for m in self.model_compartments if not isinstance(m, Ball)]
+            fods = [
+                m.to_fod() for m in self.model_compartments if not isinstance(m, Ball)
+            ]
             fractions = self.model_fractions[1:]
             fractions = fractions / jnp.sum(fractions)
             return MixtureOfFODs(fractions, fods)
-
 
     def log_likelihood(self, aquisition_scheme, signal_observed):
         # Compute the signal for each compartment

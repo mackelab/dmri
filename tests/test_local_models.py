@@ -129,7 +129,8 @@ def test_gradient_computation(compartment_model):
     if isinstance(compartment_model, Sphere):
         pytest.xfail("Sphere model needs currently some non jax-compatible code")
     if isinstance(compartment_model, MultiCompartment):
-        pytest.xfail("MultiCompartmentModel model needs currently not implemented")
+        # pytest.xfail("MultiCompartmentModel model needs currently not implemented")
+        pass
 
     bvals = jnp.array([0, 100, 1000])
     bvecs = jnp.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
@@ -146,7 +147,7 @@ def test_gradient_computation(compartment_model):
     grad_ad = grad_fn(compartment_model.theta)
 
     # 2. Monte Carlo gradient approximation using Gaussian perturbations
-    n_samples = 10_000
+    n_samples = 20_000
     key = jax.random.PRNGKey(0)
     grad_mc = jnp.zeros_like(compartment_model.theta)
     eps = 1e-1
@@ -191,12 +192,10 @@ def test_gradient_computation(compartment_model):
     assert jnp.all(jnp.isfinite(grad_mc)), "MC gradient should be finite"
 
     # Compare gradients (using relative error for better numerical stability)
-    rel_error_mc = jnp.abs(grad_ad - grad_mc) / (jnp.abs(grad_ad) + 1e-3)
+    rel_error_mc = jnp.abs(grad_ad - grad_mc)
 
     # Allow for some numerical error in the approximations
-    assert jnp.all(rel_error_mc < 1.0), (
-        "Monte Carlo gradient differs significantly from AD gradient"
-    )
+    assert jnp.all(rel_error_mc < 0.5), f"Monte Carlo gradient {grad_mc} {grad_ad} "
 
     # Test gradient direction consistency
     # The cosine similarity between gradients should be close to 1
