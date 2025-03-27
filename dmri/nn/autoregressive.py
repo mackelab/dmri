@@ -109,7 +109,7 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
         logits = self.output(x)
         return logits[..., :-1, 0]
 
-    def loss_fn(self, params, model_mask, tokenizer, y, **kwargs):
+    def loss_fn(self, model_mask, tokenizer, y, **kwargs):
         model_mask_logits = self(model_mask, tokenizer, y=y, **kwargs)
         return jnp.mean(
             optax.sigmoid_binary_cross_entropy(model_mask_logits, model_mask).sum(-1)

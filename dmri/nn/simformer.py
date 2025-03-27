@@ -101,7 +101,7 @@ class EDMSimformer(EDM):
             enable_cross_attention=enable_cross_attention,
         )
         # Prevent automatic parameter updates
-        super().__init__(transformer, loss_kwargs={"update_params": lambda m, p: None})
+        super().__init__(transformer)
 
     def sample(
         self,
