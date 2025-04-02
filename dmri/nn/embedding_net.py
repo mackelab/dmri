@@ -68,6 +68,8 @@ class BvalBvecSignalEmbeddingNet(nnx.Module, experimental_pytree=True):
         bvals: ArrayLike,  # B, T
         bvecs: ArrayLike,  # B, T, 3
         signals: ArrayLike,  # B, T
+        deterministic: bool | None = None,
+        decode: bool = False,
     ):
         if self.log_transform_signals:
             signals = jnp.log(signals + 1e-6)
@@ -76,5 +78,7 @@ class BvalBvecSignalEmbeddingNet(nnx.Module, experimental_pytree=True):
         bvecs = jnp.repeat(bvecs, self.bvec_repeats, axis=-1)
         data = jnp.concatenate([bvals, signals, bvecs], axis=-1)
         tokens = self.initial_layer(data)
-        out_tokens = self.transformer(tokens)
+        out_tokens = self.transformer(
+            tokens, deterministic=deterministic, decode=decode
+            )
         return out_tokens
