@@ -62,7 +62,7 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         if cfg.model_selection_cfg.context_dim is not None:
             # We expect a mask prior input
             self.mask_prior_need = True
-            mask_prior_dim = params.pop("mask_prior_dim")
+            mask_prior_dim = params.pop("mask_prior_dim",1)
             self.mask_prior_embed = GaussianFourierEmbedding(
                 mask_prior_dim,
                 cfg.model_selection_cfg.context_dim,
@@ -137,6 +137,7 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
             y=y,
             tokens_cfg=tokens_cfg,
             attention_mask=attention_mask,
+            model_mask=model_mask,
         )
 
         return model_mask_logits, theta_pred

@@ -1,14 +1,15 @@
-from dataclasses import dataclass
 from functools import partial
 from typing import Optional
-
+from dmri.nn.tokenizer import Tokenizer
 import jax
 import jax.numpy as jnp
-import optax
+
 from flax import nnx
+
 from probjax.nn import Transformer
 
-from dmri.nn.tokenizer import Tokenizer
+import optax
+from dataclasses import dataclass
 
 
 @dataclass
@@ -109,7 +110,7 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
         logits = self.output(x)
         return logits[..., :-1, 0]
 
-    def loss_fn(self, model_mask, tokenizer, y, **kwargs):
+    def loss_fn(self, params, model_mask, tokenizer, y, **kwargs):
         model_mask_logits = self(model_mask, tokenizer, y=y, **kwargs)
         return jnp.mean(
             optax.sigmoid_binary_cross_entropy(model_mask_logits, model_mask).sum(-1)
@@ -123,9 +124,7 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
     def log_prob(self, model_mask, tokenizer, y, **kwargs):
         model_mask_logits = self(model_mask, tokenizer, y=y, **kwargs)
         # Correct Bernoulli log probability is negative binary cross entropy
-        bernoulli_log_prob = -optax.sigmoid_binary_cross_entropy(
-            model_mask_logits, model_mask
-        )
+        bernoulli_log_prob = -optax.sigmoid_binary_cross_entropy(model_mask_logits, model_mask)
         return jnp.sum(bernoulli_log_prob, axis=-1)
 
 
