@@ -7,20 +7,18 @@ from jax.typing import ArrayLike
 
 from dmri.simulators import acquisition_scheme
 from dmri.simulators.base import SignalCompartment
-from dmri.simulators.local_signal_models.distributional_models import (
+from dmri.simulators.local_signal_models import (
+    Ball,
     BinghamStick,
     BinghamZeppelin,
+    Dti,
     NoddiB,
     NoddiW,
     SandiB,
     SandiW,
+    Stick,
     WatsonStick,
     WatsonZeppelin,
-)
-from dmri.simulators.local_signal_models.gaussian_models import (
-    Ball,
-    Dti,
-    Stick,
     Zeppelin,
 )
 from dmri.simulators.noise_compartments import (
@@ -251,6 +249,11 @@ class Ball2Stick(MultiCompartment):
 class Ball3Stick(MultiCompartment):
     model_types = [Ball, Stick, Stick, Stick]
     noise_types = []
+    fraction_prior = jnp.ones(4)
+
+class Ball3StickNoise(MultiCompartment):
+    model_types = [Ball, Stick, Stick, Stick]
+    noise_types = [LowRicianNoise, MediumRicianNoise]
     fraction_prior = jnp.ones(4)
 
 
