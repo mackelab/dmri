@@ -1,0 +1,4 @@
+name: hcp
+params:
+  num_acquisitions: 105
+

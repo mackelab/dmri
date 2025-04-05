@@ -33,8 +33,8 @@ class acquisition_scheme:  # noqa: N801
 
     bvals: ArrayLike  # s/mm^2
     bvecs: ArrayLike  # unit vectors
-    delta: ArrayLike = field(default_factory=lambda: 0.03)  # In seconds
-    Delta: ArrayLike = field(default_factory=lambda: 0.05)  # In seconds
+    delta: ArrayLike = field(default_factory=lambda: 0.0106)  # In seconds
+    Delta: ArrayLike = field(default_factory=lambda: 0.0431)  # In seconds
 
     @property
     def q_values(self):
@@ -111,6 +111,31 @@ class acquisition_scheme:  # noqa: N801
 register_dataclass(
     acquisition_scheme, data_fields=("bvals", "bvecs"), meta_fields=("delta", "Delta")
 )
+
+def random_hcp_acquisition(rng, num_acquisitions=105) -> acquisition_scheme:
+    rng1, rng2, rng3, rng4, rng5 = jax.random.split(rng, 5)
+    bvals_typical = jnp.array(5 * [0.0] + 50 * [1000.0] + 50 * [2000.0])
+    bvals_rand_int = jax.random.choice(
+        rng1, jnp.linspace(0, 4000, 800), shape=(num_acquisitions,), replace=False
+    )
+    bvals_float = jax.random.uniform(rng2, shape=(num_acquisitions,)) * 4000
+
+    bvals = jax.random.choice(
+        rng3, jnp.stack([bvals_typical, bvals_rand_int, bvals_float])
+    )
+
+    mask = jax.random.choice(
+        rng4, jnp.array([0, 1]), shape=(num_acquisitions,), p=jnp.array([0.01, 0.99])
+    )
+    bvals = bvals * mask
+
+    bvals = jnp.sort(bvals)
+
+    # Create random directions
+    bvecs = jax.random.normal(rng5, shape=(num_acquisitions, 3))
+    bvecs = bvecs / jnp.linalg.norm(bvecs, axis=1)[:, None]
+
+    return acquisition_scheme(bvals, bvecs)
 
 
 def random_clinical_acquisition(rng, num_acquisitions=35) -> acquisition_scheme:
