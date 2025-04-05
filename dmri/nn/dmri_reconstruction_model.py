@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+import jax
 import jax.numpy as jnp
 from flax import nnx
 from jax.typing import ArrayLike
@@ -14,13 +15,14 @@ from .autoregressive import (
 )
 from .embedding_net import BvalBvecSignalEmbeddingNet, DMRIEmbeddingConfig
 from .simformer import DMRIThetaInferenceConfig, EDMSimformer, GaussianFourierEmbedding
-from .tokenizer import DMRITokenizer
+from .tokenizer import DMRITokenizer, DMRITokenizerPP
 
 
 @dataclass
 class DMRIInferenceModelConfig:
     simulator: type[MultiCompartment]
     model_dim: int = 64
+    tokenizer = DMRITokenizer
     embedding_cfg: DMRIEmbeddingConfig = field(default_factory=DMRIEmbeddingConfig)
     model_selection_cfg: DMRIModelSelectionConfig = field(
         default_factory=DMRIModelSelectionConfig
@@ -34,6 +36,7 @@ class DMRIInferenceModelConfig:
 class DMRIInferenceModelConfigMaskPriorAmortized:
     simulator: type[MultiCompartment]
     model_dim: int = 64
+    tokenizer = DMRITokenizer
     embedding_cfg: DMRIEmbeddingConfig = field(default_factory=DMRIEmbeddingConfig)
     model_selection_cfg: DMRIModelSelectionConfig = field(
         default_factory=DMRIModelSelectionAmortizedPriorConfig
@@ -42,6 +45,18 @@ class DMRIInferenceModelConfigMaskPriorAmortized:
         default_factory=DMRIThetaInferenceConfig
     )
 
+@dataclass
+class DMRIInferenceModelConfigMaskPriorAmortizedPP:
+    simulator: type[MultiCompartment]
+    model_dim: int = 64
+    tokenizer = DMRITokenizerPP
+    embedding_cfg: DMRIEmbeddingConfig = field(default_factory=DMRIEmbeddingConfig)
+    model_selection_cfg: DMRIModelSelectionConfig = field(
+        default_factory=DMRIModelSelectionAmortizedPriorConfig
+    )
+    theta_inference_cfg: DMRIThetaInferenceConfig = field(
+        default_factory=DMRIThetaInferenceConfig
+    )
 
 class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
     def __init__(self, cfg: DMRIInferenceModelConfig, rngs):
@@ -53,7 +68,7 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
             **cfg.embedding_cfg.__dict__,
         )
         # Setup tokenizers
-        self.tokenizer = DMRITokenizer(
+        self.tokenizer = cfg.tokenizer(
             cfg.simulator, token_dim=cfg.model_dim, rngs=rngs
         )
 
@@ -97,21 +112,18 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         t: Optional[ArrayLike] = None,
     ):
         # Embed model configuration
-        tokens_cfg = self.tokenizer.embed_cfgs(
+        tokens_cfg, y, mask_prior = self.embed_inputs(
             model_mask,
+            x,
+            bvals,
+            bvecs,
+            mask_prior=mask_prior,
             alpha_prior=alpha_prior,
             model_types=model_types,
             noise_types=noise_types,
         )
-        # Embed observatiosn
-        y = self.encoder(bvals, bvecs, x)
-        if y.ndim == 2:
-            y = y[..., None, :]
 
-        # Get model_mask logits
-        if self.mask_prior_need:
-            assert mask_prior is not None, "Mask prior is required"
-            mask_prior = self.mask_prior_embed(mask_prior)
+        # Mode compartment prediction
         model_mask_logits = self.model_decoder(
             model_mask, self.tokenizer, y=y, tokens_cfg=tokens_cfg, context=mask_prior
         )
@@ -120,15 +132,8 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         if t is None:
             t = jnp.ones((theta.shape[0], 1)) * 0.0001
         # Mask out non-selected models
-        # The first token is doing model fractions
-        _model_mask_extended = jnp.concatenate(
-            [jnp.ones((model_mask.shape[0], 1), dtype=bool), model_mask], axis=-1
-        )
-        attention_mask = (
-            _model_mask_extended[..., None, :] & _model_mask_extended[..., :, None]
-        )
-        attention_mask = attention_mask | jnp.eye(
-            _model_mask_extended.shape[-1], dtype=bool
+        attention_mask = self.marginalization_mask(
+            model_mask, model_types=model_types, noise_types=noise_types
         )
         theta_pred = self.inference_decoder(
             t,
@@ -142,9 +147,51 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
 
         return model_mask_logits, theta_pred
 
+    def embed_inputs(
+        self,
+        model_mask,
+        x,
+        bvals,
+        bvecs,
+        mask_prior=None,
+        alpha_prior=None,
+        model_types=None,
+        noise_types=None,
+    ):
+        # Embed model configuration
+        tokens_cfg = self.tokenizer.embed_cfgs(
+            model_mask, alpha_prior, model_types=model_types, noise_types=noise_types
+        )
+        # Embed observations and acquisition parameters
+        y = self.encoder(bvals, bvecs, x)
+        if y.ndim == 2:
+            y = y[..., None, :]
+
+        # Embed mask prior
+        if mask_prior is not None:
+            mask_prior = self.mask_prior_embed(mask_prior)
+
+        return tokens_cfg, y, mask_prior
+
+    def marginalization_mask(
+        self,
+        model_mask,
+        model_types: Optional[list[type]] = None,
+        noise_types: Optional[list[type]] = None,
+    ):
+        _model_mask_extended = self.tokenizer.theta_mask(
+            model_mask, model_types=model_types, noise_types=noise_types
+        )
+        attention_mask = (
+            _model_mask_extended[..., None, :] & _model_mask_extended[..., :, None]
+        )
+        attention_mask = attention_mask | jnp.eye(
+            _model_mask_extended.shape[-1], dtype=bool
+        )
+        return attention_mask
+
     def loss_fn(
         self,
-        params,
         rng,
         model_mask,
         theta,
@@ -155,6 +202,7 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         alpha_prior=None,
         model_types=None,
         noise_types=None,
+        permute_order=False,
     ):
         # Embed model configuration
         tokens_cfg = self.tokenizer.embed_cfgs(
@@ -169,29 +217,29 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
             assert mask_prior is not None, "Mask prior is required"
             mask_prior = self.mask_prior_embed(mask_prior)
 
+        if permute_order:
+            rng, permute_rng = jax.random.split(rng)
+        else:
+            permute_rng = rng
+
         model_mask_loss = self.model_decoder.loss_fn(
             model_mask,
             self.tokenizer,
             y=y,
             tokens_cfg=tokens_cfg,
             context=mask_prior,
+            permute_order=permute_order,
+            rng=permute_rng,
         )
 
-        _model_mask_extended = jnp.concatenate(
-            [jnp.ones((model_mask.shape[0], 1), dtype=bool), model_mask], axis=-1
-        )
-        attention_mask = (
-            _model_mask_extended[..., None, :] & _model_mask_extended[..., :, None]
-        )
-        attention_mask = attention_mask | jnp.eye(
-            _model_mask_extended.shape[-1], dtype=bool
-        )
+        attention_mask = self.marginalization_mask(model_mask)
 
         theta_loss = self.inference_decoder.loss(
             rng,
             theta,
             self.tokenizer,
             y=y,
+            model_mask=model_mask,
             tokens_cfg=tokens_cfg,
             attention_mask=attention_mask,
         )

@@ -84,12 +84,41 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
         deterministic=False,
         **kwargs,
     ):
+        input_tokens = self._encode_model_mask(model_mask, tokenizer, **kwargs)
+        # Autoregressive mask constrained
+        output_tokens = self._forward_tokens(
+            input_tokens,
+            y,
+            context=context,
+            mask=mask,
+            decode=decode,
+            deterministic=deterministic,
+        )
+        # Reduce to logits
+        logits = self.output(output_tokens)
+        # Remove the first "padding" token output
+        return logits[..., :-1, 0]
+
+    def _encode_model_mask(self, model_mask, tokenizer, **kwargs):
         input_tokens = tokenizer.encode(model_mask=model_mask, **kwargs)
-        *_, seq_len, model_dim = input_tokens.shape
+        *_, _, model_dim = input_tokens.shape
 
         assert model_dim == self.model_dim, (
             f"Token dim mismatch, is {model_dim}, expected {self.model_dim}"
         )
+        return input_tokens
+
+    def _forward_tokens(
+        self,
+        input_tokens,
+        y,
+        context=None,
+        mask=None,
+        decode=False,
+        deterministic=False,
+    ):
+        *_, seq_len, _ = input_tokens.shape
+
         # Autoregressive mask constrained
         base_mask = jnp.tril(jnp.ones((seq_len, seq_len)))
         if mask is not None:
@@ -103,15 +132,65 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
             y,
             y,
             context=context,
-            mask=base_mask,
+            mask=mask,
             deterministic=deterministic,
             decode=decode,
         )
-        logits = self.output(x)
-        return logits[..., :-1, 0]
+        return x
 
-    def loss_fn(self, params, model_mask, tokenizer, y, **kwargs):
-        model_mask_logits = self(model_mask, tokenizer, y=y, **kwargs)
+    def loss_fn(
+        self,
+        model_mask,
+        tokenizer,
+        y,
+        rng=None,
+        permute_order=False,
+        context=None,
+        tokens_cfg=None,
+        **kwargs,
+    ):
+        if permute_order:
+            assert rng is not None, "rng must be provided if permute_order is True"
+
+        if tokens_cfg is None:
+            input_tokens = self._encode_model_mask(model_mask, tokenizer, **kwargs)
+            *batch_shape, seq_len, _ = input_tokens.shape
+        else:
+            input_tokens = tokens_cfg
+            *batch_shape, seq_len, _ = input_tokens.shape
+
+        if permute_order:
+            elements = jnp.arange(seq_len - 1)  # First element is padding token
+            batch_orders = jax.vmap(lambda k: jax.random.permutation(k, elements))(
+                jax.random.split(rng, int(jnp.prod(jnp.array(batch_shape))))
+            ).reshape(batch_shape + [-1])
+
+            # Input tokens should be permuted, except the first element of dim -2
+            tokens_except_first = input_tokens[..., 1:, :]
+
+            # Create a function to permute a single batch element
+            def permute_batch_element(tokens, order):
+                return tokens[order]
+
+            # Apply permutation to each batch element
+            tokens_except_first = jax.vmap(permute_batch_element)(
+                tokens_except_first, batch_orders
+            )
+            input_tokens = input_tokens.at[..., 1:, :].set(tokens_except_first)
+
+            # Target should be permuted
+            model_mask = jax.vmap(permute_batch_element)(model_mask, batch_orders)
+
+        # AR next token prediction
+        output_tokens = self._forward_tokens(
+            input_tokens,
+            y,
+            context=context,
+            **kwargs,
+        )
+        model_mask_logits = self.output(output_tokens)
+        model_mask_logits = model_mask_logits[..., :-1, 0]
+
         return jnp.mean(
             optax.sigmoid_binary_cross_entropy(model_mask_logits, model_mask).sum(-1)
         )

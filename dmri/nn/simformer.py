@@ -59,6 +59,9 @@ class DiffusionTransformer(nnx.Module, experimental_pytree=True):
     ):
         time_embed = self.time_embedding(t)
         input_embed = tokenizer.encode(x, **kwargs)
+        # print(x.shape)
+        # print(kwargs["tokens_cfg"].shape)
+        # print(input_embed.shape)
         while time_embed.ndim < input_embed.ndim:
             time_embed = time_embed[..., None, :]
         _context = time_embed
