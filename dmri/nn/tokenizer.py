@@ -292,6 +292,26 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
         noise_idx = self.get_noise_idx(noise_types)
         return model_idx + noise_idx
 
+    @staticmethod
+    def theta_fraction_mask(model_mask):
+        return jnp.ones_like(model_mask.shape[:-1] + (1,), dtype=jnp.bool_)
+
+    def theta_mask(
+        self,
+        model_mask,
+        model_types: Optional[list[type]] = None,
+        noise_types: Optional[list[type]] = None,
+    ):
+        if model_types is None:
+            model_types = tuple(self.simulator.value.model_types)
+        if noise_types is None:
+            noise_types = tuple(self.simulator.value.noise_types)
+
+        num_components = len(model_types)
+        theta_fraction_mask = self.theta_fraction_mask(model_mask[..., :num_components])
+        theta_mask = jnp.concatenate([theta_fraction_mask, model_mask], axis=-1)
+        return theta_mask
+
     def embed_cfgs(
         self,
         model_mask: ArrayLike,
@@ -496,13 +516,17 @@ class DMRITokenizerPP(DMRITokenizer):
         return embeddings
 
     @staticmethod
-    def transform_model_to_theta_mask(model_mask):
-        eps = dirichlet_to_normal(
+    def theta_fraction_mask(model_mask):
+        _f = dirichlet_to_normal
+        for _ in range(model_mask.ndim - 1):
+            _f = jax.vmap(_f)
+        eps = _f(
             jnp.ones(model_mask.shape),
-            jnp.ones(model_mask.shape) / model_mask.shape[-1],
+            model_mask / model_mask.sum(axis=-1, keepdims=True),
             model_mask,
         )
-        return eps != 0
+        mask_fractions = eps != 0
+        return mask_fractions
 
     def embed_theta(
         self, theta, tokens_cfg, model_types=None, noise_types=None, model_mask=None
@@ -536,9 +560,7 @@ class DMRITokenizerPP(DMRITokenizer):
         # Get model components mask
         theta_fractions = theta_split[0]
         model_component_mask = model_mask[..., : len(model_types)]
-        theta_fraction_mask = jax.vmap(self.transform_model_to_theta_mask)(
-            model_component_mask
-        )
+        theta_fraction_mask = self.theta_fraction_mask(model_component_mask)
         # For present models get the fraction embedding
         fraction_id = self.fraction_embed(jnp.array(model_idx[:-1], dtype=jnp.int32))
         fraction_val = self.theta_encode_nets[0](theta_fractions[..., None])
@@ -559,7 +581,9 @@ class DMRITokenizerPP(DMRITokenizer):
 
         return tokens
 
-    def decode_theta(self, tokens, model_types=None, noise_types=None, model_mask=None):
+    def decode_theta(
+        self, tokens, model_types=None, noise_types=None, model_mask=None, **kwargs
+    ):
         if model_types is None:
             model_types = tuple(self.simulator.value.model_types)
         if noise_types is None:

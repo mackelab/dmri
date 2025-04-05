@@ -72,7 +72,7 @@ class BvalBvecSignalEmbeddingNet(nnx.Module, experimental_pytree=True):
         decode: bool = False,
     ):
         if self.log_transform_signals:
-            signals = jnp.log(signals + 1e-6)
+            signals = jnp.log(jnp.clip(signals, min=1e-8))
         bvals = self.embed_bvals(bvals[..., None])
         signals = self.embed_signals(signals[..., None])
         bvecs = jnp.repeat(bvecs, self.bvec_repeats, axis=-1)

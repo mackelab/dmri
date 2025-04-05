@@ -39,11 +39,8 @@ def dirichlet_to_normal(
         mask = jnp.arange(len(alpha)) > i
         b = jnp.sum(alpha * mask)
         phi_i = pi[i] / (1.0 - pi_sum)
-        jax.debug.print("phi_i: {phi_i}", phi_i=phi_i)
         u_i = betainc(a, b, phi_i)
-        jax.debug.print("u_i: {u_i}", u_i=u_i)
         eps_i = jax.scipy.stats.norm.ppf(u_i)
-        jax.debug.print("eps_i: {eps_i}", eps_i=eps_i)
         return pi_sum + pi[i], eps_i
 
     init_pi_sum = 0.0
