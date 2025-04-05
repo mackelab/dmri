@@ -294,7 +294,7 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
 
     @staticmethod
     def theta_fraction_mask(model_mask):
-        return jnp.ones_like(model_mask.shape[:-1] + (1,), dtype=jnp.bool_)
+        return jnp.ones(model_mask.shape[:-1] + (1,), dtype=jnp.bool_)
 
     def theta_mask(
         self,
