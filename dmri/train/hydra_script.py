@@ -132,12 +132,11 @@ def _main(cfg: DictConfig):
     # If restarts are required:
     restart_every = cfg.train.get("restart_every", None)
 
-    def loss_fn(params, state, data, rng):
+    def loss_fn(params,state, data, rng):
         p_mask, model_mask, thetas, xs, acq = data
         model = nnx.merge(graphdef, params, static, state)
         model.train()
         losses = model.loss_fn(
-            None,
             rng,
             model_mask=model_mask,
             theta=thetas,
@@ -152,7 +151,7 @@ def _main(cfg: DictConfig):
     @jax.jit
     def update(params, state, opt_state, data, rng):
         (_, (losses, new_state)), grads = jax.value_and_grad(loss_fn, has_aux=True)(
-            params, state, data, rng
+            params,state, data, rng
         )
         updates, opt_state = optimizer.update(grads, opt_state, params=params)
         new_params = optax.apply_updates(params, updates)
