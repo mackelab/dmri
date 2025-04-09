@@ -113,6 +113,7 @@ class EDMSimformer(EDM):
         y,
         dim,
         tokens_cfg=None,
+        model_mask=None,
         context=None,
         attention_mask=None,
         max_noise=None,
@@ -135,6 +136,7 @@ class EDMSimformer(EDM):
                 y=y,
                 context=context,
                 attention_mask=attention_mask,
+                model_mask=model_mask,
             )
             return (f - 0.5 * g**2 * score).reshape(x.shape)
 
@@ -159,6 +161,7 @@ class EDMSimformer(EDM):
         tokens_cfg=None,
         context=None,
         attention_mask=None,
+        model_mask=None,
         max_noise=None,
         num_steps=16,
     ):
@@ -177,6 +180,7 @@ class EDMSimformer(EDM):
                 y=y,
                 context=context,
                 attention_mask=attention_mask,
+                model_mask=model_mask,
             )
             return f_ - 0.5 * g_**2 * s_
 
@@ -213,6 +217,7 @@ class EDMSimformer(EDM):
         y,
         dim,
         tokens_cfg=None,
+        model_mask=None,
         context=None,
         attention_mask=None,
         max_noise=None,
@@ -235,6 +240,7 @@ class EDMSimformer(EDM):
                 y=y,
                 context=context,
                 attention_mask=attention_mask,
+                model_mask=model_mask,
             )
             return f - 0.5 * g**2 * score
 

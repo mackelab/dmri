@@ -1,0 +1,18 @@
+# @package _global_
+name: dmri_ball_sticks_long_train_real
+use_wandb: true
+
+hydra:
+  sweeper:
+    params:
+      wandb.project: dmri_ball_sticks
+      model.model_dim: 128
+      train.optimizer.scheduler_params.transition_steps: 500_000
+
+
+defaults:
+  - _self_
+  - override /partition: h100
+  - override /simulator: ball3stick
+  - override /model: mask_amortized_pp
+  - override /train/optimizer: default_new

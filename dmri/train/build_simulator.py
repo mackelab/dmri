@@ -6,6 +6,7 @@ import jax.numpy as jnp
 from omegaconf import DictConfig
 
 from dmri.simulators.acquisition_scheme import (
+    random_hcp_acquisition,
     random_advanced_reasearch_acquisition_scheme,
     random_clinical_acquisition,
     random_hardi_acquisition,
@@ -25,6 +26,8 @@ def build_simulator(cfg: DictConfig):
         acq_fn = partial(random_hardi_acquisition, **acq_params)
     elif acq_scheme_name == "advanced_research":
         acq_fn = partial(random_advanced_reasearch_acquisition_scheme, **acq_params)
+    elif acq_scheme_name == "hcp":
+        acq_fn = partial(random_hcp_acquisition, **acq_params)
     else:
         raise ValueError(f"Unknown acquisition scheme {acq_scheme_name}")
 
