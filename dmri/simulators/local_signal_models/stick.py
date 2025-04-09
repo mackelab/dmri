@@ -81,3 +81,97 @@ class Stick(SignalCompartment):
         eigvec = eigvecs[:, idx]
         mu = cartesian_to_unitsphere(eigvec)
         return mu, lam_par
+
+
+class StaticStick(Stick):
+    """
+    The StaticStick model is a Stick with a fixed lambda value.
+    The lam_par parameter is shared from a global parameter state as a class attribute,
+    while the mu parameter remains learnable.
+    """
+
+    theta_dim: int = 2  # Only mu parameters are learnable
+    lam_par: float = None  # Class attribute for the fixed lambda value
+
+    def __init__(self, mu: ArrayLike) -> None:
+        """Initialize the StaticStick model with a mu value.
+        The lam_par parameter is a class attribute and not passed to the constructor.
+        """
+        if type(self).lam_par is None:
+            raise ValueError("lam_par must be set before initializing StaticStick")
+        self.mu = mu
+
+    @classmethod
+    def to_theta(cls, mu: ArrayLike) -> ArrayLike:
+        """Convert only the mu parameter to the parameter space theta.
+        The lam_par parameter is a class attribute and not included in theta.
+        """
+        # Only convert mu parameters to theta space
+        mu0_normalized = 1 - jnp.cos(
+            mu[0]
+        )  # Ensures uniform distribution on upper hemisphere
+        mu1_normalized = (mu[1] + jnp.pi) / (2 * jnp.pi)
+        theta = jnp.array([mu0_normalized, mu1_normalized])
+        theta = jax.scipy.stats.norm.ppf(theta)
+        return theta
+
+    @classmethod
+    def to_params(cls, theta: ArrayLike) -> tuple:
+        """Convert the parameter space theta to the mu value.
+        The lam_par parameter is a class attribute and not included in theta.
+        """
+        theta = jax.scipy.stats.norm.cdf(theta)
+        mu1 = jnp.arccos(1 - theta[0])  # Ensures output is in upper hemisphere
+        mu2 = theta[1] * 2 * jnp.pi - jnp.pi
+        mu = jnp.array([mu1, mu2])
+        return (mu,)
+
+    @classmethod
+    def from_global_params(cls, params: ArrayLike, idx: list[int]) -> type:
+        """Create a StaticStick from a global theta value.
+
+        Parameters
+        ----------
+        theta : ArrayLike
+            The global parameter array
+        idx : list[int]
+            Indices in the global parameter array that correspond to this model's parameters
+
+        Returns
+        -------
+        StaticStick
+            A StaticStick instance with parameters extracted from the global theta
+        """
+        # Set the fixed lam_par value as a class attribute
+        cls.lam_par = params[idx[0]]
+        assert len(idx) == 1, "StaticStick only has one fixed parameter, lam_par"
+        return cls
+
+    @classmethod
+    def log_signal_fn(
+        cls,
+        aquisition_scheme: acquisition_scheme,
+        mu: ArrayLike,
+        rng=None,
+    ) -> ArrayLike:
+        """Compute the log signal for given b-values and b-vectors.
+
+        Parameters
+        ----------
+        aquisition_scheme : acquisition_scheme
+            The acquisition scheme containing b-values and b-vectors
+        mu : ArrayLike
+            The orientation of the stick in spherical coordinates
+        rng : jax.random.key, optional
+            Random number generator key, by default None
+
+        Returns
+        -------
+        ArrayLike
+            The log signal
+        """
+        bvals = aquisition_scheme.bvals
+        bvecs = aquisition_scheme.bvecs
+        mu_cart = unitsphere_to_cartesian(mu)
+        logS = -bvals * cls.lam_par * (jnp.sum(bvecs * mu_cart, axis=-1)) ** 2
+        return logS

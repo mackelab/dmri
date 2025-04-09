@@ -50,3 +50,76 @@ class Ball(SignalCompartment):
 
     def to_fod(self):
         return Uniform()
+
+
+class StaticBall(Ball):
+    """
+    The StaticBall model is a Ball with a fixed lambda value.
+    The lam parameter is shared from a global parameter state as a class attribute.
+    """
+
+    theta_dim: int = 0  # No learnable parameters, lam is fixed
+    lam: float = None  # Class attribute for the fixed lambda value
+
+    def __init__(self) -> None:
+        """Initialize the StaticBall model.
+        The lam parameter is a class attribute and not passed to the constructor.
+        """
+        if type(self).lam is None:
+            raise ValueError("lam must be set before initializing StaticBall")
+
+    @classmethod
+    def to_theta(cls) -> ArrayLike:
+        """Convert to the parameter space theta.
+        Since there are no learnable parameters, return an empty array.
+        """
+        return jnp.array([])
+
+    @classmethod
+    def to_params(cls, theta: ArrayLike) -> tuple:
+        """Convert the parameter space theta to parameters.
+        Since there are no learnable parameters, return an empty tuple.
+        """
+        return ()
+
+    @classmethod
+    def from_global_params(cls, params: ArrayLike, idx: list[int]) -> "StaticBall":
+        """Create a StaticBall from a global theta value.
+
+        Parameters
+        ----------
+        theta : ArrayLike
+            The global parameter array
+        idx : list[int]
+            Indices in the global parameter array that correspond to this model's parameters
+
+        Returns
+        -------
+        StaticBall
+            A StaticBall instance with parameters extracted from the global theta
+        """
+        # Set the fixed lambda value as a class attribute
+        cls.lam = params[idx[0]]
+        assert len(idx) == 1, "StaticBall only has one fixed parameter, lam"
+        return cls
+
+    @classmethod
+    def log_signal_fn(
+        cls, aquisition_scheme: acquisition_scheme, rng=None
+    ) -> ArrayLike:
+        """Compute the log signal for given b-values and b-vectors.
+
+        Parameters
+        ----------
+        aquisition_scheme : acquisition_scheme
+            The acquisition scheme containing b-values and b-vectors
+        rng : jax.random.key, optional
+            Random number generator key, by default None
+
+        Returns
+        -------
+        ArrayLike
+            The log signal
+        """
+        logS = -aquisition_scheme.bvals * cls.lam
+        return logS

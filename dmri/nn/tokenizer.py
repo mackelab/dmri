@@ -202,11 +202,13 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
         # Default to linear layers
         if theta_encode_nets is None:
             theta_encode_nets = [
-                nnx.Linear(d, token_dim, rngs=rngs) for d in self.params_dims
+                nnx.Linear(d, token_dim, rngs=rngs) if d > 0 else None
+                for d in self.params_dims
             ]
         if theta_decode_nets is None:
             theta_decode_nets = [
-                nnx.Linear(token_dim, d, rngs=rngs) for d in self.params_dims
+                nnx.Linear(token_dim, d, rngs=rngs) if d > 0 else None
+                for d in self.params_dims
             ]
         self.theta_encode_nets = theta_encode_nets
         self.theta_decode_nets = theta_decode_nets
@@ -294,6 +296,7 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
 
     @staticmethod
     def theta_fraction_mask(model_mask):
+
         return jnp.ones(model_mask.shape[:-1] + (1,), dtype=jnp.bool_)
 
     def theta_mask(
@@ -307,9 +310,11 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
         if noise_types is None:
             noise_types = tuple(self.simulator.value.noise_types)
 
-        num_components = len(model_types)
-        theta_fraction_mask = self.theta_fraction_mask(model_mask[..., :num_components])
-        theta_mask = jnp.concatenate([theta_fraction_mask, model_mask], axis=-1)
+        idx_with_params = [i for i, m in enumerate(model_types) if m.theta_dim > 0]
+        theta_fraction_mask = self.theta_fraction_mask(model_mask[..., idx_with_params])
+        theta_mask = jnp.concatenate(
+            [theta_fraction_mask, model_mask[..., idx_with_params]], axis=-1
+        )
         return theta_mask
 
     def embed_cfgs(
@@ -412,8 +417,16 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
         theta_split = jnp.split(theta, split_dims, axis=-1)
         # Get the val embeddings
         val_embeddings = jax.tree_util.tree_map(
-            lambda x, net: net(x)[..., None, :], theta_split, self.theta_encode_nets
+            lambda x, net: net(x)[..., None, :] if net else None,
+            theta_split,
+            self.theta_encode_nets,
         )
+        # If a compartment has no parameters, it will have a None embedding
+        # Remove those and the corresponding cfg tokens
+        val_embeddings = [x for x in val_embeddings if x is not None]
+        idx = [i for i, x in enumerate(val_embeddings) if x is not None]
+        tokens_cfg = tokens_cfg[..., idx, :]
+
         val_tokens = jnp.concatenate(val_embeddings, axis=-2)
 
         # Combine the tokens
@@ -447,10 +460,11 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
         if noise_types is None:
             noise_types = tuple(self.simulator.value.noise_types)
 
-        model_idx = self.get_model_idx(model_types)
+        model_types_with_params = tuple([m for m in model_types if m.theta_dim > 0])
+        model_idx = self.get_model_idx(model_types_with_params)
         noise_idx = self.get_noise_idx(noise_types)
-        idx = model_idx + noise_idx
 
+        idx = model_idx + noise_idx
         tokens_split = jnp.split(tokens, tokens.shape[-2], axis=-2)
         net_subs = [self.theta_decode_nets[0]] + [
             self.theta_decode_nets[i + 1] for i in idx
