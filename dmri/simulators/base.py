@@ -55,6 +55,24 @@ class Compartment(ABC):
         return cls.from_theta(children[0])
 
 
+class SharedParameterState(Compartment):
+    share_with_compartments: dict[type, list[int]]
+
+    def __init__(self, shared_parameters: ArrayLike):
+        self.shared_parameters = jnp.atleast_1d(shared_parameters)
+
+    def set_shared_params_for_compartment(self, compartment_type: type) -> ArrayLike:
+        """Returns the parameters for the compartment."""
+        if (
+            hasattr(compartment_type, "from_global_params")
+            and compartment_type in self.share_with_compartments
+        ):
+            idx = self.share_with_compartments[compartment_type]
+            return compartment_type.from_global_params(self.shared_parameters, idx)
+        else:
+            return compartment_type
+
+
 class SignalCompartment(Compartment):
     @classmethod
     def signal_fn(

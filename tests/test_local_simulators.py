@@ -21,6 +21,7 @@ from dmri.simulators import (
     WatsonZeppelin,
     Zeppelin,
     acquisition_scheme,
+    BallStickSharedDiffusivity,
 )
 from dmri.simulators.multi_compartment import (
     Ball2Stick,
@@ -49,6 +50,7 @@ from dmri.simulators.multi_compartment import (
         BallStick,
         Ball2Stick,
         Ball3Stick,
+        BallStickSharedDiffusivity,
     ]
 )
 def compartment_model(request):
