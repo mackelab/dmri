@@ -302,14 +302,14 @@ class SharedDiffusivity(SharedParameterState):
 
     @classmethod
     def to_params(cls, theta: ArrayLike) -> tuple:
-        u = jax.scipy.stats.uniform.cdf(theta)
+        u = jax.scipy.stats.norm.cdf(theta)
         lam = cls.lam_min + u * (cls.lam_max - cls.lam_min)
         return lam
 
     @classmethod
     def to_theta(cls, shared_parameters: ArrayLike) -> ArrayLike:
         u = (shared_parameters - cls.lam_min) / (cls.lam_max - cls.lam_min)
-        return jax.scipy.stats.uniform.ppf(u)
+        return jax.scipy.stats.norm.ppf(u)
 
 
 class BallStickSharedDiffusivity(MultiCompartment):
