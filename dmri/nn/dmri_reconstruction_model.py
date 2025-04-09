@@ -293,11 +293,7 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         y = self.encoder(bvals, bvecs, signals)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
 
-        _model_mask_extended = jnp.concatenate([jnp.array([True]), model_mask])
-        attention_mask = _model_mask_extended[None, :] & _model_mask_extended[:, None]
-        attention_mask = attention_mask | jnp.eye(
-            _model_mask_extended.shape[-1], dtype=bool
-        )
+        attention_mask = self.marginalization_mask(model_mask)
 
         # diffusion sampling
         theta = self.inference_decoder.sample(
@@ -309,6 +305,7 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
             num_steps=num_steps,
             max_noise=max_noise,
             attention_mask=attention_mask,
+            model_mask=model_mask,
         )
 
         return theta
@@ -326,11 +323,7 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         y = self.encoder(bvals, bvecs, signals)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
 
-        _model_mask_extended = jnp.concatenate([jnp.array([True]), model_mask])
-        attention_mask = _model_mask_extended[None, :] & _model_mask_extended[:, None]
-        attention_mask = attention_mask | jnp.eye(
-            _model_mask_extended.shape[-1], dtype=bool
-        )
+        attention_mask = self.marginalization_mask(model_mask)
 
         log_prob = self.inference_decoder.log_prob(
             theta,
@@ -340,6 +333,7 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
             num_steps=num_steps,
             max_noise=max_noise,
             attention_mask=attention_mask,
+            model_mask=model_mask,
         )
 
         return log_prob
@@ -357,11 +351,7 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         y = self.encoder(bvals, bvecs, signals)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
 
-        _model_mask_extended = jnp.concatenate([jnp.array([True]), model_mask])
-        attention_mask = _model_mask_extended[None, :] & _model_mask_extended[:, None]
-        attention_mask = attention_mask | jnp.eye(
-            _model_mask_extended.shape[-1], dtype=bool
-        )
+        attention_mask = self.marginalization_mask(model_mask)
 
         theta, log_prob = self.inference_decoder.sample_and_log_prob(
             rng,
@@ -372,6 +362,7 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
             num_steps=num_steps,
             max_noise=max_noise,
             attention_mask=attention_mask,
+            model_mask=model_mask,
         )
 
         return theta, log_prob

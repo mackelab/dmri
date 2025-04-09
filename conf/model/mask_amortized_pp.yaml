@@ -1,0 +1,7 @@
+init_seed: 0
+name: DMRIInferenceModelConfigMaskPriorAmortizedPP
+model_dim: 64
+defaults:
+  - embedding_net: bvalbvec
+  - inference_net: simformer
+  - model_selection_net: autoregressive_prior_amortized
