@@ -1,0 +1,19 @@
+# @package _global_
+name: dmri_ball_sticks_shared_param_real
+use_wandb: true
+
+hydra:
+  sweeper:
+    params:
+      wandb.project: dmri_ball_sticks_shared_param
+      model.model_dim: 128
+      train.optimizer.scheduler_params.transition_steps: 500_000
+      model.embedding_net.params.log_transform_signals: False
+
+
+defaults:
+  - _self_
+  - override /partition: h100
+  - override /simulator: ball3stick_shared
+  - override /model: mask_amortized
+  - override /train/optimizer: default_new
