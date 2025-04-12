@@ -29,6 +29,7 @@ def build_model(cfg: DictConfig, sim_type):
     cfg_m = cfg_class(
         sim_type,
         model_dim=cfg.model.model_dim,
+        use_attention_mask=cfg.model.use_attention_mask,
         embedding_cfg=cfg_embed,
         model_selection_cfg=cfg_model_selection_net,
         theta_inference_cfg=cfg_inference_net,

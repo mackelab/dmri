@@ -1,6 +1,7 @@
 init_seed: 0
 name: DMRIInferenceModelConfigMaskPriorAmortized
 model_dim: 64
+use_attention_mask: true
 defaults:
   - embedding_net: bvalbvec
   - inference_net: simformer
