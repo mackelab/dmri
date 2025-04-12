@@ -97,7 +97,7 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
         # Reduce to logits
         logits = self.output(output_tokens)
         # Remove the first "padding" token output
-        return logits[..., :-1, 0]
+        return logits[..., 1:, 0]
 
     def _encode_model_mask(self, model_mask, tokenizer, **kwargs):
         input_tokens = tokenizer.encode(model_mask=model_mask, **kwargs)
@@ -189,7 +189,8 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
             **kwargs,
         )
         model_mask_logits = self.output(output_tokens)
-        model_mask_logits = model_mask_logits[..., :-1, 0]
+        # Remove the first "padding" token output
+        model_mask_logits = model_mask_logits[..., 1:, 0]
 
         return jnp.mean(
             optax.sigmoid_binary_cross_entropy(model_mask_logits, model_mask).sum(-1)
