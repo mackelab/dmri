@@ -25,14 +25,24 @@ from dmri.simulators.local_signal_models import (
     StaticBall,
 )
 from dmri.simulators.noise_compartments import (
-    LargeGaussianNoise,
-    LargeRicianNoise,
-    LowGaussianNoise,
-    LowRicianNoise,
-    MediumGaussianNoise,
-    MediumRicianNoise,
-    VeryLargeGaussianNoise,
-    VeryLargeRicianNoise,
+    GaussianNoiseSNR7080,
+    GaussianNoiseSNR6070,
+    GaussianNoiseSNR5060,
+    GaussianNoiseSNR4050,
+    GaussianNoiseSNR3040,
+    GaussianNoiseSNR2030,
+    GaussianNoiseSNR1020,
+    GaussianNoiseSNR310,
+    BoundedGaussianNoise,
+    RicianNoiseSNR7080,
+    RicianNoiseSNR6070,
+    RicianNoiseSNR5060,
+    RicianNoiseSNR4050,
+    RicianNoiseSNR3040,
+    RicianNoiseSNR2030,
+    RicianNoiseSNR1020,
+    RicianNoiseSNR310,
+    BoundedRicianNoise,
 )
 from dmri.simulators.sphereical_distributions import MixtureOfFODs
 from dmri.utils.transform import dirichlet_to_normal, normal_to_dirichlet
@@ -87,6 +97,18 @@ class MultiCompartment(SignalCompartment):
         # This will not work with current shared parameter state
         # assert [type(m) for m in model_compartments] == self.model_types, "Wrong model"
         assert [type(m) for m in noise_compartments] == self.noise_types, "Wrong noise"
+
+    def get_all_params(self):
+        all_params = {}
+        all_params["model_fractions"] = self.model_fractions
+        for m in self.model_compartments:
+            all_params[m.__class__.__name__] = m.params
+        for n in self.noise_compartments:
+            all_params[n.__class__.__name__] = n.params
+        all_params["model_mask"] = self.model_mask
+        if self.shared_parameter is not None:
+            all_params["shared_parameter"] = self.shared_parameter.params
+        return all_params
 
     @classmethod
     def signal_fn(
@@ -321,8 +343,8 @@ class BallStickSharedDiffusivity(MultiCompartment):
 
 class Ball3StickSharedDiffusivity(MultiCompartment):
     model_types = [StaticBall, StaticStick, StaticStick, StaticStick]
-    noise_types = [LowGaussianNoise, MediumGaussianNoise, LargeGaussianNoise]
-    fraction_prior = jnp.ones(4)
+    noise_types = [BoundedGaussianNoise]
+    fraction_prior = jnp.array([1.0, 1.0, 0.3, 0.1])
     shared_parameter_type = SharedDiffusivity
 
 
@@ -345,13 +367,13 @@ class Ball3Stick(MultiCompartment):
 
 class Ball3StickNoise(MultiCompartment):
     model_types = [Ball, Stick, Stick, Stick]
-    noise_types = [LowRicianNoise, MediumRicianNoise]
+    noise_types = [RicianNoiseSNR310, RicianNoiseSNR1020]
     fraction_prior = jnp.ones(4)
 
 
 class BallStickZeppelinNoise(MultiCompartment):
     model_types = [Ball, Stick, Zeppelin]
-    noise_types = [LowRicianNoise, MediumRicianNoise]
+    noise_types = [RicianNoiseSNR310, RicianNoiseSNR1020]
     fraction_prior = jnp.ones(3)
 
 
@@ -372,8 +394,8 @@ class Ball2Stick2Zeppelin2Dti(MultiCompartment):
 class Ball3Stick3ZeppelinNoise(MultiCompartment):
     model_types = [Ball] + 3 * [Stick] + 3 * [Zeppelin]
     noise_types = [
-        LowRicianNoise,
-        MediumRicianNoise,
+        RicianNoiseSNR310,
+        RicianNoiseSNR1020,
     ]
     fraction_prior = jnp.ones(1 + 3 + 3)
 
@@ -381,10 +403,10 @@ class Ball3Stick3ZeppelinNoise(MultiCompartment):
 class AllGaussianModels(MultiCompartment):
     model_types = [Ball] + 3 * [Stick] + 3 * [Zeppelin] + 3 * [Dti]
     noise_types = [
-        LowRicianNoise,
-        MediumRicianNoise,
-        LargeRicianNoise,
-        VeryLargeRicianNoise,
+        RicianNoiseSNR310,
+        RicianNoiseSNR1020,
+        RicianNoiseSNR2030,
+        RicianNoiseSNR3040,
     ]
     fraction_prior = jnp.ones(1 + 3 + 3 + 3)
 
@@ -405,9 +427,14 @@ class AllGaussianAndConvolvedModels(MultiCompartment):
         + 3 * [SandiW]
     )
     noise_types = [
-        LowGaussianNoise,
-        MediumGaussianNoise,
-        LargeGaussianNoise,
-        VeryLargeGaussianNoise,
-    ] + [LowRicianNoise, MediumRicianNoise, LargeRicianNoise, VeryLargeRicianNoise]
+        GaussianNoiseSNR310,
+        GaussianNoiseSNR1020,
+        GaussianNoiseSNR2030,
+        GaussianNoiseSNR3040,
+    ] + [
+        RicianNoiseSNR310,
+        RicianNoiseSNR1020,
+        RicianNoiseSNR2030,
+        RicianNoiseSNR3040,
+    ]
     fraction_prior = jnp.ones(1 + 3 + 3 + 3 + 3 + 3 + 3 + 3 + 3 + 3 + 3 + 3)

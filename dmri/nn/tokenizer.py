@@ -363,6 +363,25 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
         """
         Embeds the configuration of model and noise types into tokens.
 
+        Token Structure:
+            The output tokens have the following structure:
+
+            1. alpha_token (B, 1, token_dim):
+               - Represents the prior fractions for model components
+               - Position: First token in the sequence
+               - Shape: (batch_dims..., 1, token_dim)
+
+            2. idx_tokens (B, T, token_dim):
+               - Represents the embedded indices for each model and noise component
+               - Value: If the component mask is True the token will be the embedded
+                 index, if the component mask is False the token will be zero
+               - Position: Follows the alpha_token
+               - Shape: (batch_dims..., T, token_dim) where T is the number of components
+               - Components that are not active (masked out) will have zero token values
+
+            The final output is a concatenation of these tokens along the second-to-last axis,
+            resulting in a tensor of shape (batch_dims..., 1+T, token_dim).
+
         Args:
             model_mask (ArrayLike): A binary mask indicating active model components.
             alpha_prior (Optional[ArrayLike]): Prior fractions for model components.
@@ -425,6 +444,31 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
 
         Returns:
             ArrayLike: The token representation augmented with encoded parameters.
+
+        Token Structure:
+            The output tokens have the following structure:
+
+            1. val_tokens (B, N, token_dim):
+               - Represents the encoded parameter values for each component
+               - Shape: (batch_dims..., N, token_dim) where N is the number of components with parameters
+               - Each token corresponds to the parameters of a specific model or noise component
+               - Components without parameters are excluded from the output
+
+            2. tokens_cfg (B, N, token_dim):
+               - Configuration tokens from embed_cfgs, filtered to match the components with parameters
+               - Shape: (batch_dims..., N, token_dim)
+
+            The final output is the sum of val_tokens and tokens_cfg, resulting in a tensor of shape
+            (batch_dims..., N, token_dim). This combines the parameter information with the component
+            identity information in a single token representation.
+
+        Processing Steps:
+            1. The theta vector is split into components based on the parameter dimensions of each model/noise type
+            2. Each component's parameters are encoded using the corresponding encoding network
+            3. Components without parameters are filtered out
+            4. The encoded parameters are concatenated along the second-to-last axis
+            5. The configuration tokens are filtered to match only the components with parameters
+            6. The final tokens are the sum of the encoded parameters and the filtered configuration tokens
         """
         if model_types is None:
             model_types = tuple(self.simulator.value.model_types)
