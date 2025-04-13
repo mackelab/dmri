@@ -96,8 +96,10 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
         )
         # Reduce to logits
         logits = self.output(output_tokens)
-        # Remove the first "padding" token output
-        return logits[..., 1:, 0]
+        # Remove the last token output (padding token)
+        # The tokenizer adds a padding token at the beginning of the sequence (alpha_token)
+        # We need to remove it to match the input model_mask dimensions
+        return logits[..., :-1, 0]
 
     def _encode_model_mask(self, model_mask, tokenizer, **kwargs):
         input_tokens = tokenizer.encode(model_mask=model_mask, **kwargs)
@@ -120,8 +122,10 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
         *_, seq_len, _ = input_tokens.shape
 
         # Autoregressive mask constrained
+        # Create a lower triangular mask to ensure each position can only attend to previous positions
         base_mask = jnp.tril(jnp.ones((seq_len, seq_len)))
         if mask is not None:
+            # If a custom mask is provided, combine it with the autoregressive mask
             base_mask = base_mask & mask
 
         if context is not None:
@@ -165,8 +169,8 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
                 jax.random.split(rng, int(jnp.prod(jnp.array(batch_shape))))
             ).reshape(batch_shape + [-1])
 
-            # Input tokens should be permuted, except the first element of dim -2
-            tokens_except_first = input_tokens[..., 1:, :]
+            # Input tokens should be permuted, except the last element of dim -2 (padding token)
+            tokens_except_first = input_tokens[..., :-1, :]
 
             # Create a function to permute a single batch element
             def permute_batch_element(tokens, order):
@@ -176,6 +180,7 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
             tokens_except_first = jax.vmap(permute_batch_element)(
                 tokens_except_first, batch_orders
             )
+            # Update all positions except the first one with the permuted tokens
             input_tokens = input_tokens.at[..., 1:, :].set(tokens_except_first)
 
             # Target should be permuted
@@ -189,8 +194,7 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
             **kwargs,
         )
         model_mask_logits = self.output(output_tokens)
-        # Remove the first "padding" token output
-        model_mask_logits = model_mask_logits[..., 1:, 0]
+        model_mask_logits = model_mask_logits[..., :-1, 0]
 
         return jnp.mean(
             optax.sigmoid_binary_cross_entropy(model_mask_logits, model_mask).sum(-1)
@@ -220,7 +224,10 @@ def naive_autoregressive_decoding(model, key, tokenizer, y, dim, context=None):
 
     def scan_fn(carry, k):
         x, i = carry
+        # Get logits from the model
         logits = model(x.astype(jnp.int32), tokenizer, y=y, context=context)
+        # Ensure we're using the correct index for the current position
+        # The model returns logits with shape (..., dim) where the first position is the padding token
         p_i = jax.nn.sigmoid(logits[i])
 
         x_i = jax.random.bernoulli(k, p_i)
