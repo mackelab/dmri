@@ -227,6 +227,7 @@ def make_dyads(
     )
 
     dyadic_tensor = jnp.matmul(v, v.T) / len(theta_samples)
+    print(dyadic_tensor.shape)
     L, E = jnp.linalg.eigh(dyadic_tensor)
 
     ind = jnp.argsort(-L)
@@ -243,7 +244,7 @@ def make_dyads(
         # Determine the cone angle at the specified percentile
         disp = jnp.percentile(angles, percentile)
 
-    return v, disp
+    return v1, disp
 
 
 def cart2sph(x: float, y: float, z: float) -> tuple[float, float]:

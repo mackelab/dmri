@@ -316,6 +316,32 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
         if noise_types is None:
             noise_types = tuple(self.simulator.value.noise_types)
 
+        # TODO: Make this more efficient by figuring out how model_mask translates to fractions
+        # First need to find active model fractions
+        _model_eps = dirichlet_to_normal(jnp.ones((len(model_types),)), jnp.ones((len(model_types),))/len(model_types), mask=model_mask[...,:len(model_types)])
+        active_thetas = _model_eps != 0.
+        # Next is the shared parameters which are always active
+        if self.simulator.value.shared_parameter_type is not None:
+            active_thetas = jnp.concatenate([active_thetas, jnp.ones(model_mask.shape[:-1] + (1,), dtype=jnp.bool_)], axis=-1)
+        # Next are the model parameters, if model_mask is true it should be multiplied by the dimension of the parameter
+        for i in range(len(model_types)):
+            active_thetas = jnp.concatenate([active_thetas] + [model_mask[..., i, None]] * model_types[i].theta_dim, axis=-1)
+        # Next are the noise parameters, if noise_mask is true it should be multiplied by the dimension of the parameter
+        for i in range(len(noise_types)):
+            active_thetas = jnp.concatenate([active_thetas] + [model_mask[..., len(model_types) + i, None]] * noise_types[i].theta_dim, axis=-1)
+        return active_thetas
+
+    def theta_token_mask(
+        self,
+        model_mask,
+        model_types: Optional[list[type]] = None,
+        noise_types: Optional[list[type]] = None,
+    ):
+        if model_types is None:
+            model_types = tuple(self.simulator.value.model_types)
+        if noise_types is None:
+            noise_types = tuple(self.simulator.value.noise_types)
+
         idx_with_params = [i for i, m in enumerate(model_types) if m.theta_dim > 0]
         idx_with_params_noise = [
             len(model_types) + i for i, n in enumerate(noise_types) if n.theta_dim > 0

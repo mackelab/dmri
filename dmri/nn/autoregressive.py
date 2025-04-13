@@ -90,7 +90,7 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
             input_tokens,
             y,
             context=context,
-            mask=mask,
+            attention_mask=mask,
             decode=decode,
             deterministic=deterministic,
         )
@@ -115,7 +115,7 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
         input_tokens,
         y,
         context=None,
-        mask=None,
+        attention_mask=None,
         decode=False,
         deterministic=False,
     ):
@@ -124,9 +124,9 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
         # Autoregressive mask constrained
         # Create a lower triangular mask to ensure each position can only attend to previous positions
         base_mask = jnp.tril(jnp.ones((seq_len, seq_len)))
-        if mask is not None:
+        if attention_mask is not None:
             # If a custom mask is provided, combine it with the autoregressive mask
-            base_mask = base_mask & mask
+            base_mask = base_mask & attention_mask
 
         if context is not None:
             context = context[..., None, :]
@@ -136,7 +136,7 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
             y,
             y,
             context=context,
-            mask=mask,
+            mask=base_mask,
             deterministic=deterministic,
             decode=decode,
         )
