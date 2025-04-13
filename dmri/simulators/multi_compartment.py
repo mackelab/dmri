@@ -340,6 +340,12 @@ class BallStickSharedDiffusivity(MultiCompartment):
     fraction_prior = jnp.ones(2)
     shared_parameter_type = SharedDiffusivity
 
+class BallStickSharedDiffusivity2(MultiCompartment):
+    model_types = [StaticBall, StaticStick]
+    noise_types = []
+    fraction_prior = jnp.ones(2)
+    shared_parameter_type = SharedDiffusivity
+
 
 class Ball3StickSharedDiffusivity(MultiCompartment):
     model_types = [StaticBall, StaticStick, StaticStick, StaticStick]

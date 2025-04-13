@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from functools import partial
 from typing import List, Optional
 
 import jax
@@ -176,13 +177,23 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
 
         return tokens_cfg, y, mask_prior
 
+    def theta_mask(
+        self,
+        model_mask,
+        model_types: Optional[list[type]] = None,
+        noise_types: Optional[list[type]] = None,
+    ):
+        theta_token_mask = self.tokenizer.theta_token_mask(model_mask, model_types=model_types, noise_types=noise_types)
+        # Expand this by the
+
+
     def marginalization_mask(
         self,
         model_mask,
         model_types: Optional[list[type]] = None,
         noise_types: Optional[list[type]] = None,
     ):
-        _model_mask_extended = self.tokenizer.theta_mask(
+        _model_mask_extended = self.tokenizer.theta_token_mask(
             model_mask, model_types=model_types, noise_types=noise_types
         )
         attention_mask = (
@@ -206,6 +217,7 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         model_types=None,
         noise_types=None,
         permute_order=False,
+        use_loss_mask=False,
     ):
         # Embed model configuration
         tokens_cfg = self.tokenizer.embed_cfgs(
@@ -239,6 +251,11 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         else:
             attention_mask = None
 
+        if use_loss_mask:
+            loss_mask = ~jax.vmap(partial(self.tokenizer.theta_mask, model_types=model_types, noise_types=noise_types))(model_mask)
+        else:
+            loss_mask = None
+
         theta_loss = self.inference_decoder.loss(
             rng,
             theta,
@@ -247,6 +264,7 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
             model_mask=model_mask,
             tokens_cfg=tokens_cfg,
             attention_mask=attention_mask,
+            loss_mask=loss_mask,
         )
         theta_loss /= jnp.sqrt(theta.shape[-1])
 
@@ -371,3 +389,32 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         )
 
         return theta, log_prob
+
+    def score_theta(
+        self,
+        theta,
+        bvals,
+        bvecs,
+        signals,
+        model_mask,
+        t=None,
+    ):
+        if t is None:
+            t = jnp.ones((1,)) * 0.001
+
+        y = self.encoder(bvals, bvecs, signals)
+        tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
+
+        attention_mask = self.marginalization_mask(model_mask)
+
+        score = self.inference_decoder.score(
+            t,
+            theta,
+            y=y,
+            tokenizer=self.tokenizer,
+            tokens_cfg=tokens_cfg,
+            attention_mask=attention_mask,
+            model_mask=model_mask,
+        )
+
+        return score
