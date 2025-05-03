@@ -112,16 +112,24 @@ register_dataclass(
     acquisition_scheme, data_fields=("bvals", "bvecs"), meta_fields=("delta", "Delta")
 )
 
+from dipy.io.gradients import read_bvals_bvecs
+
+import os
+bvals_typ, bvecs_typ = read_bvals_bvecs(os.path.join(os.path.dirname(__file__), "data/bvals"), os.path.join(os.path.dirname(__file__), "data/bvecs"))
+
+idx = np.argsort(bvals_typ)
+bvals_typ = bvals_typ[idx]
+bvecs_typ = bvecs_typ[idx]
+
+
 def random_hcp_acquisition(rng, num_acquisitions=105) -> acquisition_scheme:
     rng1, rng2, rng3, rng4, rng5 = jax.random.split(rng, 5)
-    bvals_typical = jnp.array(5 * [0.0] + 50 * [1000.0] + 50 * [2000.0])
-    bvals_rand_int = jax.random.choice(
-        rng1, jnp.linspace(0, 4000, 800), shape=(num_acquisitions,), replace=False
-    )
+    bvals_typical = jnp.array(bvals_typ)
+    bvecs_typical = jnp.array(bvecs_typ)
     bvals_float = jax.random.uniform(rng2, shape=(num_acquisitions,)) * 4000
 
     bvals = jax.random.choice(
-        rng3, jnp.stack([bvals_typical, bvals_rand_int, bvals_float])
+        rng3, jnp.stack([bvals_typical, bvals_float])
     )
 
     mask = jax.random.choice(
@@ -132,8 +140,13 @@ def random_hcp_acquisition(rng, num_acquisitions=105) -> acquisition_scheme:
     bvals = jnp.sort(bvals)
 
     # Create random directions
-    bvecs = jax.random.normal(rng5, shape=(num_acquisitions, 3))
+    rng5_1, rng5_2 = jax.random.split(rng5, 2)
+    bvecs = jax.random.normal(rng5_1, shape=(num_acquisitions, 3))
     bvecs = bvecs / jnp.linalg.norm(bvecs, axis=1)[:, None]
+
+    bvecs = jax.random.choice(
+        rng5_2, jnp.stack([bvecs_typical, bvecs], axis=0), axis=0
+    )
 
     return acquisition_scheme(bvals, bvecs)
 

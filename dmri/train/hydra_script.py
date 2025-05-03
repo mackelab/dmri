@@ -107,7 +107,10 @@ def _main(cfg: DictConfig):
     # Learning rate scheduler and optimizer
     optimizer_cfg = cfg.train.optimizer
     optimizer_type = getattr(optax, optimizer_cfg.optimizer)
-    scheduler_type = getattr(optax, optimizer_cfg.scheduler)
+    if optimizer_cfg.scheduler:
+        scheduler_type = getattr(optax, optimizer_cfg.scheduler)
+    else:
+        scheduler_type = None
     use_ema = optimizer_cfg.get("ema", False)
     use_adaptive_clip = optimizer_cfg.get("adaptive_gradient_clipping", False)
     grad_transforms = []
@@ -116,8 +119,12 @@ def _main(cfg: DictConfig):
             optimizer_cfg.get("gradient_clip_value", 10.0)
         )
         grad_transforms.append(grad_clip)
-    scheduler = scheduler_type(**optimizer_cfg.scheduler_params)
-    optimizer = optimizer_type(scheduler)
+    if scheduler_type:
+        scheduler = scheduler_type(**optimizer_cfg.scheduler_params)
+        optimizer = optimizer_type(scheduler)
+    else:
+        lr = optimizer_cfg.get("learning_rate", 1e-3)
+        optimizer = optimizer_type(learning_rate=lr)
     grad_transforms.append(optimizer)
     if use_ema:
         grad_transforms.append(optax.ema(optimizer_cfg.get("ema_decay", 0.8)))
@@ -145,8 +152,11 @@ def _main(cfg: DictConfig):
             bvecs=acq.bvecs,
             mask_prior=p_mask,
         )
+        loss1  = cfg.train.model_selection_weight * losses[0]
+        loss2 = cfg.train.model_inference_loss_weight * losses[1]
+        total_loss = loss1 + loss2
         _, _, _, new_state = nnx.split(model, nnx.Param, nnx.Intermediate, ...)
-        return sum(losses), (losses, new_state)
+        return total_loss, (losses, new_state)
 
     @jax.jit
     def update(params, state, opt_state, data, rng):
@@ -267,7 +277,7 @@ def _main(cfg: DictConfig):
 
             # Evaluate ess
             ess = evaluator.eval_effective_sample_size(
-                params, state, eval_loader, eval_key, K=5, iters=1
+                params, state, eval_loader, eval_key, K=10, iters=1
             )
 
             log.info(f"Mask NLL: {mask_nnl}, Theta NLL: {theta_nnl}, ESS: {ess}")

@@ -1,5 +1,5 @@
 # @package _global_
-name: dmri_ball_sticks_shared_param_real
+name: dmri_ball_sticks_shared_param_real_new_no_bugs3
 use_wandb: true
 
 hydra:
@@ -7,8 +7,9 @@ hydra:
     params:
       wandb.project: dmri_ball_sticks_shared_param
       model.model_dim: 128
-      train.optimizer.scheduler_params.transition_steps: 500_000
+      train.optimizer.scheduler_params.transition_steps: 1_000_000
       model.embedding_net.params.log_transform_signals: False
+      train.eval_freq: 100_000
 
 
 defaults:
