@@ -134,8 +134,7 @@ class MultiCompartment(SignalCompartment):
         if rng is not None and len(noise_compartments) > 0:
             if model_mask is None:
                 # Select first noise compartment
-                idx = len(model_compartments)
-                noise_model = noise_compartments[idx]
+                noise_model = noise_compartments[0]
                 signal = noise_model.noise(signal, rng)
             else:
                 # Make mask shape match noise compartments
@@ -292,8 +291,7 @@ class MultiCompartment(SignalCompartment):
         if len(self.noise_compartments) > 0:
             if self.model_mask is None:
                 # Select first noise compartment
-                idx = len(self.model_compartments)
-                noise_model = self.noise_compartments[idx]
+                noise_model = self.noise_compartments[0]
                 log_likelihood = noise_model.log_likelihood(signal, signal_observed)
             else:
                 # Make mask shape match noise compartments
