@@ -2,7 +2,7 @@ name: StreamDataLoader
 train_params:
   batch_size: 2048
   max_queue_size: 5_000
-  num_producers: 11
+  num_producers: 7
 val_params:
   batch_size: 512
   max_queue_size: 100
