@@ -11,7 +11,7 @@ from flax import nnx
 from jax.typing import ArrayLike
 
 from dmri.simulators import MultiCompartment
-from dmri.utils.transform import dirichlet_to_normal
+from dmri.utils.transform import dirichlet_to_normal, eps_mask
 
 
 def map_classes_to_indices(class_list: list, start_idx: int = 0):
@@ -193,7 +193,7 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
             rngs=rngs,
             num_embeddings=len(simulator.model_types) + len(simulator.noise_types),
             features=token_dim,
-            embedding_init=init_component_embeddings,
+            embedding_init=self._init_class_embeddings,
         )
         self.embed_fraction = nnx.Linear(
             len(simulator.model_types), token_dim, rngs=rngs
@@ -219,6 +219,31 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
             ]
         self.theta_encode_nets = theta_encode_nets
         self.theta_decode_nets = theta_decode_nets
+
+    def _init_class_embeddings(self, key, shape, dtype=jnp.float32):
+        """Custom initializer that makes embeddings for same classes identical
+        but orthogonal between different classes.
+
+        Args:
+            key: PRNG key
+            shape: Shape of embeddings (num_embeddings, embedding_dim)
+            dtype: Data type of embeddings
+        """
+        # Get unique class indices from model_types_to_idx
+        class_to_indices = self.model_types_to_idx.value
+        num_classes = len(class_to_indices)
+
+        # Initialize orthogonal embeddings for each unique class
+        class_embeddings = jax.random.orthogonal(
+            key, n=shape[1], shape=(num_classes,), m=1
+        ).squeeze(axis=-1)
+
+        # Create full embedding matrix by mapping class embeddings to all indices
+        embeddings = jnp.zeros(shape, dtype=dtype)
+        for i, (_, indices) in enumerate(class_to_indices.items()):
+            embeddings = embeddings.at[tuple(indices), ...].set(class_embeddings[i])
+
+        return embeddings
 
     def encode(
         self,
@@ -316,19 +341,22 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
         if noise_types is None:
             noise_types = tuple(self.simulator.value.noise_types)
 
-        # TODO: Make this more efficient by figuring out how model_mask translates to fractions
         # First need to find active model fractions
-        _model_eps = dirichlet_to_normal(jnp.ones((len(model_types),)), jnp.ones((len(model_types),))/len(model_types), mask=model_mask[...,:len(model_types)])
-        active_thetas = _model_eps != 0.
+        model_component_mask = model_mask[..., : len(model_types)]
+        active_thetas = eps_mask(model_component_mask)
+
         # Next is the shared parameters which are always active
         if self.simulator.value.shared_parameter_type is not None:
             active_thetas = jnp.concatenate([active_thetas, jnp.ones(model_mask.shape[:-1] + (1,), dtype=jnp.bool_)], axis=-1)
+
         # Next are the model parameters, if model_mask is true it should be multiplied by the dimension of the parameter
         for i in range(len(model_types)):
             active_thetas = jnp.concatenate([active_thetas] + [model_mask[..., i, None]] * model_types[i].theta_dim, axis=-1)
+
         # Next are the noise parameters, if noise_mask is true it should be multiplied by the dimension of the parameter
         for i in range(len(noise_types)):
             active_thetas = jnp.concatenate([active_thetas] + [model_mask[..., len(model_types) + i, None]] * noise_types[i].theta_dim, axis=-1)
+
         return active_thetas
 
     def theta_token_mask(
@@ -346,7 +374,9 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
         idx_with_params_noise = [
             len(model_types) + i for i, n in enumerate(noise_types) if n.theta_dim > 0
         ]
-        theta_fraction_mask = self.theta_fraction_mask(model_mask[..., idx_with_params])
+        theta_fraction_mask = self.theta_fraction_mask(
+            model_mask[..., : len(model_types)]
+        )
 
         # Create a mask for shared parameters - always true (1) since they're global
         # The shared parameter should be represented as a single token after the fractions
@@ -425,7 +455,6 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
             alpha_prior = self.simulator.value.fraction_prior
 
         idx = self.get_idx(model_types, noise_types)
-        print(idx)
         assert len(idx) == model_mask.shape[-1], (
             f"model_mask shape last axis {model_mask.shape} does not match the number of model components {len(idx)}"
         )
@@ -577,18 +606,25 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
         if noise_types is None:
             noise_types = tuple(self.simulator.value.noise_types)
 
+        # Get indices for components with parameters
         model_types_with_params = tuple([m for m in model_types if m.theta_dim > 0])
-        model_idx = self.get_model_idx(model_types_with_params)
-        noise_idx = self.get_noise_idx(noise_types)
+        noise_types_with_params = tuple([n for n in noise_types if n.theta_dim > 0])
 
+        model_idx = self.get_model_idx(model_types_with_params)
+        noise_idx = self.get_noise_idx(noise_types_with_params)
         idx = model_idx + noise_idx
+
         tokens_split = jnp.split(tokens, tokens.shape[-2], axis=-2)
 
         # Create a list of networks for decoding
         net_subs = []
 
-        # First network is for fractions
-        net_subs.append(self.theta_decode_nets[0])
+        # Add fraction networks for each model type
+        num_fractions = (
+            len(model_types) - 1
+        )  # Number of fractions (one less than number of models)
+        for _ in range(num_fractions):
+            net_subs.append(self.theta_decode_nets[0])
 
         # Add network for shared parameters if they exist
         if self.simulator.value.shared_parameter_type is not None:
@@ -633,7 +669,6 @@ class DMRITokenizerPP(DMRITokenizer):
             token_dim,
             theta_encode_nets,
             theta_decode_nets,
-            init_component_embeddings=self._init_class_embeddings,
         )
         # Override the first linear layer for the fraction prior
         # Shared linear value embedding applied to all fractions
@@ -647,43 +682,63 @@ class DMRITokenizerPP(DMRITokenizer):
             embedding_init=nnx.initializers.orthogonal(),
         )
 
-    def _init_class_embeddings(self, key, shape, dtype=jnp.float32):
-        """Custom initializer that makes embeddings for same classes identical
-        but orthogonal between different classes.
-
-        Args:
-            key: PRNG key
-            shape: Shape of embeddings (num_embeddings, embedding_dim)
-            dtype: Data type of embeddings
-        """
-        # Get unique class indices from model_types_to_idx
-        class_to_indices = self.model_types_to_idx.value
-        num_classes = len(class_to_indices)
-
-        # Initialize orthogonal embeddings for each unique class
-        class_embeddings = jax.random.orthogonal(
-            key, n=shape[1], shape=(num_classes,), m=1
-        ).squeeze(axis=-1)
-
-        # Create full embedding matrix by mapping class embeddings to all indices
-        embeddings = jnp.zeros(shape, dtype=dtype)
-        for i, (_, indices) in enumerate(class_to_indices.items()):
-            embeddings = embeddings.at[tuple(indices), ...].set(class_embeddings[i])
-
-        return embeddings
-
     @staticmethod
     def theta_fraction_mask(model_mask):
-        _f = dirichlet_to_normal
+        """
+        Creates a mask for the model fractions.
+        """
+        _eps_mask = eps_mask
         for _ in range(model_mask.ndim - 1):
-            _f = jax.vmap(_f)
-        eps = _f(
-            jnp.ones(model_mask.shape),
-            model_mask / model_mask.sum(axis=-1, keepdims=True),
-            model_mask,
-        )
-        mask_fractions = eps != 0
+            _eps_mask = jax.vmap(_eps_mask)
+        mask_fractions = _eps_mask(model_mask)
+        print(mask_fractions)
         return mask_fractions
+
+    def _create_fraction_tokens(
+        self,
+        theta_fractions: jnp.ndarray,
+        model_idx: tuple[int, ...],
+        theta_fraction_mask: jnp.ndarray,
+    ) -> jnp.ndarray:
+        """
+        Creates fraction tokens by combining model type embeddings with fraction values.
+
+        Args:
+            theta_fractions: The fraction values for each model component.
+            model_idx: Indices of the model types.
+            theta_fraction_mask: Mask indicating which model components are active.
+
+        Returns:
+            jnp.ndarray: The combined fraction tokens with shape (batch_dims..., num_models_with_params, token_dim).
+        """
+        # Get the fraction embedding for each model type
+        fraction_id = self.fraction_embed(jnp.array(model_idx[:-1], dtype=jnp.int32))
+
+        # Create a batch-compatible version of fraction_id
+        # We need to match the batch dimensions of theta_fraction_mask
+        batch_shape = theta_fraction_mask.shape[
+            :-1
+        ]  # Get all dimensions except the last one
+
+        # Create a tensor with the right shape for fraction_id_batch
+        # The shape should be (batch_dims..., num_models_with_params, token_dim)
+        fraction_id_batch = jnp.zeros(
+            batch_shape + (len(model_idx[:-1]), fraction_id.shape[-1]),
+            dtype=fraction_id.dtype,
+        )
+
+        # Copy the fraction_id values to each batch position
+        for i in range(len(model_idx[:-1])):
+            fraction_id_batch = fraction_id_batch.at[..., i, :].set(fraction_id[i])
+
+        # Now multiply with the mask
+        fraction_tokens = fraction_id_batch * theta_fraction_mask[..., None]
+
+        # Add the value embedding
+        fraction_val = self.theta_encode_nets[0](theta_fractions[..., None])
+        fraction_tokens = fraction_tokens + fraction_val
+
+        return fraction_tokens
 
     def embed_theta(
         self, theta, tokens_cfg, model_types=None, noise_types=None, model_mask=None
@@ -698,9 +753,10 @@ class DMRITokenizerPP(DMRITokenizer):
         noise_types_with_params = tuple([n for n in noise_types if n.theta_dim > 0])
 
         # Get indices for components with parameters
-        model_idx = self.get_model_idx(model_types_with_params)
+        model_idx = self.get_model_idx(tuple(model_types))
+        model_idx_with_params = self.get_model_idx(model_types_with_params)
         noise_idx = self.get_noise_idx(noise_types_with_params)
-        idx = model_idx + noise_idx
+        idx = model_idx_with_params + noise_idx
 
         # First dim -> Model fractions
         # Second dim -> Shared parameters (if any)
@@ -733,57 +789,10 @@ class DMRITokenizerPP(DMRITokenizer):
         model_component_mask = model_mask[..., : len(model_types)]
         theta_fraction_mask = self.theta_fraction_mask(model_component_mask)
 
-        # For present models get the fraction embedding
-        # Get the fraction embedding for each model type
-        fraction_id = self.fraction_embed(jnp.array(model_idx[:-1], dtype=jnp.int32))
-
-        # Print shapes for debugging
-        print(f"theta_fraction_mask shape: {theta_fraction_mask.shape}")
-        print(f"fraction_id shape: {fraction_id.shape}")
-
-        # Create a batch-compatible version of fraction_id
-        # We need to match the batch dimensions of theta_fraction_mask
-        batch_shape = theta_fraction_mask.shape[
-            :-1
-        ]  # Get all dimensions except the last one
-
-        # Create a tensor with the right shape for fraction_id_batch
-        # The shape should be (batch_dims..., num_models_with_params, token_dim)
-        fraction_id_batch = jnp.zeros(
-            batch_shape + (len(model_idx[:-1]), fraction_id.shape[-1]),
-            dtype=fraction_id.dtype,
+        # Create fraction tokens
+        fraction_tokens = self._create_fraction_tokens(
+            theta_fractions, model_idx, theta_fraction_mask
         )
-
-        # Copy the fraction_id values to each batch position
-        for i in range(len(model_idx[:-1])):
-            fraction_id_batch = fraction_id_batch.at[..., i, :].set(fraction_id[i])
-
-        # Now multiply with the mask - ensure shapes are compatible
-        # theta_fraction_mask has shape (batch_dims..., num_models)
-        # fraction_id_batch has shape (batch_dims..., num_models_with_params, token_dim)
-        # We need to make sure the model dimension matches
-
-        # If the number of models in theta_fraction_mask doesn't match the number in fraction_id_batch,
-        # we need to adjust one of them
-        if theta_fraction_mask.shape[-1] != fraction_id_batch.shape[-2]:
-            # Create a new mask with the right number of models
-            adjusted_mask = jnp.zeros(
-                batch_shape + (fraction_id_batch.shape[-2],),
-                dtype=theta_fraction_mask.dtype,
-            )
-            # Copy values from the original mask, up to the minimum of the two sizes
-            min_size = min(theta_fraction_mask.shape[-1], fraction_id_batch.shape[-2])
-            adjusted_mask = adjusted_mask.at[..., :min_size].set(
-                theta_fraction_mask[..., :min_size]
-            )
-            theta_fraction_mask = adjusted_mask
-
-        # Now multiply with the mask
-        fraction_tokens = fraction_id_batch * theta_fraction_mask[..., None]
-
-        # Add the value embedding
-        fraction_val = self.theta_encode_nets[0](theta_fractions[..., None])
-        fraction_tokens = fraction_tokens + fraction_val
 
         # Handle shared parameters if they exist
         if self.simulator.value.shared_parameter_type is not None:
@@ -818,11 +827,10 @@ class DMRITokenizerPP(DMRITokenizer):
             theta_models,
             filtered_nets,
         )
-
         # Combine the tokens
         if self.simulator.value.shared_parameter_type is not None:
             tokens = jnp.concatenate(
-                [fraction_tokens, shared_tokens, val_embeddings], axis=-2
+                [fraction_tokens, shared_tokens] + val_embeddings, axis=-2
             )
         else:
             tokens = jnp.concatenate([fraction_tokens, val_embeddings], axis=-2)
@@ -850,8 +858,12 @@ class DMRITokenizerPP(DMRITokenizer):
         # Create a list of networks for decoding
         net_subs = []
 
-        # First network is for fractions
-        net_subs.append(self.theta_decode_nets[0])
+        # Add fraction networks for each model type
+        num_fractions = (
+            len(model_types) - 1
+        )  # Number of fractions (one less than number of models)
+        for _ in range(num_fractions):
+            net_subs.append(self.theta_decode_nets[0])
 
         # Add network for shared parameters if they exist
         if self.simulator.value.shared_parameter_type is not None:

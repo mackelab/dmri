@@ -108,6 +108,15 @@ def _normal_to_dirichlet_and_phi(alpha, eps, mask=None):
 #    but we store (alpha, eps, mask, pi, phi) as residuals for the backward pass.
 # ------------------------------------------------------------------------------
 
+def eps_mask(mask):
+    # For each eps_i, check if current and any future component are active
+    num_elements = len(mask)
+    mask_eps = jnp.zeros((num_elements - 1,), dtype=bool)
+    for i in range(num_elements - 1):
+        current_active = mask[i]
+        future_active = jnp.any(jnp.array([mask[j] for j in range(i + 1, num_elements)]))
+        mask_eps = mask_eps.at[i].set(current_active & future_active)
+    return mask_eps
 
 @jax.custom_vjp
 @jax.jit
