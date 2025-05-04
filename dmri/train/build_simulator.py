@@ -34,6 +34,8 @@ def build_simulator(cfg: DictConfig):
     prior_mask_alpha = cfg.simulator.prior_mask_alpha
     prior_mask_beta = cfg.simulator.prior_mask_beta
 
+    with_posterior_score = cfg.simulator.with_posterior_score
+
     def simulator(rng):
         rng0, rng1, rng2, rng3, rng4, rng5 = jax.random.split(rng, 6)
         acq = acq_fn(rng0)
@@ -52,9 +54,16 @@ def build_simulator(cfg: DictConfig):
         model_noise_mask = jnp.zeros(len(sim_type.noise_types), dtype=jnp.bool)
         model_noise_mask = model_noise_mask.at[model_noise_idx].set(True)
         model_mask = jnp.concatenate([model_mask, model_noise_mask], axis=-1)
-        dmri_simulator = sim_type.from_theta(theta, model_mask=model_mask)
-
-        x_o = dmri_simulator.signal(acq, rng=rng5)
-        return p_mask, model_mask, theta, x_o, acq
+        if not with_posterior_score:
+            dmri_simulator = sim_type.from_theta(theta, model_mask=model_mask)
+            x_o = dmri_simulator.signal(acq, rng=rng5)
+            return p_mask, model_mask, theta, x_o, acq
+        else:
+            def posterior_potential(theta):
+                dmri_simulator = sim_type.from_theta(theta, model_mask=model_mask)
+                x_o = dmri_simulator.signal(acq, rng=rng5)
+                return dmri_simulator.log_likelihood(acq, x_o).sum() + jax.scipy.stats.norm.logpdf(theta, 0, 1).sum(-1), x_o
+            score, x_o = jax.grad(posterior_potential, has_aux=True)(theta)
+            return p_mask, model_mask, theta, x_o, acq, score
 
     return sim_type, simulator

@@ -1,6 +1,7 @@
 
 prior_mask_alpha: 1.
 prior_mask_beta: 1.
+with_posterior_score: false
 defaults:
   - sim_type: ball3sticks3zeppelins
   - acquisition_scheme: hardi

@@ -238,6 +238,7 @@ class MultiCompartment(SignalCompartment):
             component_mask = model_mask[: len(cls.model_types)]
         else:
             component_mask = None
+        #print(cls.fraction_prior, fractions, component_mask)
         fractions = normal_to_dirichlet(cls.fraction_prior, fractions, component_mask)
 
         # Apply shared parameter

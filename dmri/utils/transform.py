@@ -159,13 +159,13 @@ def normal_to_dirichlet_bwd(res: tuple, g: ArrayLike) -> tuple[None, ArrayLike, 
     # Apply masking if needed
     if mask is not None:
         # For each eps_i, check if current and any future component are active
-        mask_eps = jnp.zeros_like(eps, dtype=bool)
+        mask_eps = jnp.zeros_like(eps, dtype=jnp.bool_)
         for i in range(len(eps)):
             current_active = mask[i]
             future_active = jnp.any(
                 jnp.array([mask[j] for j in range(i + 1, len(alpha))])
             )
-            mask_eps = mask_eps.at[i].set(current_active and future_active)
+            mask_eps = mask_eps.at[i].set(current_active & future_active)
 
         grad_eps = jnp.where(mask_eps, grad_eps, 0.0)
 
