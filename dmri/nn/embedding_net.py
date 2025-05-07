@@ -52,7 +52,7 @@ class BvalBvecSignalEmbeddingNet(nnx.Module, experimental_pytree=True):
             bvals_embed_dim + signals_embed_dim + 3 * bvec_repeats, model_dim, rngs=rngs
         )
         self.embed_bvals = GaussianFourierEmbedding(1, bvals_embed_dim, rngs=rngs)
-        self.embed_signals = GaussianFourierEmbedding(1, signals_embed_dim, rngs=rngs)
+        self.embed_signals = lambda x: jnp.repeat(x, signals_embed_dim, axis=-1)
         self.transformer = Transformer(
             model_dim,
             self.num_heads,

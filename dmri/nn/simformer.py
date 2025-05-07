@@ -7,6 +7,7 @@ from flax import nnx
 from probjax.nn import GaussianFourierEmbedding, Transformer
 from probjax.nn.nets.denoising_diffusion_model import EDM
 from probjax.utils.odeint import odeint
+from probjax.utils.sdeint import sdeint
 
 from dmri.nn.tokenizer import Tokenizer
 
@@ -118,41 +119,75 @@ class EDMSimformer(EDM):
         attention_mask=None,
         max_noise=None,
         num_steps=16,
+        sample_method="ode",
     ):
         if max_noise is not None:
             self.max_noise = max_noise
-        eps = jax.random.normal(rng, dim) * self.marginal_std(self.max_noise)
+        rng, rng_init = jax.random.split(rng)
+        eps = jax.random.normal(rng_init, dim) * self.marginal_std(self.max_noise)
         ts = self.solve_schedule(num_steps)
 
-        def drift(t, x):
-            t = jnp.atleast_1d(t)
-            f = self.drift(t, x)
-            g = self.diffusion(t, x)
-            score = self.score(
-                t,
-                x,
-                tokenizer=tokenizer,
-                tokens_cfg=tokens_cfg,
-                y=y,
-                context=context,
-                attention_mask=attention_mask,
-                model_mask=model_mask,
+        if sample_method == "ode":
+            def drift(t, x):
+                t = jnp.atleast_1d(t)
+                f = self.drift(t, x)
+                g = self.diffusion(t, x)
+                score = self.score(
+                    t,
+                    x,
+                    tokenizer=tokenizer,
+                    tokens_cfg=tokens_cfg,
+                    y=y,
+                    context=context,
+                    attention_mask=attention_mask,
+                    model_mask=model_mask,
+                )
+                return (f - 0.5 * g**2 * score).reshape(x.shape)
+
+
+            state, _ = odeint(
+                drift,
+                eps,
+                ts,
+                method="heun",
+                filter_state=lambda *args: None,
+                return_state=True,
             )
-            return (f - 0.5 * g**2 * score).reshape(x.shape)
 
-        state, _ = odeint(
-            drift,
-            eps,
-            ts,
-            method="heun",
-            filter_state=lambda *args: None,
-            return_state=True,
-        )
+            x = state.y0
+            x += -drift(ts[-1], x) * ts[-1]
+            return x
+        elif sample_method == "sde":
 
-        x = state.y0
-        x += -drift(ts[-1], x) * ts[-1]
-        return x
+            def drift(t, x):
+                t = jnp.atleast_1d(t)
+                f = self.drift(t, x)
+                g = self.diffusion(t, x)
+                score = self.score(
+                    t,
+                    x,
+                    tokenizer=tokenizer,
+                    tokens_cfg=tokens_cfg,
+                    y=y,
+                    context=context,
+                    attention_mask=attention_mask,
+                    model_mask=model_mask,
+                )
+                return f - g**2 * score
 
+            diffusion = self.diffusion
+
+            state, _ = sdeint(
+                rng,
+                drift,
+                diffusion,
+                eps,
+                ts,
+                return_state=True,
+                #filter_state=lambda *args: None,
+            )
+            x = state.y0
+            return x
     def log_prob(
         self,
         x,
