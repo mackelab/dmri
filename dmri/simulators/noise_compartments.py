@@ -98,7 +98,7 @@ class BoundedRicianNoise(RicianNoise):
 
 class BoundedGaussianNoise(GaussianNoise):
     theta_dim = 1
-    min_snr = 3
+    min_snr = 20
     max_snr = 80
 
     def __init__(self, snr):
@@ -118,7 +118,6 @@ class BoundedGaussianNoise(GaussianNoise):
     def to_params(cls, theta: ArrayLike) -> Any:
         """Transforms the optimization parameters to the natural parameters."""
         return (jax.nn.sigmoid(theta) * (cls.max_snr - cls.min_snr) + cls.min_snr,)
-
 
 class RicianNoiseSNR7080(BoundedRicianNoise):
     min_snr = 70

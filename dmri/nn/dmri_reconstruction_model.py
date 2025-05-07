@@ -312,6 +312,7 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         model_mask,
         num_steps=16,
         max_noise=None,
+        sample_method="ode",
     ):
         y = self.encoder(bvals, bvecs, signals)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
@@ -329,6 +330,7 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
             max_noise=max_noise,
             attention_mask=attention_mask,
             model_mask=model_mask,
+            sample_method=sample_method,
         )
 
         return theta

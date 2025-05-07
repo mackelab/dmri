@@ -115,8 +115,10 @@ register_dataclass(
 from dipy.io.gradients import read_bvals_bvecs
 
 import os
-bvals_typ, bvecs_typ = read_bvals_bvecs(os.path.join(os.path.dirname(__file__), "data/bvals"), os.path.join(os.path.dirname(__file__), "data/bvecs"))
-
+_bvals_typ, bvecs_typ = read_bvals_bvecs(os.path.join(os.path.dirname(__file__), "data/bvals"), os.path.join(os.path.dirname(__file__), "data/bvecs"))
+# Round bvals to nearest (0, 1000, 2000)
+bvals_typ = np.round(_bvals_typ / 1000) * 1000
+bvals_typ = np.clip(bvals_typ, 0, 2000)
 idx = np.argsort(bvals_typ)
 bvals_typ = bvals_typ[idx]
 bvecs_typ = bvecs_typ[idx]
@@ -129,7 +131,7 @@ def random_hcp_acquisition(rng, num_acquisitions=105) -> acquisition_scheme:
     bvals_float = jax.random.uniform(rng2, shape=(num_acquisitions,)) * 4000
 
     bvals = jax.random.choice(
-        rng3, jnp.stack([bvals_typical, bvals_float])
+        rng3, jnp.stack([bvals_typical, bvals_float]), p=jnp.array([0.99, 0.01])
     )
 
     mask = jax.random.choice(
