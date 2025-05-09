@@ -318,7 +318,7 @@ class SharedDiffusivity(SharedParameterState):
         ],
     }
     theta_dim = 1
-    lam_min: float = 0.00001
+    lam_min: float = 0.0001
     lam_max: float = 0.01
 
     @classmethod
@@ -349,7 +349,7 @@ class BallStickSharedDiffusivity2(MultiCompartment):
 class Ball3StickSharedDiffusivity(MultiCompartment):
     model_types = [StaticBall, StaticStick, StaticStick, StaticStick]
     noise_types = [BoundedGaussianNoise]
-    fraction_prior = jnp.array([3., 1.0, 0.2, 0.1])
+    fraction_prior = jnp.array([3., 2.0, 0.2, 0.1])
     shared_parameter_type = SharedDiffusivity
 
 

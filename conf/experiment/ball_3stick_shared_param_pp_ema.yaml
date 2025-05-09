@@ -1,5 +1,5 @@
 # @package _global_
-name: dmri_ball_sticks_shared_param_real_new_no_bugs3
+name: dmri_ball_sticks_new_pp_ema
 use_wandb: true
 
 hydra:
@@ -17,4 +17,4 @@ defaults:
   - override /partition: h100
   - override /simulator: ball3stick_shared
   - override /model: mask_amortized_pp
-  - override /train/optimizer: default_new
+  - override /train/optimizer: default_new_ema

@@ -147,7 +147,7 @@ def random_hcp_acquisition(rng, num_acquisitions=105) -> acquisition_scheme:
     bvecs = bvecs / jnp.linalg.norm(bvecs, axis=1)[:, None]
 
     bvecs = jax.random.choice(
-        rng5_2, jnp.stack([bvecs_typical, bvecs], axis=0), axis=0, p=jnp.array([1., 0.0])
+        rng5_2, jnp.stack([bvecs_typical, bvecs], axis=0), axis=0, p=jnp.array([1., 0.])
     )
 
     return acquisition_scheme(bvals, bvecs)
