@@ -11,7 +11,7 @@ class CheckpointManager:
     def __init__(
         self,
         ckpt_dir: str,
-        max_to_keep: int = 3,
+        max_to_keep: int = 5,
         keep_best: bool = True,
         recovery_threshold: float = float("inf"),
         continue_training: bool = False,
@@ -88,6 +88,7 @@ class CheckpointManager:
         params: Any,
         optimizer_state: Any,
         loss: float = None,
+        params_ema: Any = None,
     ):
         """
         Save a checkpoint.
@@ -97,6 +98,7 @@ class CheckpointManager:
             params: Model parameters
             optimizer_state: State of the optimizer
             loss: Current training loss (optional)
+            params_ema: EMA model parameters (optional)
         """
         # Save regular checkpoint
         if loss is None:
@@ -107,6 +109,11 @@ class CheckpointManager:
             "step": step,
             "loss": loss,
         }
+
+        # Include EMA params if provided
+        if params_ema is not None:
+            ckpt["params_ema"] = params_ema
+
         save_args = orbax_utils.save_args_from_target(ckpt)
 
         # Save with progress reporting
@@ -125,14 +132,17 @@ class CheckpointManager:
         params: Any,
         optimizer_state: Any,
         from_best: bool = False,
+        params_ema: Any = None,
     ):
         """
         Restore a checkpoint.
 
         Args:
             step: Step to restore from. If None, restores the latest checkpoint.
-            existing_params: Existing parameters structure to match against
+            params: Existing parameters structure to match against
+            optimizer_state: Existing optimizer state structure to match against
             from_best: Whether to restore from the best checkpoint
+            params_ema: Existing EMA parameters structure to match against (optional)
 
         Returns:
             The restored checkpoint dict or None if no checkpoint exists
@@ -153,6 +163,10 @@ class CheckpointManager:
             "step": step,  # This will be fully restored
             "loss": float("inf"),  # This will be fully restored
         }
+
+        # Include EMA params in the abstract structure if provided
+        if params_ema is not None:
+            abstract_ckpt["params_ema"] = params_ema
 
         # Construct restore args from the abstract checkpoint structure
         restore_args = orbax_utils.restore_args_from_target(abstract_ckpt)

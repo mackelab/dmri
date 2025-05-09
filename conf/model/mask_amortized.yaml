@@ -4,5 +4,5 @@ model_dim: 64
 use_attention_mask: true
 defaults:
   - embedding_net: bvalbvec
-  - inference_net: simformer
+  - inference_net: simformer6
   - model_selection_net: autoregressive_prior_amortized

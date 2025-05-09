@@ -1,0 +1,9 @@
+optimizer: radam
+scheduler: null
+ema: false
+scheduler_params:
+  transition_steps: 1_000_000
+learning_rate: 5e-4
+ema_decay: 0.9
+adaptive_gradient_clipping: true
+gradient_clip_value: 10.0

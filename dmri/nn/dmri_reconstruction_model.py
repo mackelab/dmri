@@ -214,10 +214,12 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         bvecs,
         mask_prior=None,
         alpha_prior=None,
+        target_score=None,
         model_types=None,
         noise_types=None,
         permute_order=False,
         use_loss_mask=False,
+        weight_by_complexity=False,
     ):
         # Embed model configuration
         tokens_cfg = self.tokenizer.embed_cfgs(
@@ -265,6 +267,8 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
             tokens_cfg=tokens_cfg,
             attention_mask=attention_mask,
             loss_mask=loss_mask,
+            target_score=target_score,
+            weight_by_complexity=weight_by_complexity,
         )
         theta_loss /= jnp.sqrt(theta.shape[-1])
 

@@ -349,7 +349,7 @@ class BallStickSharedDiffusivity2(MultiCompartment):
 class Ball3StickSharedDiffusivity(MultiCompartment):
     model_types = [StaticBall, StaticStick, StaticStick, StaticStick]
     noise_types = [BoundedGaussianNoise]
-    fraction_prior = jnp.array([3., 2.0, 0.2, 0.1])
+    fraction_prior = jnp.array([3.5, 1., 0.3, 0.1])
     shared_parameter_type = SharedDiffusivity
 
 

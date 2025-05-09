@@ -162,7 +162,7 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
         token_dim: int = 64,
         theta_encode_nets: Optional[list[nnx.Module]] = None,
         theta_decode_nets: Optional[list[nnx.Module]] = None,
-        init_component_embeddings: Callable = nnx.initializers.orthogonal(),
+        init_component_embeddings: Callable | None = None,
     ) -> None:
         """
         Initializes a DMRITokenizer instance.
@@ -193,7 +193,7 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
             rngs=rngs,
             num_embeddings=len(simulator.model_types) + len(simulator.noise_types),
             features=token_dim,
-            embedding_init=self._init_class_embeddings,
+            embedding_init=self._init_class_embeddings if init_component_embeddings is None else init_component_embeddings,
         )
         self.embed_fraction = nnx.Linear(
             len(simulator.model_types), token_dim, rngs=rngs
@@ -214,7 +214,7 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
             ]
         if theta_decode_nets is None:
             theta_decode_nets = [
-                nnx.Linear(token_dim, d, rngs=rngs) if d > 0 else None
+                nnx.Linear(token_dim, d, rngs=rngs, kernel_init=nnx.initializers.zeros) if d > 0 else None
                 for d in self.params_dims
             ]
         self.theta_encode_nets = theta_encode_nets
@@ -673,7 +673,7 @@ class DMRITokenizerPP(DMRITokenizer):
         # Override the first linear layer for the fraction prior
         # Shared linear value embedding applied to all fractions
         self.theta_encode_nets[0] = nnx.Linear(1, token_dim, rngs=rngs)
-        self.theta_decode_nets[0] = nnx.Linear(token_dim, 1, rngs=rngs)
+        self.theta_decode_nets[0] = nnx.Linear(token_dim, 1, rngs=rngs, kernel_init=nnx.initializers.zeros)
         # Embedding to distinguish between model and noise components
         self.fraction_embed = nnx.Embed(
             len(self.simulator.value.model_types) - 1,

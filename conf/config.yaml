@@ -18,7 +18,7 @@ wandb:
 defaults:
   - _self_
   - simulator: simple
-  - model: mask_amortized
+  - model: mask_amortized_pp
   - train: default
   - launcher: slurm
   - partition: none
