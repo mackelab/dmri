@@ -140,7 +140,12 @@ def _main(cfg: DictConfig):
     restart_every = cfg.train.get("restart_every", None)
 
     def loss_fn(params,state, data, rng):
-        p_mask, model_mask, thetas, xs, acq = data
+        if cfg.simulator.with_posterior_score:
+            p_mask, model_mask, thetas, xs, acq, target_score = data
+        else:
+            p_mask, model_mask, thetas, xs, acq = data
+            target_score = None
+
         model = nnx.merge(graphdef, params, static, state)
         model.train()
         losses = model.loss_fn(
@@ -151,12 +156,16 @@ def _main(cfg: DictConfig):
             bvals=acq.bvals,
             bvecs=acq.bvecs,
             mask_prior=p_mask,
+            target_score=target_score,
+            weight_by_complexity=cfg.train.weight_by_complexity,
         )
         loss1  = cfg.train.model_selection_weight * losses[0]
         loss2 = cfg.train.model_inference_loss_weight * losses[1]
         total_loss = loss1 + loss2
         _, _, _, new_state = nnx.split(model, nnx.Param, nnx.Intermediate, ...)
         return total_loss, (losses, new_state)
+
+
 
     @jax.jit
     def update(params, state, opt_state, data, rng):
@@ -195,6 +204,9 @@ def _main(cfg: DictConfig):
     step = start_step
     datastream = iter(loader)
 
+    loss_fn(params, state, next(iter(loader)), rng_key)
+
+
     if continue_training:
         latest_step = checkpoint_manager.get_latest_step()
         print(f"latest_step: {latest_step}")
@@ -202,11 +214,17 @@ def _main(cfg: DictConfig):
             log.info(f"Restoring checkpoint at step {latest_step}")
             # Pass existing params as reference structure for parameter matching
             checkpoint = checkpoint_manager.restore(
-                step=latest_step, params=params, optimizer_state=opt_state
+                step=latest_step,
+                params=params,
+                optimizer_state=opt_state,
+                params_ema=None if not cfg.train.track_ema else jax.tree_map(lambda x: x, params)
             )
             if checkpoint is not None:
                 params = checkpoint["params"]
                 opt_state = checkpoint["optimizer_state"]
+                # Restore EMA params if they exist in the checkpoint
+                if "params_ema" in checkpoint and cfg.train.track_ema:
+                    params_ema = checkpoint["params_ema"]
                 step = checkpoint["step"]  # Update current step
                 start_step = step  # Set start_step to the restored step
                 log.info(f"Resumed training from step {step}")
@@ -220,6 +238,10 @@ def _main(cfg: DictConfig):
     log.info(f"Maximum training time: {max_train_hours} hours")
     start_time = time.time()
 
+    params_ema = jax.tree_map(lambda x: x, params) if cfg.train.track_ema else None
+    ema_decay = cfg.train.ema_decay if cfg.train.track_ema else None
+
+
     while True:
         key, subkey = jax.random.split(key)
         for _ in range(inner_steps):
@@ -227,6 +249,8 @@ def _main(cfg: DictConfig):
             params, state, opt_state, loss = update(
                 params, state, opt_state, data, subkey
             )
+            if params_ema is not None:
+                params_ema = jax.tree_map(lambda x, y: x * ema_decay + y * (1 - ema_decay), params_ema, params)
             step += 1
         total_loss = float(sum(loss))
         queue_size = int(loader.queue.qsize())
@@ -260,6 +284,7 @@ def _main(cfg: DictConfig):
                 params=params,
                 optimizer_state=opt_state,
                 loss=total_loss,
+                params_ema=params_ema
             )
             # Ensure all async checkpoint operations are finished before exiting
             checkpoint_manager.wait_until_finished()
@@ -298,6 +323,7 @@ def _main(cfg: DictConfig):
                 params=params,
                 optimizer_state=opt_state,
                 loss=total_loss,
+                params_ema=params_ema
             )
 
         # Check if we need to recover from a bad update
@@ -311,11 +337,17 @@ def _main(cfg: DictConfig):
                 if latest_step is not None:
                     # Pass current params as reference structure for parameter matching
                     checkpoint = checkpoint_manager.restore(
-                        step=latest_step, params=params, optimizer_state=opt_state
+                        step=latest_step,
+                        params=params,
+                        optimizer_state=opt_state,
+                        params_ema=params_ema
                     )
                     if checkpoint is not None:
                         params = checkpoint["params"]
                         opt_state = checkpoint["optimizer_state"]
+                        # Restore EMA params if they exist in the checkpoint
+                        if "params_ema" in checkpoint and params_ema is not None:
+                            params_ema = checkpoint["params_ema"]
                         step = checkpoint["step"]
                         log.info(f"Recovered to step {step}")
                     else:

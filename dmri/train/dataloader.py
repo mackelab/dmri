@@ -92,6 +92,8 @@ class StreamDataLoader:
             )
             self.producer_threads.append(thread)
             thread.start()
+            # Wait some time to ensure all threads are started
+            time.sleep(0.1)
 
     def _producer_loop(self, thread_rng):
         """

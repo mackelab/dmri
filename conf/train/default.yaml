@@ -1,11 +1,14 @@
 inner_steps: 500
-checkpoint_freq: 20_000
-eval_freq: 20_000
+checkpoint_freq: 200_000
+eval_freq: 200_000
 continue_training: false
 max_train_hours: 24
-model_selection_weight: 0.01
-model_inference_loss_weight: 0.99
+model_selection_weight: 1.0
+model_inference_loss_weight: 1.0
+weight_by_complexity: True
+track_ema: true
+ema_decay: 0.999
 
 defaults:
-  - optimizer: default
+  - optimizer: radam
   - dataloader: datastream_large_batch
