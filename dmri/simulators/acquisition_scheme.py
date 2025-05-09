@@ -129,13 +129,13 @@ def random_hcp_acquisition(rng, num_acquisitions=105) -> acquisition_scheme:
     bvals_typical = jnp.array(bvals_typ)
     bvecs_typical = jnp.array(bvecs_typ)
     bvals_float = jax.random.uniform(rng2, shape=(num_acquisitions,)) * 4000
-
+    # TODO remove restrictrictions
     bvals = jax.random.choice(
-        rng3, jnp.stack([bvals_typical, bvals_float]), p=jnp.array([0.99, 0.01])
+        rng3, jnp.stack([bvals_typical, bvals_float]), p=jnp.array([1., 0.0])
     )
 
     mask = jax.random.choice(
-        rng4, jnp.array([0, 1]), shape=(num_acquisitions,), p=jnp.array([0.01, 0.99])
+        rng4, jnp.array([0, 1]), shape=(num_acquisitions,), p=jnp.array([0.0, 1.])
     )
     bvals = bvals * mask
 
@@ -147,7 +147,7 @@ def random_hcp_acquisition(rng, num_acquisitions=105) -> acquisition_scheme:
     bvecs = bvecs / jnp.linalg.norm(bvecs, axis=1)[:, None]
 
     bvecs = jax.random.choice(
-        rng5_2, jnp.stack([bvecs_typical, bvecs], axis=0), axis=0
+        rng5_2, jnp.stack([bvecs_typical, bvecs], axis=0), axis=0, p=jnp.array([1., 0.0])
     )
 
     return acquisition_scheme(bvals, bvecs)
