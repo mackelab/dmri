@@ -19,7 +19,7 @@ class Stick(SignalCompartment):
     """
 
     theta_dim = 3
-    min_lam = 0.0
+    min_lam = 0.00001
     max_lam = 0.01
 
     def __init__(self, mu: ArrayLike, lam_par: float) -> None:

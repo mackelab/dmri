@@ -1,6 +1,6 @@
 name: DMRIModelSelectionAmortizedPriorConfig
 params:
-  num_layers: 4
+  num_layers: 3
   num_heads: 4
   widening_factor: 4
   attn_size: 16

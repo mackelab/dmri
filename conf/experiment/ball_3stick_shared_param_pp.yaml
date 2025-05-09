@@ -1,5 +1,5 @@
 # @package _global_
-name: dmri_ball_sticks_shared_param_real_new_no_bugs3
+name: dmri_ball_sticks_new_pp
 use_wandb: true
 
 hydra:

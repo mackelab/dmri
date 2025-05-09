@@ -98,8 +98,8 @@ class BoundedRicianNoise(RicianNoise):
 
 class BoundedGaussianNoise(GaussianNoise):
     theta_dim = 1
-    min_snr = 20
-    max_snr = 80
+    min_snr = 10
+    max_snr = 60
 
     def __init__(self, snr):
         self.snr = snr
