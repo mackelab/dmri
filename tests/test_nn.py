@@ -67,27 +67,8 @@ def test_dmri_inference_model_amortized(rng, simulator, data):
     assert output[1].shape == theta.shape
 
 
-def c(rng):
-    """Test instantiation of BvalBvecSignalEmbeddingNet."""
-    embedding_net = BvalBvecSignalEmbeddingNet(
-        model_dim=64,
-        num_heads=4,
-        num_layers=6,
-        attn_size=16,
-        widening_factor=3,
-        rngs=rng,
-    )
-
-    # Test that the model can be called with dummy inputs
-    bvals = jnp.zeros((32,))
-    bvecs = jnp.zeros((32, 3))
-    signals = jnp.zeros((32,))
-
-    output = embedding_net(bvals, bvecs, signals)
-    assert output.shape == (32, 64)
-
-
-def test_bval_bvec_signal_embedding_net(rng, data):
+@pytest.mark.parametrize("use_flashattn", [True, False])
+def test_bval_bvec_signal_embedding_net(use_flashattn, rng, data):
     """Test instantiation and forward pass of BvalBvecSignalEmbeddingNet."""
     embedding_net = BvalBvecSignalEmbeddingNet(
         model_dim=64,
@@ -95,6 +76,7 @@ def test_bval_bvec_signal_embedding_net(rng, data):
         num_layers=6,
         attn_size=16,
         widening_factor=3,
+        use_flash_attention=use_flashattn,
         rngs=rng,
     )
 
@@ -181,5 +163,3 @@ def test_dmri_tokenizer_pp(rng, simulator, data):
     # Test decode
     decoded_theta = tokenizer.decode(encoded_theta, model_mask=model_mask)
     assert decoded_theta.shape == theta.shape
-
-  
