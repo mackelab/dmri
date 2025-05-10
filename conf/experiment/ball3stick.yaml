@@ -7,7 +7,8 @@ hydra:
     params:
       wandb.project: finalize_ball3stick
       simulator.prior_mask_alpha: 3. # Emphasize larger models
-
+      simulator.acquisition_scheme.params.typical_prob: 1.0
+      simulator.acquisition_scheme.params.random_prob: 0.0
 
 
 defaults:

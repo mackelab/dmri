@@ -9,6 +9,15 @@ weight_by_complexity: True
 track_ema: true
 ema_decay: 0.999
 
+eval:
+  nnl_theta:
+    iters: 5
+  nnl_mask:
+    iters: 5
+  ess:
+    iters: 5
+    K: 100
+
 defaults:
   - optimizer: radam
   - dataloader: datastream_large_batch

@@ -293,16 +293,30 @@ def _main(cfg: DictConfig):
         # Evaluate model periodically
         if step > 0 and step % eval_freq == 0:
             log.info(f"Evaluating model at step {step}")
+
+            if cfg.train.track_ema:
+                params_eval = params_ema
+            else:
+                params_eval = params
             # Evaluate negative log-likelihood for masks
             key, eval_key = jax.random.split(key)
-            mask_nnl = evaluator.eval_nnl_mask(params, state, eval_loader, iters=5)
+            mask_nnl = evaluator.eval_nnl_mask(
+                params_eval, state, eval_loader, iters=cfg.eval.nnl_mask.iters
+            )
 
             # Evaluate negative log-likelihood for thetas
-            theta_nnl = evaluator.eval_nnl_theta(params, state, eval_loader, iters=5)
+            theta_nnl = evaluator.eval_nnl_theta(
+                params_eval, state, eval_loader, iters=cfg.eval.nnl_theta.iters
+            )
 
             # Evaluate ess
             ess = evaluator.eval_effective_sample_size(
-                params, state, eval_loader, eval_key, K=10, iters=1
+                params_eval,
+                state,
+                eval_loader,
+                eval_key,
+                K=cfg.eval.ess.K,
+                iters=cfg.eval.ess.iters,
             )
 
             log.info(f"Mask NLL: {mask_nnl}, Theta NLL: {theta_nnl}, ESS: {ess}")
