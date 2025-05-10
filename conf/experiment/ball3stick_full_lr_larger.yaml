@@ -1,0 +1,18 @@
+# @package _global_
+name: full_ball3stick_simformer12_lr_larger
+use_wandb: true
+
+hydra:
+  sweeper:
+    params:
+      wandb.project: full_ball3stick
+      simulator.prior_mask_alpha: 3.
+      train.optimizer.learning_rate: 5e-4
+
+
+defaults:
+  - _self_
+  - override /partition: h100
+  - override /simulator: ball3stick_shared_with_score
+  - override /model: mask_amortized_pp
+  - override /model/inference_net: simformer12
