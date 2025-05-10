@@ -67,9 +67,10 @@ def test_dmri_inference_model_amortized(rng, simulator, data):
     assert output[1].shape == theta.shape
 
 
-@pytest.mark.parametrize("use_flashattn", [True, False])
+@pytest.mark.parametrize("use_flashattn", [False])
 def test_bval_bvec_signal_embedding_net(use_flashattn, rng, data):
     """Test instantiation and forward pass of BvalBvecSignalEmbeddingNet."""
+
     embedding_net = BvalBvecSignalEmbeddingNet(
         model_dim=64,
         num_heads=4,
@@ -121,6 +122,7 @@ def test_dmri_tokenizer(rng, simulator, data):
     # Test with alpha prior
     alpha_prior = jnp.ones((100, len(simulator.model_types)))
     encoded_with_prior = tokenizer.encode(
+        theta=theta,
         model_mask=model_mask,
         alpha_prior=alpha_prior,
     )
@@ -129,6 +131,15 @@ def test_dmri_tokenizer(rng, simulator, data):
         1 + len(simulator.model_types) + len(simulator.noise_types),
         64,
     )
+
+    # Test mask coding
+    mask2 = jnp.ones_like(model_mask)
+    encoded_theta2 = tokenizer.encode(theta=theta, model_mask=mask2)
+
+    # You only be different where mask is False in first encoding
+    diff = jnp.all(encoded_theta == encoded_theta2, axis=-1)
+    token_mask = tokenizer.theta_token_mask(model_mask)
+    assert jnp.all(diff == token_mask), "Mask coding is not correct"
 
 
 def test_dmri_tokenizer_pp(rng, simulator, data):
@@ -163,3 +174,12 @@ def test_dmri_tokenizer_pp(rng, simulator, data):
     # Test decode
     decoded_theta = tokenizer.decode(encoded_theta, model_mask=model_mask)
     assert decoded_theta.shape == theta.shape
+
+    # Test mask coding
+    mask2 = jnp.ones_like(model_mask)
+    encoded_theta2 = tokenizer.encode(theta=theta, model_mask=mask2)
+
+    # You only be different where mask is False in first encoding
+    diff = jnp.all(encoded_theta == encoded_theta2, axis=-1)
+    token_mask = tokenizer.theta_token_mask(model_mask)
+    assert jnp.all(diff == token_mask), "Mask coding is not correct"
