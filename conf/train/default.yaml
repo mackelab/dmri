@@ -1,6 +1,6 @@
 inner_steps: 500
-checkpoint_freq: 200_000
-eval_freq: 200_000
+checkpoint_freq: 20_000
+eval_freq: 20_000
 continue_training: false
 max_train_hours: 24
 model_selection_weight: 1.0

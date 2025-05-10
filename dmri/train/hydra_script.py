@@ -123,7 +123,7 @@ def _main(cfg: DictConfig):
         scheduler = scheduler_type(**optimizer_cfg.scheduler_params)
         optimizer = optimizer_type(scheduler)
     else:
-        lr = optimizer_cfg.get("learning_rate", 1e-3)
+        lr = optimizer_cfg.get("learning_rate", 1e-4)
         optimizer = optimizer_type(learning_rate=lr)
     grad_transforms.append(optimizer)
     if use_ema:

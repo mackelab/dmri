@@ -119,7 +119,7 @@ def build_pure_eval_fns(graphdef, static, sim_type):
         model.eval()
 
         key1, key2 = jax.random.split(rng)
-        keys_K = jax.random.split(key1, K)
+        keys_K = jax.random.split(key1, K)  # noqa: N806
 
         def sample_thetas(rng):
             keys = jax.random.split(rng, xs.shape[0])
@@ -148,11 +148,8 @@ def build_pure_eval_fns(graphdef, static, sim_type):
 
             def step(state, rng):
                 state, i = state
-                lmbda = 0.99 + i*0.01/2
+                lmbda = 0.99 + (i+1)*0.01/2
                 new_state, info = smc.step(rng, state, lmbda)
-                # ess = 1/jnp.sum(new_state.weights**2)
-                # acc_rate = info.update_info.acceptance_rate
-                # jax.debug.print("ESS: {ess}, acc_rate: {acc_rate}", ess=ess, acc_rate=acc_rate.mean())
                 return (new_state, i+1), info
 
             rng_keys = jax.random.split(key2, 2)
