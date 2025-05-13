@@ -10,6 +10,41 @@ from dmri.utils.dmriutils import cartesian_to_unitsphere, unitsphere_to_cartesia
 sphere_default = get_sphere(name="symmetric724")
 
 
+def orthoview(data, x_slice=None, y_slice=None, z_slice=None, vmin=None, vmax=None):
+
+    fig, axs = plt.subplots(1, 3, figsize=(15, 5))
+
+    if x_slice is None:
+        x_slice = data.shape[0] // 2
+    if y_slice is None:
+        y_slice = data.shape[1] // 2
+    if z_slice is None:
+        z_slice = data.shape[2] // 2
+
+    if vmin is None:
+        vmin = np.min(data)
+    if vmax is None:
+        vmax = np.max(data)
+
+
+
+    axs[0].imshow(data[x_slice, :, :].T, cmap='gray', origin='lower', vmin=vmin, vmax=vmax)
+    axs[1].imshow(data[:, y_slice, :].T, cmap='gray', origin='lower', vmin=vmin, vmax=vmax)
+    axs[2].imshow(data[:, :, z_slice].T, cmap='gray', origin='lower', vmin=vmin, vmax=vmax)
+
+    # Disable axis for all subplots
+    for ax in axs:
+        ax.axis('off')
+
+    # Background color is black
+    fig.patch.set_facecolor('black')
+
+    return fig, axs
+
+
+
+
+
 def plot_spherical_function(
     theta: ArrayLike,
     phi: ArrayLike,
