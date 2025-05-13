@@ -39,6 +39,34 @@ def main():
     print(logo)
     _main()
 
+def build_optimizer(optimizer_cfg):
+    optimizer_type = getattr(optax, optimizer_cfg.optimizer)
+    if optimizer_cfg.scheduler:
+        scheduler_type = getattr(optax, optimizer_cfg.scheduler)
+    else:
+        scheduler_type = None
+    use_ema = optimizer_cfg.get("ema", False)
+    use_adaptive_clip = optimizer_cfg.get("adaptive_gradient_clipping", False)
+    grad_transforms = []
+    if use_adaptive_clip:
+        grad_clip = optax.adaptive_grad_clip(
+            optimizer_cfg.get("gradient_clip_value", 10.0)
+        )
+        grad_transforms.append(grad_clip)
+    if scheduler_type:
+        scheduler = scheduler_type(**optimizer_cfg.scheduler_params)
+        optimizer = optimizer_type(scheduler)
+    else:
+        lr = optimizer_cfg.get("learning_rate", 1e-4)
+        optimizer = optimizer_type(learning_rate=lr)
+    grad_transforms.append(optimizer)
+    if use_ema:
+        grad_transforms.append(optax.ema(optimizer_cfg.get("ema_decay", 0.8)))
+
+    # Initialize optimizer
+    optimizer = optax.chain(*grad_transforms)
+    return optimizer
+
 
 @hydra.main(config_path="../../conf", config_name="config.yaml", version_base=None)
 def _main(cfg: DictConfig):
@@ -105,32 +133,7 @@ def _main(cfg: DictConfig):
     start_step = 0
 
     # Learning rate scheduler and optimizer
-    optimizer_cfg = cfg.train.optimizer
-    optimizer_type = getattr(optax, optimizer_cfg.optimizer)
-    if optimizer_cfg.scheduler:
-        scheduler_type = getattr(optax, optimizer_cfg.scheduler)
-    else:
-        scheduler_type = None
-    use_ema = optimizer_cfg.get("ema", False)
-    use_adaptive_clip = optimizer_cfg.get("adaptive_gradient_clipping", False)
-    grad_transforms = []
-    if use_adaptive_clip:
-        grad_clip = optax.adaptive_grad_clip(
-            optimizer_cfg.get("gradient_clip_value", 10.0)
-        )
-        grad_transforms.append(grad_clip)
-    if scheduler_type:
-        scheduler = scheduler_type(**optimizer_cfg.scheduler_params)
-        optimizer = optimizer_type(scheduler)
-    else:
-        lr = optimizer_cfg.get("learning_rate", 1e-4)
-        optimizer = optimizer_type(learning_rate=lr)
-    grad_transforms.append(optimizer)
-    if use_ema:
-        grad_transforms.append(optax.ema(optimizer_cfg.get("ema_decay", 0.8)))
-
-    # Initialize optimizer
-    optimizer = optax.chain(*grad_transforms)
+    optimizer = build_optimizer(cfg.train.optimizer)
 
     # Initialize optimizer state if not restored from checkpoint
     if not continue_training or start_step == 0:
@@ -301,12 +304,12 @@ def _main(cfg: DictConfig):
             # Evaluate negative log-likelihood for masks
             key, eval_key = jax.random.split(key)
             mask_nnl = evaluator.eval_nnl_mask(
-                params_eval, state, eval_loader, iters=cfg.eval.nnl_mask.iters
+                params_eval, state, eval_loader, iters=cfg.train.eval.nnl_mask.iters
             )
 
             # Evaluate negative log-likelihood for thetas
             theta_nnl = evaluator.eval_nnl_theta(
-                params_eval, state, eval_loader, iters=cfg.eval.nnl_theta.iters
+                params_eval, state, eval_loader, iters=cfg.train.eval.nnl_theta.iters
             )
 
             # Evaluate ess
@@ -315,8 +318,8 @@ def _main(cfg: DictConfig):
                 state,
                 eval_loader,
                 eval_key,
-                K=cfg.eval.ess.K,
-                iters=cfg.eval.ess.iters,
+                K=cfg.train.eval.ess.K,
+                iters=cfg.train.eval.ess.iters,
             )
 
             log.info(f"Mask NLL: {mask_nnl}, Theta NLL: {theta_nnl}, ESS: {ess}")
@@ -380,3 +383,6 @@ def _main(cfg: DictConfig):
     log.info("Training complete")
     # Ensure all async checkpoint operations are finished before exiting
     checkpoint_manager.wait_until_finished()
+
+
+

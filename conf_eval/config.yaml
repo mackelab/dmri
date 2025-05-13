@@ -1,0 +1,22 @@
+path: "/home/macke/mgloeckler90/dmri/notebooks/data"
+brain_mask: "nodif_brain_mask.nii.gz"
+mri_data: "data.nii.gz"
+bvals: "bvals"
+bvecs: "bvecs"
+path_checkpoint: "/home/macke/mgloeckler90/dmri/results"
+model_name: "full_ball3stick_simformer6"
+params_name: "params_ema"
+round_bvals: true
+clip_outliers: true
+seed: 1
+
+sample_mask: true
+sample_theta: true
+
+
+defaults:
+  - _self_
+  - mask_sample: default
+  - theta_sample: default
+  - export: ball3stick
+  - export_model_selection: ball3stick
