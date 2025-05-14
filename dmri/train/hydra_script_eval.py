@@ -135,7 +135,6 @@ def _main(cfg: DictConfig):
     # Sample masks
     if cfg.sample_mask:
         log.info("Sampling masks")
-
         models_selected_brain = sample_mask(cfg,key_masks, model, acq,full_data_flat_in_brain, log)
         avg_freq = jnp.mean(models_selected_brain, axis=1).mean(0)
         log.info(f"Average frequency of all models: {avg_freq}")
@@ -151,15 +150,17 @@ def _main(cfg: DictConfig):
     else:
         model_parameters_brain = None
 
+    # Export model selection
+    if models_selected_brain is not None:
+        out_path = os.path.join(cfg.path_checkpoint, cfg.model_name, cfg.export_model_selection.name)
+        export_model_selection_to_files(cfg, models_selected_brain, out_path, data, brain_mask_flat, data_norm.shape[:-1])
+
+
     # Export samples
     if model_parameters_brain is not None:
         out_path = os.path.join(cfg.path_checkpoint, cfg.model_name, cfg.export.name)
         export_thetas_to_files_ball3stick(cfg,model_parameters_brain, sim_type, None, brain_mask_flat, data_norm.shape[:-1], out_path, data)
 
-    # Export model selection
-    if models_selected_brain is not None:
-        out_path = os.path.join(cfg.path_checkpoint, cfg.model_name, cfg.export_model_selection.name)
-        export_model_selection_to_files(cfg, models_selected_brain, out_path, data, brain_mask_flat, data_norm.shape[:-1])
 
 
 
@@ -187,6 +188,64 @@ def sample_mask(cfg,key, model, acq,data, logger):
 
     return models_selected_brain
 
+
+def select_models(cfg, key, model_mask, data, logger, sim_type):
+    """Select models based on the model mask"""
+    num_comp = len(sim_type.model_types) + len(sim_type.noise_types)
+
+    if model_mask is None:
+        model_mask = jnp.ones(num_comp, dtype=jnp.bool)
+    else:
+        model_mask = jnp.array(model_mask, dtype=jnp.bool)
+
+        nans_in_samples = jnp.isnan(model_mask).sum()
+        logger.info(f"Number of NaNs in model_mask: {nans_in_samples}")
+        model_mask = jnp.where(jnp.isnan(model_mask), True, model_mask)
+
+        constraints_cfg = cfg.theta_sample.constraints
+        incoperate_models = constraints_cfg.incoperate_models
+
+
+        if incoperate_models == "average":
+            logger.info("Sampling paramters for each model")
+            assert model_mask.ndim == 3, "model_mask must be 3D if incoperate_models is average"
+            num_mask_samples = model_mask.shape[1]
+            if num_mask_samples >= cfg.theta_sample.num_samples:
+                # Select random num_mask_samples from model_mask
+                if num_mask_samples > cfg.theta_sample.num_samples:
+                    selected_mask_samples = jax.random.choice(key, model_mask, (cfg.theta_sample.num_samples,), axis=1)
+                    model_mask = selected_mask_samples
+            else:
+                raise ValueError(f"num_mask_samples ({num_mask_samples}) must be greater than or equal to num_samples ({cfg.theta_sample.num_samples})")
+            average_freq = jnp.mean(model_mask, axis=1).mean(0)
+            logger.info(f"Average frequency of all models: {average_freq}")
+
+        elif incoperate_models == "best":
+            logger.info("Sampling best model only")
+            # Select the most frequent mask
+            feasible_models = constraints_cfg.feasible_models
+            if feasible_models is None:
+                raise ValueError("feasible_models must be provided if incoperate_models is best")
+            else:
+                model_mask_feasibel = np.array(feasible_models, dtype=np.bool)
+
+            # Count occurences of each model
+            frequencies = []
+            logger.info(f"Model mask feasibel shape: {model_mask_feasibel.shape}")
+            for feasible_mask in model_mask_feasibel:
+                occurences = jnp.all(model_mask & feasible_mask, axis=-1).mean(axis=1)
+                freq = occurences / (1 + model_mask.shape[1])
+                frequencies.append(freq)
+            frequencies = jnp.stack(frequencies, axis=-1)
+            frequencies /= (frequencies.sum(axis=-1, keepdims=True) + 1e-6)
+            avg_freq = jnp.mean(frequencies, axis=0)
+            avg_freq = avg_freq / (avg_freq.sum() + 1e-6)
+            logger.info(f"Average frequency of feasible models: {avg_freq}")
+            selected_models = frequencies.argmax(axis=-1)
+            model_mask = model_mask_feasibel[selected_models]
+
+        assert model_mask.shape[0] == data.shape[0], "model_mask must have the same number of voxels as the data"
+        assert model_mask.shape[-1] == num_comp, "model_mask must have the same number of components as the model"
 
 
 def sample_theta(cfg,key, model, acq,data, logger, model_mask=None):
@@ -229,23 +288,23 @@ def sample_theta(cfg,key, model, acq,data, logger, model_mask=None):
             feasible_models = constraints_cfg.feasible_models
             if feasible_models is None:
                 raise ValueError("feasible_models must be provided if incoperate_models is best")
-            else:
-                model_mask_feasibel = np.array(feasible_models, dtype=np.bool)
 
             # Count occurences of each model
             frequencies = []
-            logger.info(f"Model mask feasibel shape: {model_mask_feasibel.shape}")
-            for feasible_mask in model_mask_feasibel:
-                occurences = jnp.all(model_mask & feasible_mask, axis=-1).mean(axis=1)
+            logger.info(f"Model mask feasibel models: {feasible_models}")
+            for feasible_mask in feasible_models:
+                feasible_mask = np.array(feasible_mask, dtype=np.bool)
+                occurences = np.all(model_mask == feasible_mask, axis=-1).mean(axis=1)
                 freq = occurences / (1 + model_mask.shape[1])
                 frequencies.append(freq)
             frequencies = jnp.stack(frequencies, axis=-1)
             frequencies /= (frequencies.sum(axis=-1, keepdims=True) + 1e-6)
             avg_freq = jnp.mean(frequencies, axis=0)
-            avg_freq = avg_freq / (avg_freq.sum() + 1e-6)
             logger.info(f"Average frequency of feasible models: {avg_freq}")
             selected_models = frequencies.argmax(axis=-1)
-            model_mask = model_mask_feasibel[selected_models]
+            model_mask = np.array(feasible_models, dtype=np.bool)[selected_models]
+            logger.info(f"Selected model mask: {model_mask.shape}")
+            logger.info(f"Marginal model probabilities: {model_mask.mean(0)}")
 
         assert model_mask.shape[0] == data.shape[0], "model_mask must have the same number of voxels as the data"
         assert model_mask.shape[-1] == num_comp, "model_mask must have the same number of components as the model"
@@ -287,7 +346,7 @@ def build_theta_sample_fn(method, num_samples,model, acq, data, model_mask, sim_
 
         def smc(rng,thetas,model_mask, acq, x_o):
             hmc_kernel = hmc.build_kernel()
-            hmc_kernel = partial(hmc_kernel, step_size=0.005, num_integration_steps=5, inverse_mass_matrix=jnp.ones(d))
+            hmc_kernel = partial(hmc_kernel, step_size=0.005, num_integration_steps=10, inverse_mass_matrix=jnp.ones(d))
 
             resampling_fn = systematic
             _log_likelihood_fn = partial(log_likelihood_fn, mask=model_mask, acq=acq, x=x_o)
@@ -309,12 +368,14 @@ def build_theta_sample_fn(method, num_samples,model, acq, data, model_mask, sim_
         def sample_mcmc_correct(key, x, model_mask):
             key, subkey = jax.random.split(key)
             K = num_samples
-            in_axes_model_mask = 0 if model_mask.ndim == 2 else None
             propose_fn = partial(model.sample_theta, num_steps=64 , max_noise=80)
             key_k = jax.random.split(key, K)
+            in_axes_model_mask = 0 if model_mask.ndim == 2 else None
             theta = jax.vmap(propose_fn, in_axes=(0,None,None,None, in_axes_model_mask))(key_k, acq.bvals, acq.bvecs, x,model_mask)
             theta_corr = smc(subkey, theta, model_mask, acq, x)
             return theta_corr
+
+
         if model_mask is None or model_mask.ndim <= 1:
             in_axes = (0, 0, None)
             sample_theta_per_x = jax.jit(jax.vmap(sample_mcmc_correct, in_axes=in_axes))
@@ -333,6 +394,50 @@ def build_theta_sample_fn(method, num_samples,model, acq, data, model_mask, sim_
             sample_theta_per_x = jax.jit(jax.vmap(sample_theta_per_x, in_axes=in_axes))
         else:
             sample_theta_per_x = jax.jit(jax.vmap(sample_theta_per_x))
+    elif method == "mcmc_corrected":
+
+        def log_likelihood_fn(theta, mask, acq, x):
+            simulator = sim_type.from_theta(theta, model_mask=mask)
+            ll = simulator.log_likelihood(acq, x)
+            return ll
+
+        def log_prior_fn(theta):
+            return jax.scipy.stats.norm.logpdf(theta, 0, 1).sum()
+
+        def log_posterior_fn(theta, mask, acq, x):
+            return log_prior_fn(theta) + log_likelihood_fn(theta, mask, acq, x)
+
+        def mcmc(key, theta, x, model_mask):
+            alg = hmc(partial(log_posterior_fn, mask=model_mask, acq=acq, x=x), 0.001, jnp.ones(d), 10)
+
+            state = alg.init(theta)
+            def step(state, key):
+                state, info = alg.step(key, state)
+                return state, info
+
+            keys = jax.random.split(key, 20)
+            state, _ = jax.lax.scan(step, state, keys)
+            return state.position
+
+
+
+        def sample_theta_per_x(key, x, model_mask):
+            key, subkey = jax.random.split(key)
+            K = num_samples
+            propose_fn = partial(model.sample_theta, num_steps=64 , max_noise=80)
+            key_k = jax.random.split(key, K)
+            in_axes_model_mask = 0 if model_mask.ndim == 2 else None
+            theta = jax.vmap(propose_fn, in_axes=(0,None,None,None, in_axes_model_mask))(key_k, acq.bvals, acq.bvecs, x,model_mask)
+            key_k2 = jax.random.split(subkey, K)
+            theta_corr = jax.vmap(mcmc, in_axes=(0,0,None,in_axes_model_mask))(key_k2, theta, x, model_mask)
+            return theta_corr
+
+        if model_mask is None or model_mask.ndim <= 1:
+            in_axes = (0, 0, None)
+            sample_theta_per_x = jax.jit(jax.vmap(sample_theta_per_x, in_axes=in_axes))
+        else:
+            sample_theta_per_x = jax.jit(jax.vmap(sample_theta_per_x))
+
     else:
         raise ValueError(f"Method {method} not supported")
 
@@ -345,6 +450,8 @@ def export_thetas_to_files_ball3stick(cfg,thetas, sim_type, model_mask, brain_ma
 
     if not os.path.exists(out_path):
         os.makedirs(out_path)
+
+
     def to_fractions(theta):
         return sim_type.from_theta(theta, model_mask=model_mask).model_fractions
 
@@ -370,20 +477,20 @@ def export_thetas_to_files_ball3stick(cfg,thetas, sim_type, model_mask, brain_ma
     mu2 = np.array(jax.vmap(jax.vmap(direction_s2))(thetas))
     mu3 = np.array(jax.vmap(jax.vmap(direction_s3))(thetas))
     snr = np.array(jax.vmap(jax.vmap(snr))(thetas))
-    print(fractions.shape, diffusitivity.shape, mu1.shape, mu2.shape, mu3.shape, snr.shape)
 
     if model_mask is not None:
+        # Mask out voxels that are not in the model
         if model_mask.ndim == 2:
             model_mask = model_mask[...,None,:]
             model_mask = np.repeat(model_mask, fractions.shape[1], axis=-1)
-        fraction = np.where(model_mask, fractions, 0)
+        fractions = np.where(model_mask, fractions, 0)
     else:
-        fraction = fractions
+        fractions = fractions
 
     if cfg.export.sort_by_fractions:
         # Keep ball fraction unchanged
-        fraction_new = np.zeros_like(fraction)
-        fraction_new[...,0] = fraction[...,0]
+        fractions_new = np.zeros_like(fractions)
+        fractions_new[...,0] = fractions[...,0]
 
         # Initialize arrays for sorted parameters
         mu1_new = np.zeros_like(mu1)
@@ -393,11 +500,10 @@ def export_thetas_to_files_ball3stick(cfg,thetas, sim_type, model_mask, brain_ma
         for i in range(fractions.shape[0]):
             for j in range(fractions.shape[1]):
                 # Get indices that would sort stick fractions in descending order
-                idx = np.argsort(-fraction[i,j,1:]) # Negative to sort descending
+                idx = np.argsort(-fractions[i,j,1:]) # Negative to sort descending
 
                 # Sort stick fractions
-                fraction_new[i,j,1:] = fraction[i,j,1:][idx]
-
+                fractions_new[i,j,1:] = fractions[i,j,1:][idx]
                 # Stack and sort corresponding mu parameters
                 mus = np.stack([mu1[i,j], mu2[i,j], mu3[i,j]], axis=0)
                 mus_sorted = mus[idx]
@@ -408,13 +514,17 @@ def export_thetas_to_files_ball3stick(cfg,thetas, sim_type, model_mask, brain_ma
                 mu3_new[i,j] = mus_sorted[2]
 
         # Replace original arrays with sorted versions
-        fraction = fraction_new
+        fractions = fractions_new
         mu1 = mu1_new
         mu2 = mu2_new
         mu3 = mu3_new
 
         # Chekc that fraction still sums to 1
-        assert np.allclose(np.sum(fraction, axis=-1), 1.0), "Fraction does not sum to 1"
+        assert np.allclose(np.sum(fractions, axis=-1), 1.0), "Fraction does not sum to 1"
+
+        # Check that sorting worked
+        assert np.all(fractions[...,1] >= fractions[...,2]), "f1 should be greater than f2"
+        assert np.all(fractions[...,2] >= fractions[...,3]), "f2 should be greater than f3"
 
 
     # Moments
@@ -582,22 +692,22 @@ def export_thetas_to_files_ball3stick(cfg,thetas, sim_type, model_mask, brain_ma
 
         export_nifti(full_fractions_reordered, orig_data, reordered_path, "merged_fsamples.nii.gz")
 
-        f0_mean_reordered = fractions_reordered[...,0]
-        f1_mean_reordered = fractions_reordered[...,1]
-        f2_mean_reordered = fractions_reordered[...,2]
-        f3_mean_reordered = fractions_reordered[...,3]
-        fsum_mean_reordered = f1_mean_reordered + f2_mean_reordered + f3_mean_reordered
+        f0_reordered = fractions_reordered[...,0]
+        f1_reordered = fractions_reordered[...,1]
+        f2_reordered = fractions_reordered[...,2]
+        f3_reordered = fractions_reordered[...,3]
+        fsum_reordered = f1_reordered + f2_reordered + f3_reordered
 
-        full_f0_mean_reordered = embed_in_full_brain_array(f0_mean_reordered, brain_mask_flat, brain_shape)
-        full_f1_mean_reordered = embed_in_full_brain_array(f1_mean_reordered, brain_mask_flat, brain_shape)
-        full_f2_mean_reordered = embed_in_full_brain_array(f2_mean_reordered, brain_mask_flat, brain_shape)
-        full_f3_mean_reordered = embed_in_full_brain_array(f3_mean_reordered, brain_mask_flat, brain_shape)
-        full_fsum_mean_reordered = embed_in_full_brain_array(fsum_mean_reordered, brain_mask_flat, brain_shape)
-        export_nifti(full_f0_mean_reordered, orig_data, reordered_path, "mean_f0samples.nii.gz")
-        export_nifti(full_f1_mean_reordered, orig_data, reordered_path, "mean_f1samples.nii.gz")
-        export_nifti(full_f2_mean_reordered, orig_data, reordered_path, "mean_f2samples.nii.gz")
-        export_nifti(full_f3_mean_reordered, orig_data, reordered_path, "mean_f3samples.nii.gz")
-        export_nifti(full_fsum_mean_reordered, orig_data, reordered_path, "mean_fsumsamples.nii.gz")
+        full_f0_reordered = embed_in_full_brain_array(f0_reordered, brain_mask_flat, brain_shape)
+        full_f1_reordered = embed_in_full_brain_array(f1_reordered, brain_mask_flat, brain_shape)
+        full_f2_reordered = embed_in_full_brain_array(f2_reordered, brain_mask_flat, brain_shape)
+        full_f3_reordered = embed_in_full_brain_array(f3_reordered, brain_mask_flat, brain_shape)
+        full_fsum_reordered = embed_in_full_brain_array(fsum_reordered, brain_mask_flat, brain_shape)
+        export_nifti(full_f0_reordered, orig_data, reordered_path, "merged_f0samples.nii.gz")
+        export_nifti(full_f1_reordered, orig_data, reordered_path, "merged_f1samples.nii.gz")
+        export_nifti(full_f2_reordered, orig_data, reordered_path, "merged_f2samples.nii.gz")
+        export_nifti(full_f3_reordered, orig_data, reordered_path, "merged_f3samples.nii.gz")
+        export_nifti(full_fsum_reordered, orig_data, reordered_path, "merged_fsumsamples.nii.gz")
 
         f0_std_reordered = fractions_reordered[...,0]
         f1_std_reordered = fractions_reordered[...,1]
@@ -638,9 +748,13 @@ def export_model_selection_to_files(cfg, model_mask, out_path, orig_data, brain_
     if not os.path.exists(out_path):
         os.makedirs(out_path)
 
+    # Export the samples
+    full_model_mask = embed_in_full_brain_array(model_mask, brain_mask_flat, brain_shape).astype(np.float32)
+    export_nifti(full_model_mask, orig_data, out_path, "merged_model_mask.nii.gz")
+
     marginal_probabilities = jnp.mean(model_mask, axis=1)
     full_marginal_probabilities = embed_in_full_brain_array(marginal_probabilities, brain_mask_flat, brain_shape)
-    export_nifti(full_marginal_probabilities, orig_data, out_path, "marginal_model_probabilities.nii.gz")
+    export_nifti(full_marginal_probabilities, orig_data, out_path, "mean_marginal_probabilities.nii.gz")
 
     frequencies = []
     model_mask_feasibel = cfg.export_model_selection.feasible_models
