@@ -1,5 +1,10 @@
 from typing import Optional
 
+from dmri.simulators.local_signal_models.ball import (
+    MultiShellBall,
+    MultiShellStaticBall,
+)
+from dmri.simulators.local_signal_models.stick import MultiShellStaticStick
 import jax.numpy as jnp
 import numpy as np
 import jax
@@ -332,6 +337,33 @@ class SharedDiffusivity(SharedParameterState):
         u = (shared_parameters - cls.lam_min) / (cls.lam_max - cls.lam_min)
         return jax.scipy.stats.norm.ppf(u)
 
+class SharedMultiShellDiffusivity(SharedParameterState):
+    share_with_compartments = {
+        MultiShellStaticStick: [0, 1],
+        MultiShellStaticBall: [0, 1],
+    }
+    theta_dim = 2
+    lam_min: float = 0.0001
+    lam_max: float = 0.01
+    lam_std_min: float = 0.0001
+    lam_std_max: float = 0.05
+
+    @classmethod
+    def to_params(cls, theta: ArrayLike) -> tuple:
+        u = jax.scipy.stats.norm.cdf(theta)
+        lam = cls.lam_min + u[0] * (cls.lam_max - cls.lam_min)
+        lam_std = cls.lam_std_min + u[1] * (cls.lam_std_max - cls.lam_std_min)
+        shared_parameters = jnp.array([lam, lam_std])
+        return shared_parameters,
+
+    @classmethod
+    def to_theta(cls, shared_parameters: ArrayLike) -> ArrayLike:
+        u = (shared_parameters - cls.lam_min) / (cls.lam_max - cls.lam_min)
+        u_std = (shared_parameters - cls.lam_std_min) / (
+            cls.lam_std_max - cls.lam_std_min
+        )
+        us = jnp.concatenate([u, u_std])
+        return jax.scipy.stats.norm.ppf(us)
 
 class BallStickSharedDiffusivity(MultiCompartment):
     model_types = [StaticBall, StaticStick]
@@ -351,6 +383,25 @@ class Ball3StickSharedDiffusivity(MultiCompartment):
     noise_types = [BoundedGaussianNoise]
     fraction_prior = jnp.array([3.5, 1., 0.3, 0.1])
     shared_parameter_type = SharedDiffusivity
+
+
+class Ball3StickSharedDiffusivityUniformFraction(MultiCompartment):
+    model_types = [StaticBall, StaticStick, StaticStick, StaticStick]
+    noise_types = [BoundedGaussianNoise]
+    fraction_prior = jnp.ones(4)
+    shared_parameter_type = SharedDiffusivity
+
+
+class MultiShellBall3StickSharedDiffusivity(MultiCompartment):
+    model_types = [
+        MultiShellStaticBall,
+        MultiShellStaticStick,
+        MultiShellStaticStick,
+        MultiShellStaticStick,
+    ]
+    noise_types = [BoundedGaussianNoise]
+    fraction_prior = jnp.array([3.5, 1.0, 0.3, 0.1])
+    shared_parameter_type = SharedMultiShellDiffusivity
 
 
 class BallStick(MultiCompartment):

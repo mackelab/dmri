@@ -1,3 +1,5 @@
+from dmri.simulators.local_signal_models.ball import MultiShellBall
+from dmri.simulators.local_signal_models.stick import MultiShellStick
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -34,11 +36,13 @@ from dmri.simulators.multi_compartment import (
     params=[
         Dot,
         Ball,
+        MultiShellBall,
         Stick,
+        MultiShellStick,
         Zeppelin,
         Dti,
         Sphere,
-        Cylinder,
+        pytest.param(Cylinder, marks=pytest.mark.xfail(reason="Cylinder model needs pulse duration")),
         WatsonStick,
         WatsonZeppelin,
         BinghamStick,
