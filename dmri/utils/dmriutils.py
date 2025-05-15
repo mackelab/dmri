@@ -297,6 +297,99 @@ def export_nifti(data, orig_data, output_path, name):
     nb.save(nb.Nifti2Image(data, affine=aff_mat), os.path.join(output_path, name))
 
 
+def reorder_angles_3fib(mu1, mu2, mu3, f1, f2, f3):
+    """Reorder angles to maintain consistency across samples by comparing to reference vectors.
+
+    Args:
+        mu1, mu2, mu3: Arrays of shape (n_samples, 2) containing spherical angles (theta, phi)
+        f1, f2, f3: Arrays of shape (n_samples,) containing the fractions
+
+    Returns:
+        new_mu1, new_mu2, new_mu3: Reordered angles arrays of same shape as inputs
+        new_f1, new_f2, new_f3: Reordered fraction arrays of same shape as inputs
+    """
+
+    print(mu1.shape, mu2.shape, mu3.shape, f1.shape, f2.shape, f3.shape)
+
+    # Initialize output arrays
+    new_mu1 = jnp.zeros_like(mu1)
+    new_mu2 = jnp.zeros_like(mu2)
+    new_mu3 = jnp.zeros_like(mu3)
+    new_f1 = jnp.zeros_like(f1)
+    new_f2 = jnp.zeros_like(f2)
+    new_f3 = jnp.zeros_like(f3)
+
+    # Use first sample as reference vectors
+    v1_ref = sph2cart(mu1[0,0], mu1[0,1])
+    v2_ref = sph2cart(mu2[0,0], mu2[0,1])
+    v3_ref = sph2cart(mu3[0,0], mu3[0,1])
+
+    # Copy first sample directly
+    new_mu1 = new_mu1.at[0].set(mu1[0])
+    new_mu2 = new_mu2.at[0].set(mu2[0])
+    new_mu3 = new_mu3.at[0].set(mu3[0])
+    new_f1 = new_f1.at[0].set(f1[0])
+    new_f2 = new_f2.at[0].set(f2[0])
+    new_f3 = new_f3.at[0].set(f3[0])
+
+    # Process remaining samples
+    for j in range(1, mu1.shape[0]):
+        # Convert current sample to cartesian
+        v1 = sph2cart(mu1[j,0], mu1[j,1])
+        v2 = sph2cart(mu2[j,0], mu2[j,1])
+        v3 = sph2cart(mu3[j,0], mu3[j,1])
+
+        # Calculate dot products with v1_ref
+        dots = jnp.array([
+            jnp.dot(v1_ref, v1)/(jnp.linalg.norm(v1_ref)*jnp.linalg.norm(v1)),
+            jnp.dot(v1_ref, v2)/(jnp.linalg.norm(v1_ref)*jnp.linalg.norm(v2)),
+            jnp.dot(v1_ref, v3)/(jnp.linalg.norm(v1_ref)*jnp.linalg.norm(v3))
+        ])
+
+        # Find best match for v1_ref
+        best_match = jnp.argmax(dots)
+
+        # Reorder based on best match with v1_ref using where
+        angles1 = jnp.where(best_match == 0, mu1[j],
+                  jnp.where(best_match == 1, mu2[j], mu3[j]))
+        frac1 = jnp.where(best_match == 0, f1[j],
+                 jnp.where(best_match == 1, f2[j], f3[j]))
+
+        # Get remaining angles and fractions
+        remaining_angles = jnp.where(best_match == 0, jnp.array([mu2[j], mu3[j]]),
+                          jnp.where(best_match == 1, jnp.array([mu1[j], mu3[j]]),
+                                                  jnp.array([mu1[j], mu2[j]])))
+        remaining_fracs = jnp.where(best_match == 0, jnp.array([f2[j], f3[j]]),
+                          jnp.where(best_match == 1, jnp.array([f1[j], f3[j]]),
+                                                  jnp.array([f1[j], f2[j]])))
+
+        v_remaining = jnp.where(best_match == 0, jnp.array([v2, v3]),
+                     jnp.where(best_match == 1, jnp.array([v1, v3]),
+                                              jnp.array([v1, v2])))
+
+        # Find best match for v2_ref among remaining vectors
+        dots_v2 = jnp.array([
+            jnp.dot(v2_ref, v_remaining[0])/(jnp.linalg.norm(v2_ref)*jnp.linalg.norm(v_remaining[0])),
+            jnp.dot(v2_ref, v_remaining[1])/(jnp.linalg.norm(v2_ref)*jnp.linalg.norm(v_remaining[1]))
+        ])
+
+        # Order remaining two vectors based on similarity to v2_ref using where
+        angles2 = jnp.where(dots_v2[0] > dots_v2[1], remaining_angles[0], remaining_angles[1])
+        angles3 = jnp.where(dots_v2[0] > dots_v2[1], remaining_angles[1], remaining_angles[0])
+        frac2 = jnp.where(dots_v2[0] > dots_v2[1], remaining_fracs[0], remaining_fracs[1])
+        frac3 = jnp.where(dots_v2[0] > dots_v2[1], remaining_fracs[1], remaining_fracs[0])
+
+        # Store reordered angles and fractions
+        new_mu1 = new_mu1.at[j].set(angles1)
+        new_mu2 = new_mu2.at[j].set(angles2)
+        new_mu3 = new_mu3.at[j].set(angles3)
+        new_f1 = new_f1.at[j].set(frac1)
+        new_f2 = new_f2.at[j].set(frac2)
+        new_f3 = new_f3.at[j].set(frac3)
+
+    return new_mu1, new_mu2, new_mu3, new_f1, new_f2, new_f3
+
+
 def export_SBI_estimates(
     samples: ArrayLike,
     mask: ArrayLike,

@@ -1,0 +1,5 @@
+name: "ball3stick_model_selection_results"
+feasible_models:
+  - [True, True, False, False, True]
+  - [True, True, True, False, True]
+  - [True, True, True, True, True]
