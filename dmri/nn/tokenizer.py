@@ -822,7 +822,7 @@ class DMRITokenizerPP(DMRITokenizer):
         # Handle shared parameters if they exist
         if self.simulator.value.shared_parameter_type is not None:
             theta_shared = theta_split[1]
-            shared_tokens = self.theta_encode_nets[1](theta_shared[..., None])
+            shared_tokens = self.theta_encode_nets[1](theta_shared[..., None,:])
             theta_models = theta_split[2:]
         else:
             theta_models = theta_split[1:]
