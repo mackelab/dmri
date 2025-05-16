@@ -138,21 +138,21 @@ def build_pure_eval_fns(graphdef, static, sim_type):
                 return ll
 
             hmc_kernel = hmc.build_kernel()
-            hmc_kernel = partial(hmc_kernel, step_size=0.005, num_integration_steps=20, inverse_mass_matrix=jnp.ones(thetas_post.shape[1]))
+            hmc_kernel = partial(hmc_kernel, step_size=0.001, num_integration_steps=20, inverse_mass_matrix=jnp.ones(thetas_post.shape[1]))
 
             resampling_fn = systematic
 
-            smc = tempered_smc(log_prior_fn, log_likelihood_fn, hmc_kernel, hmc.init, {}, resampling_fn, 1)
+            smc = tempered_smc(log_prior_fn, log_likelihood_fn, hmc_kernel, hmc.init, {}, resampling_fn, 2)
             state = smc.init(thetas_post)
-            state =state._replace(lmbda=0.99)
+            state =state._replace(lmbda=0.999)
 
             def step(state, rng):
                 state, i = state
-                lmbda = 0.99 + (i+1)*0.01/2
+                lmbda = 0.999 + (i+1)*0.001/1
                 new_state, info = smc.step(rng, state, lmbda)
                 return (new_state, i+1), info
 
-            rng_keys = jax.random.split(key2, 2)
+            rng_keys = jax.random.split(key2, 1)
             final_state, _ = jax.lax.scan(step, (state, 0), rng_keys)
             final_weights = final_state[0].weights
             ess = 1/jnp.sum(final_weights**2, axis=0)

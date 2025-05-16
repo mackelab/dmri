@@ -62,6 +62,19 @@ class StreamDataLoader:
         self.recycle_batches = recycle_batches
         self.recycle_threshold = recycle_threshold  # Store the recycle threshold
 
+        # Compile the batch simulator once during initialization
+        @partial(jax.jit, device=self.simulation_device)
+        def batch_simulator(rng_key):
+            rngs = jax.random.split(rng_key, self.batch_size)
+            return jax.vmap(self.simulator_fn)(rngs)
+
+        self.batch_simulator = batch_simulator
+
+        # Ensure compilation is complete before proceeding
+        # Use a dummy key to trigger compilation
+        dummy_key = jax.random.key(0)
+        _ = self.batch_simulator(dummy_key)[0].block_until_ready()
+
         # For the background threads
         self.event = threading.Event()
         self.queue = queue.Queue(maxsize=max_queue_size)
@@ -92,8 +105,6 @@ class StreamDataLoader:
             )
             self.producer_threads.append(thread)
             thread.start()
-            # Wait some time to ensure all threads are started
-            time.sleep(0.1)
 
     def _producer_loop(self, thread_rng):
         """
@@ -107,12 +118,6 @@ class StreamDataLoader:
             thread_rng: The initial RNG key for this thread
         """
         try:
-            # We'll jit+vmap the user simulator to produce batch_size items at once
-            @partial(jax.jit, device=self.simulation_device)
-            def batch_simulator(rng_key):
-                rngs = jax.random.split(rng_key, self.batch_size)
-                return jax.vmap(self.simulator_fn)(rngs)
-
             key = jax.device_put(thread_rng, self.simulation_device)
             while not self.event.is_set():
                 # Wait if production is paused
@@ -123,7 +128,7 @@ class StreamDataLoader:
                 # Generate a batch
                 start_time = time.time()
                 key, rng_sub = jax.random.split(key)
-                data = batch_simulator(rng_sub)
+                data = self.batch_simulator(rng_sub)
 
                 # PyTree-friendly conversion to CPU
                 # This handles cases where data is a nested structure (PyTree)
@@ -376,7 +381,11 @@ class StreamDataLoader:
         """
         Make sure the background threads are stopped if the loader is garbage-collected.
         """
-        self.close()
+        try:
+            if hasattr(self, 'event'):
+                self.close()
+        except Exception:
+            pass  # Ignore any errors during cleanup
 
     def queue_size(self):
         """Return the current size of the queue."""

@@ -50,10 +50,10 @@ def build_simulator(cfg: DictConfig):
         idx_compartment_always_on = jax.random.randint(
             rng3_1, minval=0, maxval=len(sim_type.model_types), shape=(1,)
         )
-        p_mask = jnp.repeat(p_mask, len(sim_type.model_types))
-        p_mask = p_mask.at[idx_compartment_always_on].set(0.0)
+        p_mask_extended = jnp.repeat(p_mask, len(sim_type.model_types))
+        p_mask_extended = p_mask_extended.at[idx_compartment_always_on].set(0.0)
 
-        model_mask = jax.random.bernoulli(rng3_2, p=p_mask, shape=(1,))
+        model_mask = jax.random.bernoulli(rng3_2, p=p_mask_extended)
         model_mask = model_mask.at[idx_compartment_always_on].set(True)
 
         # Noise mask needs to have only one entry

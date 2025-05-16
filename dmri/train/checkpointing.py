@@ -11,7 +11,7 @@ class CheckpointManager:
     def __init__(
         self,
         ckpt_dir: str,
-        max_to_keep: int = 5,
+        max_to_keep: int = 10,
         keep_best: bool = True,
         recovery_threshold: float = float("inf"),
         continue_training: bool = False,

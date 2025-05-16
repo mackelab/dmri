@@ -1,0 +1,8 @@
+name: DMRIThetaInferenceConfig
+params:
+  num_layers: 8
+  num_heads: 4
+  widening_factor: 4
+  attn_size: 16
+  context_dim: 64
+  dropout_rate: null

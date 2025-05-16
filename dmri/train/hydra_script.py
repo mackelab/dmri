@@ -97,7 +97,11 @@ def _main(cfg: DictConfig):
     rng_key = jax.random.key(seed)
     log.info(f"Seed: {seed}")
 
+    # Build simulator
+    log.info("Building simulator")
+    log.info(f"Simulator cfg: {cfg.simulator}")
     sim_type, simulator = build_simulator(cfg)
+    log.info(f"Simulator type: {sim_type}")
 
     model = build_model(cfg, sim_type)
     model.train()
@@ -141,6 +145,12 @@ def _main(cfg: DictConfig):
 
     # If restarts are required:
     restart_every = cfg.train.get("restart_every", None)
+
+    log.info("Building loss function")
+    log.info(f"Simulator with posterior score: {cfg.simulator.with_posterior_score}")
+    log.info(f"Model selection weight: {cfg.train.model_selection_weight}")
+    log.info(f"Model inference loss weight: {cfg.train.model_inference_loss_weight}")
+    log.info(f"Weight by complexity: {cfg.train.weight_by_complexity}")
 
     def loss_fn(params,state, data, rng):
         if cfg.simulator.with_posterior_score:
@@ -207,7 +217,8 @@ def _main(cfg: DictConfig):
     step = start_step
     datastream = iter(loader)
 
-    loss_fn(params, state, next(iter(loader)), rng_key)
+
+    # loss_fn(params, state, next(iter(loader)), rng_key)
 
 
     if continue_training:
@@ -383,6 +394,3 @@ def _main(cfg: DictConfig):
     log.info("Training complete")
     # Ensure all async checkpoint operations are finished before exiting
     checkpoint_manager.wait_until_finished()
-
-
-

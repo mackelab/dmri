@@ -29,6 +29,10 @@ from dmri.simulators.multi_compartment import (
     Ball2Stick,
     Ball3Stick,
     BallStick,
+    Ball3StickSharedDiffusivity,
+    Ball3StickSharedDiffusivityUniformFraction,
+    MultiShellBall3StickSharedDiffusivity,
+    MultiShellBall3StickSharedDiffusivityUniformFraction,
 )
 
 
@@ -55,6 +59,10 @@ from dmri.simulators.multi_compartment import (
         Ball2Stick,
         Ball3Stick,
         BallStickSharedDiffusivity,
+        Ball3StickSharedDiffusivity,
+        Ball3StickSharedDiffusivityUniformFraction,
+        MultiShellBall3StickSharedDiffusivity,
+        MultiShellBall3StickSharedDiffusivityUniformFraction,
     ]
 )
 def compartment_model(request):

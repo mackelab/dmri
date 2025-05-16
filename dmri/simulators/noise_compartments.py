@@ -32,11 +32,11 @@ class RicianNoise(NoiseCompartment):
         return log_likelihood.sum(-1)
 
     @classmethod
-    def to_theta(cls, *args) -> ArrayLike:
+    def to_theta(cls, snr: ArrayLike) -> ArrayLike:
         """Transforms the natural parameters to the optimization parameters which are
         assumed to be normally distributed.
         """
-        return jnp.log(args[0])
+        return (jnp.log(snr),)
 
     @classmethod
     def to_params(cls, theta: ArrayLike) -> Any:
@@ -60,11 +60,11 @@ class GaussianNoise(NoiseCompartment):
         return log_likelihood.sum(-1)
 
     @classmethod
-    def to_theta(cls, *args) -> ArrayLike:
+    def to_theta(cls, snr: ArrayLike) -> ArrayLike:
         """Transforms the natural parameters to the optimization parameters which are
         assumed to be normally distributed.
         """
-        return jnp.log(args[0])
+        return (jnp.log(snr),)
 
     @classmethod
     def to_params(cls, theta: ArrayLike) -> Any:
@@ -81,19 +81,21 @@ class BoundedRicianNoise(RicianNoise):
         self.snr = snr
 
     @classmethod
-    def to_theta(cls, *args) -> ArrayLike:
+    def to_theta(cls, snr: ArrayLike) -> ArrayLike:
         """Transforms the natural parameters to the optimization parameters which are
         assumed to be normally distributed.
         """
         # Invert scaling
-        theta_sig = (args[0] - cls.min_snr) / (cls.max_snr - cls.min_snr)
+        theta_u = (snr - cls.min_snr) / (cls.max_snr - cls.min_snr)
+        theta = jax.scipy.stats.norm.ppf(theta_u)
         # Apply inverse sigmoid
-        return jnp.log(theta_sig / (1 - theta_sig))
+        return (theta,)
 
     @classmethod
     def to_params(cls, theta: ArrayLike) -> Any:
         """Transforms the optimization parameters to the natural parameters."""
-        return (jax.nn.sigmoid(theta) * (cls.max_snr - cls.min_snr) + cls.min_snr,)
+        u = jax.scipy.stats.norm.cdf(theta)
+        return (u * (cls.max_snr - cls.min_snr) + cls.min_snr,)
 
 
 class BoundedGaussianNoise(GaussianNoise):
@@ -105,19 +107,21 @@ class BoundedGaussianNoise(GaussianNoise):
         self.snr = snr
 
     @classmethod
-    def to_theta(cls, *args) -> ArrayLike:
+    def to_theta(cls, snr: ArrayLike) -> ArrayLike:
         """Transforms the natural parameters to the optimization parameters which are
         assumed to be normally distributed.
         """
         # Invert scaling
-        theta_sig = (args[0] - cls.min_snr) / (cls.max_snr - cls.min_snr)
+        theta_u = (snr - cls.min_snr) / (cls.max_snr - cls.min_snr)
+        theta = jax.scipy.stats.norm.ppf(theta_u)
         # Apply inverse sigmoid
-        return jnp.log(theta_sig / (1 - theta_sig))
+        return (theta,)
 
     @classmethod
     def to_params(cls, theta: ArrayLike) -> Any:
         """Transforms the optimization parameters to the natural parameters."""
-        return (jax.nn.sigmoid(theta) * (cls.max_snr - cls.min_snr) + cls.min_snr,)
+        u = jax.scipy.stats.norm.cdf(theta)
+        return (u * (cls.max_snr - cls.min_snr) + cls.min_snr,)
 
 class RicianNoiseSNR7080(BoundedRicianNoise):
     min_snr = 70
