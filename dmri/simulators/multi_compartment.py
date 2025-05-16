@@ -323,7 +323,7 @@ class SharedDiffusivity(SharedParameterState):
         ],
     }
     theta_dim = 1
-    lam_min: float = 0.0001
+    lam_min: float = 0.0
     lam_max: float = 0.01
 
     @classmethod
@@ -343,10 +343,10 @@ class SharedMultiShellDiffusivity(SharedParameterState):
         MultiShellStaticBall: [0, 1],
     }
     theta_dim = 2
-    lam_min: float = 0.0001
+    lam_min: float = 0.0
     lam_max: float = 0.01
-    lam_std_min: float = 0.0001
-    lam_std_max: float = 0.05
+    lam_std_min: float = 0.0
+    lam_std_max: float = 0.005
 
     @classmethod
     def to_params(cls, theta: ArrayLike) -> tuple:

@@ -546,8 +546,8 @@ def export_thetas_to_files_ball3stick(cfg,thetas, sim_type, model_mask, brain_ma
     f3_std = fractions_std[...,3]
     fsum_std = f1_std + f2_std + f3_std
 
-    diffusitivity_mean = diffusitivity_mean[...,0]
-    diffusitivity_std = diffusitivity_std[...,0]
+    diffusitivity_mean = diffusitivity_mean
+    diffusitivity_std = diffusitivity_std
 
     # Export diffusitivity
     full_diffusitivity_mean = embed_in_full_brain_array(diffusitivity_mean, brain_mask_flat, brain_shape)
