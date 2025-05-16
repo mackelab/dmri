@@ -143,12 +143,14 @@ class EDMSimformer(EDM):
         max_noise=None,
         num_steps=16,
         sample_method="ode",
+        rho = 7,
+        min_noise_nugget = 0.0,
     ):
         if max_noise is not None:
             self.max_noise = max_noise
         rng, rng_init = jax.random.split(rng)
         eps = jax.random.normal(rng_init, dim) * self.marginal_std(self.max_noise)
-        ts = self.solve_schedule(num_steps)
+        ts = self.solve_schedule(num_steps, rho) + min_noise_nugget
 
         if sample_method == "ode":
             def drift(t, x):

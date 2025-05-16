@@ -316,6 +316,8 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         model_mask,
         num_steps=16,
         max_noise=None,
+        rho=7,
+        min_noise_nugget=0.0,
         sample_method="ode",
     ):
         y = self.encoder(bvals, bvecs, signals)
@@ -335,6 +337,8 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
             attention_mask=attention_mask,
             model_mask=model_mask,
             sample_method=sample_method,
+            rho=rho,
+            min_noise_nugget=min_noise_nugget,
         )
 
         return theta
@@ -348,6 +352,8 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         model_mask,
         num_steps=16,
         max_noise=None,
+        rho=7,
+        min_noise_nugget=0.0,
     ):
         y = self.encoder(bvals, bvecs, signals)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
@@ -363,6 +369,8 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
             max_noise=max_noise,
             attention_mask=attention_mask,
             model_mask=model_mask,
+            rho=rho,
+            min_noise_nugget=min_noise_nugget,
         )
 
         return log_prob
@@ -376,6 +384,8 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         model_mask,
         num_steps=16,
         max_noise=None,
+        rho=7,
+        min_noise_nugget=0.0,
     ):
         y = self.encoder(bvals, bvecs, signals)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
@@ -392,6 +402,8 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
             max_noise=max_noise,
             attention_mask=attention_mask,
             model_mask=model_mask,
+            rho=rho,
+            min_noise_nugget=min_noise_nugget,
         )
 
         return theta, log_prob
