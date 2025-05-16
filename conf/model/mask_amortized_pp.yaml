@@ -5,5 +5,5 @@ use_attention_mask: True
 
 defaults:
   - embedding_net: bvalbvec
-  - inference_net: simformer12
+  - inference_net: simformer6
   - model_selection_net: autoregressive_prior_amortized
