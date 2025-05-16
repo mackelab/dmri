@@ -13,162 +13,6 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-def orthoview(data, vmin=None, vmax=None, channel_names=None):
-    # Check for 4D data (x, y, z, channels)
-    if data.ndim == 3:
-        data = data[..., np.newaxis]  # Add channel dimension if missing
-
-    x_max, y_max, z_max, channels = data.shape
-
-    if vmin is None:
-        vmin = np.quantile(data, 0.01)
-    if vmax is None:
-        vmax = np.quantile(data, 0.99)
-
-    # Pad to cube
-    max_dim = max(x_max, y_max, z_max)
-    x_pad = (max_dim - x_max) // 2
-    y_pad = (max_dim - y_max) // 2
-    z_pad = (max_dim - z_max) // 2
-
-    data = np.pad(data, ((x_pad, x_pad), (y_pad, y_pad), (z_pad, z_pad), (0, 0)), mode='constant')
-    x_max, y_max, z_max, _ = data.shape
-
-    # Initial slices
-    x_slice = x_max // 2
-    y_slice = y_max // 2
-    z_slice = z_max // 2
-
-    # Create figure with your existing layout
-    fig = make_subplots(
-        rows=2,
-        cols=2,
-        column_widths=[0.35, 0.65],
-        specs=[[{}, {"rowspan": 2}], [{"colspan": 1}, None]],
-        vertical_spacing=0.0,
-        horizontal_spacing=0.0,
-    )
-
-    # Create traces for all channels (always 3 per channel)
-    traces = []
-    for c in range(channels):
-        traces.append(go.Heatmap(z=data[x_slice, :, :, c].T, colorscale='gray', zmin=vmin, zmax=vmax, showscale=False))
-        traces.append(go.Heatmap(z=data[:, y_slice, :, c].T, colorscale='gray', zmin=vmin, zmax=vmax, showscale=False))
-        traces.append(go.Heatmap(z=data[:, :, z_slice, c], colorscale='gray', zmin=vmin, zmax=vmax, showscale=False))
-
-    # Add all traces to figure
-    for i, trace in enumerate(traces):
-        if i % 3 == 0:
-            fig.add_trace(trace, row=1, col=1)
-        elif i % 3 == 1:
-            fig.add_trace(trace, row=2, col=1)
-        else:
-            fig.add_trace(trace, row=1, col=2)
-
-    # Initialize visibility (only show channel 0)
-    initial_visibility = []
-    for c in range(channels):
-        initial_visibility.extend([c == 0] * 3)
-
-    fig.update_traces(visible=False)
-    for i, v in enumerate(initial_visibility):
-        fig.data[i].visible = v
-
-    # Sliders for slices (now update all channels, but only currently visible)
-    sliders = [
-        dict(
-            active=x_slice,
-            currentvalue={"prefix": "X Slice: ","suffix": ""},
-            steps=[
-                dict(
-                    method="restyle",
-                    label=str(i),
-                    args=[
-                        {"z": [data[i, :, :, c].T for c in range(channels)]},
-                        list(range(0, 3 * channels, 3))
-                    ]
-                ) for i in range(x_max)
-            ],
-            x=0.,
-            y=0.13,
-            len=0.25
-        ),
-        dict(
-            active=y_slice,
-            currentvalue={"prefix": "Y Slice: ","suffix": ""},
-            steps=[
-                dict(
-                    method="restyle",
-                    label=str(i),
-                    args=[
-                        {"z": [data[:, i, :, c].T for c in range(channels)]},
-                        list(range(1, 3 * channels, 3))
-                    ]
-                ) for i in range(y_max)
-            ],
-            x=0.3,
-            y=0.13,
-            len=0.25
-        ),
-        dict(
-            active=z_slice,
-            currentvalue={"prefix": "Z Slice: ", "suffix": ""},
-            steps=[
-                dict(
-                    method="restyle",
-                    label=str(i),
-                    args=[
-                        {"z": [data[:, :, i, c] for c in range(channels)]},
-                        list(range(2, 3 * channels, 3))
-                    ]
-                ) for i in range(z_max)
-            ],
-            x=0.6,
-            y=0.13,
-            len=0.25
-        ),
-    ]
-
-    # Channel dropdown (now correctly toggling visibility of the correct 3 traces per channel)
-    channel_dropdown = dict(
-        buttons=[
-            dict(
-                label=str(c) if channel_names is None else channel_names[c],
-                method="update",
-                args=[
-                    {"visible": [
-                        (i // 3) == c for i in range(3 * channels)
-                    ]}
-                ],
-            ) for c in range(channels)
-        ],
-        direction="up",
-        showactive=True,
-        active=0,
-        x=0.85,
-        y=0.,
-        xanchor="left",
-        yanchor="bottom",
-        font=dict(color="white"),
-    )
-
-    # Update layout with all sliders and dropdown
-    fig.update_layout(
-        sliders=sliders,
-        updatemenus=[channel_dropdown],
-        paper_bgcolor="black",
-        plot_bgcolor="black",
-        font=dict(color="white"),
-        margin=dict(l=0, r=0, t=10, b=20),
-        height=500,
-        width=800,
-    )
-
-    # Turn off axes
-    fig.update_xaxes(showticklabels=False)
-    fig.update_yaxes(showticklabels=False)
-
-    return fig
 
 def orthoview_quiver_plotly(data, fractions, step=1, colors=None,
                             xy_slice=None, xz_slice=None, yz_slice=None):
@@ -319,6 +163,529 @@ def orthoview_quiver_plotly(data, fractions, step=1, colors=None,
 
     return fig
 
+
+def orthoview_quiver_ultracompact(data, fractions, colors=None, step=1,
+                                 downsample_factor=1, slider_step=10,
+                                 heatmap_quality=1.0, simplified_ui=False,
+                                 precision=np.float32, colorscale='gray',
+                                 arrow_scale=1.0, arrow_width=1,
+                                 height=1000, width=1600,
+                                 show_all_channels=True):
+    """Ultra-optimized version of orthoview_quiver_plotly that produces minimal HTML files.
+
+    Args:
+        data: 5D numpy array (x, y, z, channels, 3) of vector data
+        fractions: Fraction weights for each channel (x, y, z, channels)
+        colors: List of colors for vector arrows
+        step: Step size for vector arrow sampling
+        downsample_factor: Factor to downsample data by
+        slider_step: Step size for slice sliders
+        heatmap_quality: Factor to reduce heatmap resolution (0.5 = 50% of original)
+        simplified_ui: Whether to use simplified UI with fewer controls
+        precision: Data precision for internal calculations ('float32', 'float16', or 'int8')
+        colorscale: Colorscale for the background heatmap
+        arrow_scale: Scale factor for vector arrows
+        arrow_width: Width of the vector arrows
+        height: Height of the figure in pixels
+        width: Width of the figure in pixels
+        show_all_channels: Whether to show all channels simultaneously (True) or use dropdown selector (False)
+
+    Returns:
+        plotly figure object
+    """
+    if data.ndim != 5 or data.shape[-1] != 3:
+        raise ValueError("Data must have shape (x, y, z, channels, 3) where last dim is vector (u, v, w)")
+
+    x_max, y_max, z_max, channels, _ = data.shape
+    fractions = fractions.reshape(x_max, y_max, z_max, channels)
+
+    # Convert data precision if requested
+    if precision == np.float16 or precision == np.float32 or precision == np.float64:
+        data = data.astype(precision)
+        fractions = fractions.astype(precision)
+    elif precision == np.int8:
+        # For int8, scale vectors to unit length and use int8 for direction only
+        # Note: For vectors, int8 is not ideal but can be used for direction
+        vectors_norm = np.sqrt(np.sum(data**2, axis=-1, keepdims=True))
+        vectors_norm = np.maximum(vectors_norm, 1e-10)  # Avoid division by zero
+        data = ((data / vectors_norm) * 127).astype(np.int8)
+
+        # Scale fractions to 0-255 range for int8
+        fractions_min = fractions.min()
+        fractions_max = fractions.max() + 1e-10
+        fractions = ((fractions - fractions_min) / (fractions_max - fractions_min) * 255).astype(np.int8)
+
+    # Apply downsampling if requested
+    if downsample_factor > 1:
+        # Use simple striding for downsampling
+        data = data[::downsample_factor, ::downsample_factor, ::downsample_factor, :, :]
+        fractions = fractions[::downsample_factor, ::downsample_factor, ::downsample_factor, :]
+        x_max, y_max, z_max, channels, _ = data.shape
+
+    # Pad to cube
+    max_dim = max(x_max, y_max, z_max)
+    x_pad = (max_dim - x_max) // 2
+    y_pad = (max_dim - y_max) // 2
+    z_pad = (max_dim - z_max) // 2
+
+    data = np.pad(data, ((x_pad, x_pad), (y_pad, y_pad), (z_pad, z_pad), (0, 0), (0, 0)), mode='constant')
+    fractions = np.pad(fractions, ((x_pad, x_pad), (y_pad, y_pad), (z_pad, z_pad), (0, 0)), mode='constant')
+    x_max, y_max, z_max, _, _ = data.shape
+
+    # Weight vectors by fractions
+    data = fractions[..., None] * data
+    fsum = np.sum(fractions, axis=-1)
+
+    # Initial slices (middle)
+    x_slice = x_max // 2
+    y_slice = y_max // 2
+    z_slice = z_max // 2
+
+    # Apply heatmap quality reduction if requested
+    if heatmap_quality < 1.0:
+        # Create downsampled views for the heatmaps
+        def downsample_slice(slice_data, quality):
+            # Skip if already small enough
+            if min(slice_data.shape) < 10:
+                return slice_data
+
+            # Calculate new dimensions
+            target_height = max(int(slice_data.shape[0] * quality), 10)
+            target_width = max(int(slice_data.shape[1] * quality), 10)
+
+            # Use simple striding for downsampling
+            stride_y = max(1, slice_data.shape[0] // target_height)
+            stride_x = max(1, slice_data.shape[1] // target_width)
+
+            return slice_data[::stride_y, ::stride_x]
+    else:
+        # No downsampling function
+        def downsample_slice(slice_data, quality):
+            return slice_data
+
+    # Optimized function to create quiver plots with fewer points
+    def create_line_quiver_2d_optimized(X, Y, U, V, color='white', density_factor=1.0):
+        # Adjust density based on the quality factor
+        if density_factor < 1.0:
+            skip = max(1, int(1.0 / density_factor))
+            X = X[::skip, ::skip]
+            Y = Y[::skip, ::skip]
+            U = U[::skip, ::skip]
+            V = V[::skip, ::skip]
+
+        # Apply scaling
+        U = U * arrow_scale
+        V = V * arrow_scale
+
+        # Flatten all arrays
+        X_flat = X.flatten()
+        Y_flat = Y.flatten()
+        U_flat = U.flatten()
+        V_flat = V.flatten()
+
+        # Calculate line endpoints
+        x0 = X_flat - U_flat
+        x1 = X_flat + U_flat
+        y0 = Y_flat - V_flat
+        y1 = Y_flat + V_flat
+
+        # Create lines with NaN separators
+        x_lines = np.vstack([x0, x1, np.full(x0.shape, np.nan)]).T.flatten()
+        y_lines = np.vstack([y0, y1, np.full(y0.shape, np.nan)]).T.flatten()
+
+        return go.Scatter(
+            x=x_lines,
+            y=y_lines,
+            mode='lines',
+            line=dict(color=color, width=arrow_width),
+            showlegend=False
+        )
+
+    if colors is None:
+        colors = ['red', 'blue', 'green']
+
+    # Create figure
+    fig = make_subplots(
+        rows=2,
+        cols=2,
+        column_widths=[0.35, 0.65],
+        specs=[[{}, {"rowspan": 2}], [{"colspan": 1}, None]],
+        vertical_spacing=0.0,
+        horizontal_spacing=0.0,
+    )
+
+    # Create reduced list of slider indices with the given step size
+    # For simplified UI, use even larger step sizes
+    effective_step = slider_step * 2 if simplified_ui else slider_step
+
+    x_indices = list(range(0, x_max, effective_step))
+    y_indices = list(range(0, y_max, effective_step))
+    z_indices = list(range(0, z_max, effective_step))
+
+    # Ensure the middle slice is included
+    if x_slice not in x_indices:
+        x_indices = sorted(x_indices + [x_slice])
+    if y_slice not in y_indices:
+        y_indices = sorted(y_indices + [y_slice])
+    if z_slice not in z_indices:
+        z_indices = sorted(z_indices + [z_slice])
+
+    # For simplified UI, limit to a max of 5 slices
+    if simplified_ui:
+        def limit_indices(indices, middle):
+            if len(indices) <= 5:
+                return indices
+
+            # Keep middle and select 4 more points evenly distributed
+            middle_idx = indices.index(middle)
+            result = [indices[0]]  # First
+
+            if middle_idx > 0:
+                result.append(indices[middle_idx//2])  # Quarter
+
+            result.append(middle)  # Middle
+
+            if middle_idx < len(indices)-1:
+                result.append(indices[(middle_idx + len(indices))//2])  # Three-quarter
+
+            result.append(indices[-1])  # Last
+
+            # Deduplicate and sort
+            return sorted(list(set(result)))
+
+        x_indices = limit_indices(x_indices, x_slice)
+        y_indices = limit_indices(y_indices, y_slice)
+        z_indices = limit_indices(z_indices, z_slice)
+
+    # Keep track of trace indices for slider updates
+    xy_plane_traces = {"heatmap": None, "quivers": []}
+    xz_plane_traces = {"heatmap": None, "quivers": []}
+    yz_plane_traces = {"heatmap": None, "quivers": []}
+
+    # XY plane (axial) - row 1, col 1
+    xy_heatmap = go.Heatmap(
+        z=downsample_slice(fsum[x_slice, :, :].T, heatmap_quality),
+        colorscale=colorscale,
+        zmin=0,
+        zmax=np.max(fsum) if np.max(fsum) > 0 else 1,
+        showscale=False
+    )
+    fig.add_trace(xy_heatmap, row=1, col=1)
+    xy_plane_traces["heatmap"] = 0  # First trace added
+
+    # XZ plane (coronal) - row 2, col 1
+    xz_heatmap = go.Heatmap(
+        z=downsample_slice(fsum[:, y_slice, :].T, heatmap_quality),
+        colorscale=colorscale,
+        zmin=0,
+        zmax=np.max(fsum) if np.max(fsum) > 0 else 1,
+        showscale=False
+    )
+    fig.add_trace(xz_heatmap, row=2, col=1)
+    xz_plane_traces["heatmap"] = 1  # Second trace added
+
+    # YZ plane (sagittal) - row 1, col 2
+    yz_heatmap = go.Heatmap(
+        z=downsample_slice(fsum[:, :, z_slice], heatmap_quality),
+        colorscale=colorscale,
+        zmin=0,
+        zmax=np.max(fsum) if np.max(fsum) > 0 else 1,
+        showscale=False
+    )
+    fig.add_trace(yz_heatmap, row=1, col=2)
+    yz_plane_traces["heatmap"] = 2  # Third trace added
+
+    # Current trace index counter
+    trace_idx = 3
+
+    # Add quiver traces for each channel
+    for c in range(channels):
+        # XY plane quivers
+        U = data[x_slice, :, :, c, 0]
+        V = data[x_slice, :, :, c, 1]
+        Y, Z = np.mgrid[0:y_max:step, 0:z_max:step]
+        quiver_trace = create_line_quiver_2d_optimized(
+            Y, Z, U[::step, ::step], V[::step, ::step],
+            colors[c % len(colors)],
+            heatmap_quality
+        )
+        fig.add_trace(quiver_trace, row=1, col=1)
+        xy_plane_traces["quivers"].append(trace_idx)
+        trace_idx += 1
+
+        # XZ plane quivers
+        U = data[:, y_slice, :, c, 0]
+        V = data[:, y_slice, :, c, 2]
+        X, Z = np.mgrid[0:x_max:step, 0:z_max:step]
+        quiver_trace = create_line_quiver_2d_optimized(
+            X, Z, U[::step, ::step], V[::step, ::step],
+            colors[c % len(colors)],
+            heatmap_quality
+        )
+        fig.add_trace(quiver_trace, row=2, col=1)
+        xz_plane_traces["quivers"].append(trace_idx)
+        trace_idx += 1
+
+        # YZ plane quivers
+        U = data[:, :, z_slice, c, 0]
+        V = data[:, :, z_slice, c, 1]
+        X, Y_ = np.mgrid[0:x_max:step, 0:y_max:step]
+        quiver_trace = create_line_quiver_2d_optimized(
+            X, Y_, U[::step, ::step].T, V[::step, ::step].T,
+            colors[c % len(colors)],
+            heatmap_quality
+        )
+        fig.add_trace(quiver_trace, row=1, col=2)
+        yz_plane_traces["quivers"].append(trace_idx)
+        trace_idx += 1
+
+    # Initialize default visibility state
+    for i in range(trace_idx):
+        # Heatmaps are always visible
+        if i in [xy_plane_traces["heatmap"], xz_plane_traces["heatmap"], yz_plane_traces["heatmap"]]:
+            fig.data[i].visible = True
+        # Show all quivers or just first channel depending on settings
+        elif show_all_channels:
+            fig.data[i].visible = True
+        # Otherwise, only show first channel's quivers
+        elif i in [xy_plane_traces["quivers"][0], xz_plane_traces["quivers"][0], yz_plane_traces["quivers"][0]]:
+            fig.data[i].visible = True
+        else:
+            fig.data[i].visible = False
+
+    # Create sliders with a completely different approach
+    sliders = []
+
+    # X slider
+    x_steps = []
+    for x_idx in x_indices:
+        # Create a single update that includes all traces
+        step_data = {}
+        step_indices = []
+
+        # Add heatmap update
+        step_indices.append(xy_plane_traces["heatmap"])
+        step_data["z"] = [downsample_slice(fsum[x_idx, :, :].T, heatmap_quality)]
+
+        # Add quiver updates (separately for each channel)
+        for c in range(channels):
+            if show_all_channels or c == 0:
+                U = data[x_idx, :, :, c, 0]
+                V = data[x_idx, :, :, c, 1]
+                Y, Z = np.mgrid[0:y_max:step, 0:z_max:step]
+                quiver = create_line_quiver_2d_optimized(
+                    Y, Z, U[::step, ::step], V[::step, ::step],
+                    colors[c % len(colors)],
+                    heatmap_quality
+                )
+
+                # Use index-based keys for multiple trace updates
+                quiver_idx = xy_plane_traces["quivers"][c]
+                step_indices.append(quiver_idx)
+
+                # Each trace property needs a corresponding entry in the data array
+                if "x" not in step_data:
+                    step_data["x"] = []
+                if "y" not in step_data:
+                    step_data["y"] = []
+
+                # Add None for heatmap (doesn't need x/y update)
+                if len(step_data["x"]) < len(step_indices) - 1:
+                    step_data["x"].append(None)
+                    step_data["y"].append(None)
+
+                # Add quiver data
+                step_data["x"].append(quiver.x)
+                step_data["y"].append(quiver.y)
+
+        # Create a single step for this slice
+        x_steps.append({
+            "method": "restyle",
+            "label": str(x_idx),
+            "args": [step_data, step_indices]
+        })
+
+    sliders.append({
+        "active": x_indices.index(x_slice) if x_slice in x_indices else 0,
+        "currentvalue": {"prefix": "X: " if simplified_ui else "X Slice: "},
+        "steps": x_steps,
+        "x": 0.05,
+        "y": 0.0,
+        "len": 0.25,
+        "pad": {"t": 50}
+    })
+
+    # Y slider
+    y_steps = []
+    for y_idx in y_indices:
+        # Create a single update that includes all traces
+        step_data = {}
+        step_indices = []
+
+        # Add heatmap update
+        step_indices.append(xz_plane_traces["heatmap"])
+        step_data["z"] = [downsample_slice(fsum[:, y_idx, :].T, heatmap_quality)]
+
+        # Add quiver updates (separately for each channel)
+        for c in range(channels):
+            if show_all_channels or c == 0:
+                U = data[:, y_idx, :, c, 0]
+                V = data[:, y_idx, :, c, 2]
+                X, Z = np.mgrid[0:x_max:step, 0:z_max:step]
+                quiver = create_line_quiver_2d_optimized(
+                    X, Z, U[::step, ::step], V[::step, ::step],
+                    colors[c % len(colors)],
+                    heatmap_quality
+                )
+
+                # Use index-based keys for multiple trace updates
+                quiver_idx = xz_plane_traces["quivers"][c]
+                step_indices.append(quiver_idx)
+
+                # Each trace property needs a corresponding entry in the data array
+                if "x" not in step_data:
+                    step_data["x"] = []
+                if "y" not in step_data:
+                    step_data["y"] = []
+
+                # Add None for heatmap (doesn't need x/y update)
+                if len(step_data["x"]) < len(step_indices) - 1:
+                    step_data["x"].append(None)
+                    step_data["y"].append(None)
+
+                # Add quiver data
+                step_data["x"].append(quiver.x)
+                step_data["y"].append(quiver.y)
+
+        # Create a single step for this slice
+        y_steps.append({
+            "method": "restyle",
+            "label": str(y_idx),
+            "args": [step_data, step_indices]
+        })
+
+    sliders.append({
+        "active": y_indices.index(y_slice) if y_slice in y_indices else 0,
+        "currentvalue": {"prefix": "Y: " if simplified_ui else "Y Slice: "},
+        "steps": y_steps,
+        "x": 0.35,
+        "y": 0.0,
+        "len": 0.25,
+        "pad": {"t": 50}
+    })
+
+    # Z slider
+    z_steps = []
+    for z_idx in z_indices:
+        # Create a single update that includes all traces
+        step_data = {}
+        step_indices = []
+
+        # Add heatmap update
+        step_indices.append(yz_plane_traces["heatmap"])
+        step_data["z"] = [downsample_slice(fsum[:, :, z_idx], heatmap_quality)]
+
+        # Add quiver updates (separately for each channel)
+        for c in range(channels):
+            if show_all_channels or c == 0:
+                U = data[:, :, z_idx, c, 0]
+                V = data[:, :, z_idx, c, 1]
+                X, Y_ = np.mgrid[0:x_max:step, 0:y_max:step]
+                quiver = create_line_quiver_2d_optimized(
+                    X, Y_, U[::step, ::step].T, V[::step, ::step].T,
+                    colors[c % len(colors)],
+                    heatmap_quality
+                )
+
+                # Use index-based keys for multiple trace updates
+                quiver_idx = yz_plane_traces["quivers"][c]
+                step_indices.append(quiver_idx)
+
+                # Each trace property needs a corresponding entry in the data array
+                if "x" not in step_data:
+                    step_data["x"] = []
+                if "y" not in step_data:
+                    step_data["y"] = []
+
+                # Add None for heatmap (doesn't need x/y update)
+                if len(step_data["x"]) < len(step_indices) - 1:
+                    step_data["x"].append(None)
+                    step_data["y"].append(None)
+
+                # Add quiver data
+                step_data["x"].append(quiver.x)
+                step_data["y"].append(quiver.y)
+
+        # Create a single step for this slice
+        z_steps.append({
+            "method": "restyle",
+            "label": str(z_idx),
+            "args": [step_data, step_indices]
+        })
+
+    sliders.append({
+        "active": z_indices.index(z_slice) if z_slice in z_indices else 0,
+        "currentvalue": {"prefix": "Z: " if simplified_ui else "Z Slice: "},
+        "steps": z_steps,
+        "x": 0.65,
+        "y": 0.0,
+        "len": 0.25,
+        "pad": {"t": 50}
+    })
+
+    # Channel dropdown - simplified if requested
+    updatemenus = []
+    if channels > 1 and not show_all_channels:
+        buttons = []
+        for c in range(channels):
+            visibility = []
+
+            # Set visibility for all traces
+            for i in range(trace_idx):
+                # Heatmaps are always visible
+                if i in [xy_plane_traces["heatmap"], xz_plane_traces["heatmap"], yz_plane_traces["heatmap"]]:
+                    visibility.append(True)
+                # Only show current channel's quivers
+                elif i in [xy_plane_traces["quivers"][c], xz_plane_traces["quivers"][c], yz_plane_traces["quivers"][c]]:
+                    visibility.append(True)
+                # Hide other channel's quivers
+                else:
+                    visibility.append(False)
+
+            buttons.append({
+                "method": "update",
+                "label": str(c),
+                "args": [{"visible": visibility}]
+            })
+
+        updatemenus.append({
+            "buttons": buttons,
+            "direction": "right" if simplified_ui else "up",
+            "showactive": True,
+            "active": 0,
+            "x": 0.85,
+            "y": 0.05,
+            "xanchor": "left",
+            "yanchor": "bottom"
+        })
+
+    # Update layout with all sliders and dropdown
+    fig.update_layout(
+        sliders=sliders,
+        updatemenus=updatemenus,
+        paper_bgcolor="black",
+        plot_bgcolor="black",
+        font=dict(color="white"),
+        margin=dict(l=0, r=0, t=10, b=50),
+        height=height,
+        width=width,
+    )
+
+    # Turn off axes
+    fig.update_xaxes(showticklabels=False, showgrid=False, zeroline=False)
+    fig.update_yaxes(showticklabels=False, showgrid=False, zeroline=False)
+
+    return fig
 
 
 def plot_spherical_function(
@@ -498,203 +865,6 @@ def plot_spherical_distribution_fod(
     ax.axis("off")
     return ax
 
-def orthoview_compact(data, vmin=None, vmax=None, channel_names=None, downsample_factor=1, slider_step=5, precision='float32'):
-    """Optimized version of orthoview that produces smaller HTML files.
-
-    Args:
-        data: 3D or 4D numpy array (x, y, z, [channels])
-        vmin: Minimum value for colorscale
-        vmax: Maximum value for colorscale
-        channel_names: Names for channels in dropdown
-        downsample_factor: Factor to downsample data by
-        slider_step: Step size for slice sliders
-        precision: Data precision ('float32', 'float16', or 'int8')
-
-    Returns:
-        plotly figure object
-    """
-    # Check for 4D data (x, y, z, channels)
-    if data.ndim == 3:
-        data = data[..., np.newaxis]  # Add channel dimension if missing
-
-    # Convert data precision if requested
-    if precision == 'float16' and data.dtype != np.float16:
-        data = data.astype(np.float16)
-    elif precision == 'int8' and data.dtype != np.int8:
-        # Scale to 0-255 range for int8
-        data_min = data.min()
-        data_max = data.max()
-        data = ((data - data_min) / (data_max - data_min) * 255).astype(np.int8)
-
-    # Apply downsampling if requested
-    if downsample_factor > 1:
-        # Use simple striding for downsampling
-        data = data[::downsample_factor, ::downsample_factor, ::downsample_factor, :]
-
-    x_max, y_max, z_max, channels = data.shape
-
-    if vmin is None:
-        vmin = np.quantile(data, 0.01)
-    if vmax is None:
-        vmax = np.quantile(data, 0.99)
-
-    # Pad to cube
-    max_dim = max(x_max, y_max, z_max)
-    x_pad = (max_dim - x_max) // 2
-    y_pad = (max_dim - y_max) // 2
-    z_pad = (max_dim - z_max) // 2
-
-    data = np.pad(data, ((x_pad, x_pad), (y_pad, y_pad), (z_pad, z_pad), (0, 0)), mode='constant')
-    x_max, y_max, z_max, _ = data.shape
-
-    # Initial slices
-    x_slice = x_max // 2
-    y_slice = y_max // 2
-    z_slice = z_max // 2
-
-    # Create figure with your existing layout
-    fig = make_subplots(
-        rows=2,
-        cols=2,
-        column_widths=[0.35, 0.65],
-        specs=[[{}, {"rowspan": 2}], [{"colspan": 1}, None]],
-        vertical_spacing=0.0,
-        horizontal_spacing=0.0,
-    )
-
-    # Create traces for all channels (always 3 per channel)
-    traces = []
-    for c in range(channels):
-        traces.append(go.Heatmap(z=data[x_slice, :, :, c].T, colorscale='gray', zmin=vmin, zmax=vmax, showscale=False))
-        traces.append(go.Heatmap(z=data[:, y_slice, :, c].T, colorscale='gray', zmin=vmin, zmax=vmax, showscale=False))
-        traces.append(go.Heatmap(z=data[:, :, z_slice, c], colorscale='gray', zmin=vmin, zmax=vmax, showscale=False))
-
-    # Add all traces to figure
-    for i, trace in enumerate(traces):
-        if i % 3 == 0:
-            fig.add_trace(trace, row=1, col=1)
-        elif i % 3 == 1:
-            fig.add_trace(trace, row=2, col=1)
-        else:
-            fig.add_trace(trace, row=1, col=2)
-
-    # Initialize visibility (only show channel 0)
-    initial_visibility = []
-    for c in range(channels):
-        initial_visibility.extend([c == 0] * 3)
-
-    fig.update_traces(visible=False)
-    for i, v in enumerate(initial_visibility):
-        fig.data[i].visible = v
-
-    # Create reduced list of slider indices with the given step size
-    x_indices = list(range(0, x_max, slider_step))
-    y_indices = list(range(0, y_max, slider_step))
-    z_indices = list(range(0, z_max, slider_step))
-
-    # Ensure the middle slice is included
-    if x_slice not in x_indices:
-        x_indices = sorted(x_indices + [x_slice])
-    if y_slice not in y_indices:
-        y_indices = sorted(y_indices + [y_slice])
-    if z_slice not in z_indices:
-        z_indices = sorted(z_indices + [z_slice])
-
-    # Sliders with reduced number of steps
-    sliders = [
-        dict(
-            active=x_indices.index(x_slice) if x_slice in x_indices else 0,
-            currentvalue={"prefix": "X Slice: ","suffix": ""},
-            steps=[
-                dict(
-                    method="restyle",
-                    label=str(i),
-                    args=[
-                        {"z": [data[i, :, :, c].T for c in range(channels)]},
-                        list(range(0, 3 * channels, 3))
-                    ]
-                ) for i in x_indices
-            ],
-            x=0.,
-            y=0.13,
-            len=0.25
-        ),
-        dict(
-            active=y_indices.index(y_slice) if y_slice in y_indices else 0,
-            currentvalue={"prefix": "Y Slice: ","suffix": ""},
-            steps=[
-                dict(
-                    method="restyle",
-                    label=str(i),
-                    args=[
-                        {"z": [data[:, i, :, c].T for c in range(channels)]},
-                        list(range(1, 3 * channels, 3))
-                    ]
-                ) for i in y_indices
-            ],
-            x=0.3,
-            y=0.13,
-            len=0.25
-        ),
-        dict(
-            active=z_indices.index(z_slice) if z_slice in z_indices else 0,
-            currentvalue={"prefix": "Z Slice: ", "suffix": ""},
-            steps=[
-                dict(
-                    method="restyle",
-                    label=str(i),
-                    args=[
-                        {"z": [data[:, :, i, c] for c in range(channels)]},
-                        list(range(2, 3 * channels, 3))
-                    ]
-                ) for i in z_indices
-            ],
-            x=0.6,
-            y=0.13,
-            len=0.25
-        ),
-    ]
-
-    # Channel dropdown (now correctly toggling visibility of the correct 3 traces per channel)
-    channel_dropdown = dict(
-        buttons=[
-            dict(
-                label=str(c) if channel_names is None else channel_names[c],
-                method="update",
-                args=[
-                    {"visible": [
-                        (i // 3) == c for i in range(3 * channels)
-                    ]}
-                ],
-            ) for c in range(channels)
-        ],
-        direction="up",
-        showactive=True,
-        active=0,
-        x=0.85,
-        y=0.,
-        xanchor="left",
-        yanchor="bottom",
-        font=dict(color="white"),
-    )
-
-    # Update layout with all sliders and dropdown
-    fig.update_layout(
-        sliders=sliders,
-        updatemenus=[channel_dropdown],
-        paper_bgcolor="black",
-        plot_bgcolor="black",
-        font=dict(color="white"),
-        margin=dict(l=0, r=0, t=10, b=20),
-        height=500,
-        width=800,
-    )
-
-    # Turn off axes
-    fig.update_xaxes(showticklabels=False)
-    fig.update_yaxes(showticklabels=False)
-
-    return fig
 
 def save_orthoview_html(fig, filepath, include_plotlyjs='cdn'):
     """Save orthoview figure to HTML file with optimized settings.
@@ -715,10 +885,10 @@ def save_orthoview_html(fig, filepath, include_plotlyjs='cdn'):
         include_mathjax=False,
     )
 
-def orthoview_ultracompact(data, vmin=None, vmax=None, channel_names=None,
+def orthoview_ultracompact(data, vmin=None, vmax=None, channel_names=None, color_map='gray',
                          downsample_factor=1, slider_step=10,
                          heatmap_quality=1.0, simplified_ui=False,
-                         precision='float32'):
+                         precision=np.float32):
     """Ultra-optimized version of orthoview that produces minimal HTML files.
 
     Args:
@@ -739,26 +909,36 @@ def orthoview_ultracompact(data, vmin=None, vmax=None, channel_names=None,
     if data.ndim == 3:
         data = data[..., np.newaxis]  # Add channel dimension if missing
 
+
+
     # Convert data precision if requested
-    if precision == 'float16' and data.dtype != np.float16:
-        data = data.astype(np.float16)
-    elif precision == 'int8' and data.dtype != np.int8:
+    if precision == np.float16 or precision == np.float32 or precision == np.float64:
+        # Compute quantiles before converting to avoid float16 overflow
+        if vmin is None:
+            vmin = np.quantile(data, 0.01)
+            vmin = vmin.astype(precision)
+        if vmax is None:
+            vmax = np.quantile(data, 0.99)
+            vmax = vmax.astype(precision)
+        data = data.astype(precision)
+    elif precision == np.int8:
         # Scale to 0-255 range for int8
         data_min = data.min()
-        data_max = data.max()
+        data_max = data.max() + 1e-2
         data = ((data - data_min) / (data_max - data_min) * 255).astype(np.int8)
-
+        vmin = np.quantile(data, 0.01)
+        vmax = np.quantile(data, 0.99)
     # Apply downsampling if requested
     if downsample_factor > 1:
         # Use simple striding for downsampling
         data = data[::downsample_factor, ::downsample_factor, ::downsample_factor, :]
+        if vmin is None:
+            vmin = np.quantile(data, 0.01)
+        if vmax is None:
+            vmax = np.quantile(data, 0.99)
 
     x_max, y_max, z_max, channels = data.shape
 
-    if vmin is None:
-        vmin = np.quantile(data, 0.01)
-    if vmax is None:
-        vmax = np.quantile(data, 0.99)
 
     # Pad to cube
     max_dim = max(x_max, y_max, z_max)
@@ -814,9 +994,9 @@ def orthoview_ultracompact(data, vmin=None, vmax=None, channel_names=None,
         xz_data = downsample_slice(data[:, y_slice, :, c].T, heatmap_quality)
         yz_data = downsample_slice(data[:, :, z_slice, c], heatmap_quality)
 
-        traces.append(go.Heatmap(z=xy_data, colorscale='gray', zmin=vmin, zmax=vmax, showscale=False))
-        traces.append(go.Heatmap(z=xz_data, colorscale='gray', zmin=vmin, zmax=vmax, showscale=False))
-        traces.append(go.Heatmap(z=yz_data, colorscale='gray', zmin=vmin, zmax=vmax, showscale=False))
+        traces.append(go.Heatmap(z=xy_data, colorscale=color_map, zmin=vmin, zmax=vmax, showscale=False))
+        traces.append(go.Heatmap(z=xz_data, colorscale=color_map, zmin=vmin, zmax=vmax, showscale=False))
+        traces.append(go.Heatmap(z=yz_data, colorscale=color_map, zmin=vmin, zmax=vmax, showscale=False))
 
     # Add all traces to figure
     for i, trace in enumerate(traces):
@@ -953,8 +1133,8 @@ def orthoview_ultracompact(data, vmin=None, vmax=None, channel_names=None,
             direction="up" if not simplified_ui else "right",
             showactive=True,
             active=0,
-            x=0.85,
-            y=0.,
+            x=0.875,
+            y=0.05,
             xanchor="left",
             yanchor="bottom",
             font=dict(color="white"),
@@ -968,13 +1148,13 @@ def orthoview_ultracompact(data, vmin=None, vmax=None, channel_names=None,
         paper_bgcolor="black",
         plot_bgcolor="black",
         font=dict(color="white"),
-        margin=dict(l=0, r=0, t=10, b=20),
-        height=500,
-        width=800,
+        margin=dict(l=0, r=0, t=10, b=50),
+        height=1000,
+        width=1600,
     )
 
     # Turn off axes
-    fig.update_xaxes(showticklabels=False)
-    fig.update_yaxes(showticklabels=False)
+    fig.update_xaxes(showticklabels=False, showgrid=False, zeroline=False)
+    fig.update_yaxes(showticklabels=False, showgrid=False, zeroline=False)
 
     return fig
