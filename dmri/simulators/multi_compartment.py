@@ -404,6 +404,18 @@ class MultiShellBall3StickSharedDiffusivity(MultiCompartment):
     shared_parameter_type = SharedMultiShellDiffusivity
 
 
+class MultiShellBall3StickSharedDiffusivityUniformFraction(MultiCompartment):
+    model_types = [
+        MultiShellStaticBall,
+        MultiShellStaticStick,
+        MultiShellStaticStick,
+        MultiShellStaticStick,
+    ]
+    noise_types = [BoundedGaussianNoise]
+    fraction_prior = jnp.ones(4)
+    shared_parameter_type = SharedMultiShellDiffusivity
+
+
 class BallStick(MultiCompartment):
     model_types = [Ball, Stick]
     noise_types = []
