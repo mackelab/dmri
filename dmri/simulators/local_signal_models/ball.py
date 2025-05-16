@@ -162,8 +162,8 @@ class MultiShellBall(Ball):
             The log signal
         """
         scaling = lam**2 / lam_std**2
-        logS = scaling * jnp.log(lam / (lam + aquisition_scheme.bvals * lam_std**2))
-        return logS
+        logS = jnp.log(lam) - jnp.log(lam + aquisition_scheme.bvals * lam_std**2)
+        return scaling * logS
 
     @classmethod
     def to_theta(cls, lam: float, lam_std: float) -> ArrayLike:

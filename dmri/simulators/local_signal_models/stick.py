@@ -218,10 +218,10 @@ class MultiShellStick(Stick):
 
         scaling = lam_par**2 / lam_par_std**2
         dot_product = (jnp.sum(bvecs * mu_cart, axis=-1)) ** 2
-        logS = scaling * jnp.log(
-            lam_par / (lam_par + bvals * dot_product * lam_par_std**2)
+        logS = jnp.log(lam_par) - jnp.log(
+            lam_par + bvals * dot_product * lam_par_std**2
         )
-        return logS
+        return scaling * logS
 
     @classmethod
     def to_theta(cls, mu: ArrayLike, lam_par: float, lam_par_std: float) -> ArrayLike:
