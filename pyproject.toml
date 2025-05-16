@@ -37,6 +37,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
 dmri = "dmri.train.hydra_script:main"
+dmri_eval = "dmri.train.hydra_script_eval:main"
 
 [tool.black]
 line-length = 88
