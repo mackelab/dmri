@@ -107,7 +107,7 @@ class EDMSimformer(EDM):
         # Prevent automatic parameter updates
         super().__init__(transformer)
 
-    def loss(self, rng, theta, tokenizer, y, model_mask, tokens_cfg, target_score=None, attention_mask=None, loss_mask=None, weight_by_complexity=False):
+    def loss(self, rng, theta, tokenizer, y, model_mask, tokens_cfg, target_score=None, attention_mask=None, loss_mask=None, weight_by_complexity=False, cut_off_tsm=0.1):
         assert loss_mask is None
         rng0, rng1 = jax.random.split(rng)
         t = self.noise_schedule(rng0, (theta.shape[0],))
@@ -116,11 +116,10 @@ class EDMSimformer(EDM):
         theta_denoised = self(t,thetas_noisy, tokenizer, y=y, model_mask=model_mask, tokens_cfg=tokens_cfg, attention_mask=attention_mask)
         loss_denoised = self.weight_fn(t) * jnp.sum((theta_denoised - theta)**2, axis=-1, keepdims=True)
 
-        if target_score is not None:
+        if target_score is not None and cut_off_tsm > 0.:
             score_est = (theta_denoised - thetas_noisy) / std**2
-            weight_tsm = std**2 / (1 + std**2) * jnp.where((std < 0.1), 1, 0) # Only use TSM for early times
+            weight_tsm = std**2 / (1 + std**2) * jnp.where((std < cut_off_tsm), 1, 0) # Only use TSM for early times
             loss_score = weight_tsm*jnp.sum((score_est - target_score)**2, axis=-1, keepdims=True)
-            #print("Target and denoised loss: ", loss_denoised.mean(), loss_score.mean())
             loss = loss_denoised + loss_score
         else:
             loss = loss_denoised

@@ -171,6 +171,7 @@ def _main(cfg: DictConfig):
             mask_prior=p_mask,
             target_score=target_score,
             weight_by_complexity=cfg.train.weight_by_complexity,
+            cut_off_tsm=cfg.train.cut_off_tsm,
         )
         loss1  = cfg.train.model_selection_weight * losses[0]
         loss2 = cfg.train.model_inference_loss_weight * losses[1]
