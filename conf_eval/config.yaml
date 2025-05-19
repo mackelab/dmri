@@ -12,11 +12,13 @@ seed: 1
 
 sample_mask: true
 sample_theta: true
+select_models: true
 
 
 defaults:
   - _self_
   - mask_sample: default
   - theta_sample: default
+  - model_selection: none
   - export: ball3stick
   - export_model_selection: ball3stick

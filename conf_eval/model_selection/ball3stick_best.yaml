@@ -2,4 +2,4 @@ feasible_models:
   - [True, True, False, False, True]
   - [True, True, True, False, True]
   - [True, True, True, True, True]
-incoperate_models: "best"
+name: "best"

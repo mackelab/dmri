@@ -133,6 +133,8 @@ class StreamDataLoader:
                 # PyTree-friendly conversion to CPU
                 # This handles cases where data is a nested structure (PyTree)
                 data_cpu = data  # jax.tree_map(np.array, data)
+                # TODO This is a hack to avoid NaNs and Infs in the data
+                data_cpu = jax.tree_map(lambda x: jax.numpy.nan_to_num(x, nan=0, posinf=0, neginf=0), data_cpu)
 
                 production_time = time.time() - start_time
                 with threading.Lock():

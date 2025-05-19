@@ -32,6 +32,7 @@ from dmri.simulators.multi_compartment import (
     Ball3StickSharedDiffusivity,
     Ball3StickSharedDiffusivityUniformFraction,
     MultiShellBall3StickSharedDiffusivity,
+    MultiShellBall3StickSharedDiffusivityGammaPrior,
     MultiShellBall3StickSharedDiffusivityUniformFraction,
 )
 
@@ -63,6 +64,7 @@ from dmri.simulators.multi_compartment import (
         Ball3StickSharedDiffusivityUniformFraction,
         MultiShellBall3StickSharedDiffusivity,
         MultiShellBall3StickSharedDiffusivityUniformFraction,
+        MultiShellBall3StickSharedDiffusivityGammaPrior,
     ]
 )
 def compartment_model(request):
@@ -116,6 +118,28 @@ def test_jitable(compartment_model):
     _ = compartment_model.signal(acq)
 
     assert jnp.allclose(signal, signal_jit, atol=1e-3), "JIT failed"
+
+
+def test_stabally_differentiable(compartment_model):
+
+    bvals = np.random.uniform(size=(10,)) * 1000
+    bvecs = np.random.randn(10, 3)
+    bvecs = bvecs / np.linalg.norm(bvecs, axis=-1, keepdims=True)
+
+    acq = acquisition_scheme(bvals, bvecs)
+
+    # Signal emulation
+    def ll(theta):
+        model = compartment_model.__class__.from_theta(theta)
+        signal = model.signal(acq)
+        return jnp.mean((signal - 1)**2)
+
+    grad_fn = jax.grad(ll)
+    thetas = np.random.randn(100, compartment_model.theta_dim)
+    grads = jax.vmap(grad_fn)(thetas)
+    assert jnp.all(jnp.isfinite(grads)), "Gradient is not finite"
+
+
 
 def test_signal_properties(compartment_model):
     """Test fundamental properties of the signal."""

@@ -1,7 +1,3 @@
 method: smc_corrected
 num_samples: 50
 eval_batch_size: 20_000
-
-defaults:
-  - _self_
-  - constraints: none

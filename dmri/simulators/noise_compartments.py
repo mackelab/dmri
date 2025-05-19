@@ -36,7 +36,7 @@ class RicianNoise(NoiseCompartment):
         """Transforms the natural parameters to the optimization parameters which are
         assumed to be normally distributed.
         """
-        return (jnp.log(snr),)
+        return jnp.log(snr)
 
     @classmethod
     def to_params(cls, theta: ArrayLike) -> Any:
@@ -64,7 +64,7 @@ class GaussianNoise(NoiseCompartment):
         """Transforms the natural parameters to the optimization parameters which are
         assumed to be normally distributed.
         """
-        return (jnp.log(snr),)
+        return jnp.log(snr)
 
     @classmethod
     def to_params(cls, theta: ArrayLike) -> Any:
@@ -89,7 +89,7 @@ class BoundedRicianNoise(RicianNoise):
         theta_u = (snr - cls.min_snr) / (cls.max_snr - cls.min_snr)
         theta = jax.scipy.stats.norm.ppf(theta_u)
         # Apply inverse sigmoid
-        return (theta,)
+        return theta
 
     @classmethod
     def to_params(cls, theta: ArrayLike) -> Any:
@@ -115,7 +115,7 @@ class BoundedGaussianNoise(GaussianNoise):
         theta_u = (snr - cls.min_snr) / (cls.max_snr - cls.min_snr)
         theta = jax.scipy.stats.norm.ppf(theta_u)
         # Apply inverse sigmoid
-        return (theta,)
+        return theta
 
     @classmethod
     def to_params(cls, theta: ArrayLike) -> Any:

@@ -161,9 +161,7 @@ class MultiShellBall(Ball):
         ArrayLike
             The log signal
         """
-        scaling = lam**2 / lam_std**2
-        logS = jnp.log(lam) - jnp.log(lam + aquisition_scheme.bvals * lam_std**2)
-        return scaling * logS
+        return multi_shell_ball_log_signal_fn(aquisition_scheme.bvals, lam, lam_std)
 
     @classmethod
     def to_theta(cls, lam: float, lam_std: float) -> ArrayLike:
@@ -254,4 +252,36 @@ class MultiShellStaticBall(MultiShellBall):
         ArrayLike
             The log signal
         """
-        return MultiShellBall.log_signal_fn(aquisition_scheme, cls.lam, cls.lam_std)
+        return multi_shell_ball_log_signal_fn(aquisition_scheme.bvals, cls.lam, cls.lam_std)
+
+
+def multi_shell_ball_log_signal_fn(
+    bvals: ArrayLike,
+    lam: float,
+    lam_std: float,
+) -> ArrayLike:
+    """Implementation with float32 numerical stability for MultiShellBall.
+
+    Parameters
+    ----------
+    bvals : ArrayLike
+        The b-values of the acquisition scheme
+    lam : float
+        The mean diffusivity
+    lam_std : float
+        The standard deviation of the diffusivity
+
+    Returns
+    -------
+    ArrayLike
+        The log signal
+    """
+    nugget = jnp.finfo(bvals.dtype).eps
+
+    # Add small constant to prevent division by zero
+    scaling = (lam / (lam_std + nugget))**2
+
+    # Use stable log computation
+    logS = jnp.log(lam + nugget) - jnp.log(lam + bvals * lam_std**2 + nugget)
+
+    return scaling * logS
