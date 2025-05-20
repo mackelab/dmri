@@ -24,6 +24,7 @@ class DMRIInferenceModelConfig:
     simulator: type[MultiCompartment]
     model_dim: int = 64
     use_attention_mask: bool = False
+    inference_loss_type: str = "x0"
     tokenizer = DMRITokenizer
     embedding_cfg: DMRIEmbeddingConfig = field(default_factory=DMRIEmbeddingConfig)
     model_selection_cfg: DMRIModelSelectionConfig = field(
@@ -39,6 +40,7 @@ class DMRIInferenceModelConfigMaskPriorAmortized:
     simulator: type[MultiCompartment]
     model_dim: int = 64
     use_attention_mask: bool = True
+    inference_loss_type: str = "x0"
     tokenizer = DMRITokenizer
     embedding_cfg: DMRIEmbeddingConfig = field(default_factory=DMRIEmbeddingConfig)
     model_selection_cfg: DMRIModelSelectionConfig = field(
@@ -53,6 +55,7 @@ class DMRIInferenceModelConfigMaskPriorAmortizedPP:
     simulator: type[MultiCompartment]
     model_dim: int = 64
     use_attention_mask: bool = True
+    inference_loss_type: str = "x0"
     tokenizer = DMRITokenizerPP
     embedding_cfg: DMRIEmbeddingConfig = field(default_factory=DMRIEmbeddingConfig)
     model_selection_cfg: DMRIModelSelectionConfig = field(
@@ -99,6 +102,7 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
             rngs=rngs,
             model_dim=cfg.model_dim,
             **cfg.theta_inference_cfg.__dict__,
+            loss_type=cfg.inference_loss_type,
         )
         self.inference_decoder = simformer
 

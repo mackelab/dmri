@@ -92,6 +92,7 @@ class EDMSimformer(EDM):
         widening_factor=3,
         dropout_rate=None,
         enable_cross_attention=True,
+        loss_type="x0",
     ):
         transformer = DiffusionTransformer(
             rngs,
@@ -105,24 +106,44 @@ class EDMSimformer(EDM):
             enable_cross_attention=enable_cross_attention,
         )
         # Prevent automatic parameter updates
-        super().__init__(transformer)
+        super().__init__(transformer, loss_type=loss_type)
 
     def loss(self, rng, theta, tokenizer, y, model_mask, tokens_cfg, target_score=None, attention_mask=None, loss_mask=None, weight_by_complexity=False, cut_off_tsm=0.1):
         assert loss_mask is None
         rng0, rng1 = jax.random.split(rng)
         t = self.noise_schedule(rng0, (theta.shape[0],))
         std = self.std_fn(t)
-        thetas_noisy = theta + std * jax.random.normal(rng1, theta.shape)
-        theta_denoised = self(t,thetas_noisy, tokenizer, y=y, model_mask=model_mask, tokens_cfg=tokens_cfg, attention_mask=attention_mask)
-        loss_denoised = self.weight_fn(t) * jnp.sum((theta_denoised - theta)**2, axis=-1, keepdims=True)
+        eps = jax.random.normal(rng1, theta.shape)
+        thetas_noisy = theta + std * eps
+        if self.loss_type == "x0":
+            theta_denoised = self.denoise(t,thetas_noisy, tokenizer, y=y, model_mask=model_mask, tokens_cfg=tokens_cfg, attention_mask=attention_mask)
+            weight = self.weight_fn(t)
+            loss_denoised = weight * jnp.sum((theta_denoised - theta)**2, axis=-1, keepdims=True)
+            loss = loss_denoised
+        elif self.loss_type == "v":
+            print("using v loss")
+            total_std = jnp.sqrt(1. + std**2)
+            alpha_t = 1. / total_std
+            sigma_t = std / total_std
+            v_target = alpha_t * eps - sigma_t * theta
+            theta_denoised = self.denoise(t,thetas_noisy, tokenizer, y=y, model_mask=model_mask, tokens_cfg=tokens_cfg, attention_mask=attention_mask)
+            eps_pred = (thetas_noisy - theta_denoised) / std
+            v = alpha_t * eps_pred - sigma_t * theta_denoised
+            weight = self.weight_fn_v(t)
+            loss_v = weight * jnp.sum((v - v_target)**2, axis=-1, keepdims=True)
+            loss = loss_v
+        else:
+            raise ValueError(f"Loss type {self.loss_type} not supported")
+
+
 
         if target_score is not None and cut_off_tsm > 0.:
             score_est = (theta_denoised - thetas_noisy) / std**2
-            weight_tsm = std**2 / (1 + std**2) * jnp.where((std < cut_off_tsm), 1, 0) # Only use TSM for early times
+            # Target score norm
+            target_score_norm = jnp.sum(target_score**2, axis=-1, keepdims=True).mean()
+            weight_tsm = 1/target_score_norm * std**2  * jnp.where((std < cut_off_tsm), 1, 0) # Only use TSM for early times
             loss_score = weight_tsm*jnp.sum((score_est - target_score)**2, axis=-1, keepdims=True)
-            loss = loss_denoised + loss_score
-        else:
-            loss = loss_denoised
+            loss += loss_score
 
         if weight_by_complexity:
             loss = loss * (model_mask.sum(axis=-1, keepdims=True) + 0.01)
