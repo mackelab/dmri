@@ -15,7 +15,7 @@ from plotly.subplots import make_subplots
 
 
 def orthoview_quiver_plotly(data, fractions, step=1, colors=None,
-                            xy_slice=None, xz_slice=None, yz_slice=None):
+                            xy_slice=None, xz_slice=None, yz_slice=None, height=None, width=None):
     if data.ndim != 5 or data.shape[-1] != 3:
         raise ValueError("Data must have shape (x, y, z, channels, 3) where last dim is vector (u, v, w)")
 
@@ -155,8 +155,8 @@ def orthoview_quiver_plotly(data, fractions, step=1, colors=None,
         plot_bgcolor="black",
         font=dict(color="white"),
         margin=dict(l=0, r=0, t=10, b=20),
-        height=500,
-        width=800,
+        height=height,
+        width=width,
     )
     fig.update_xaxes(showticklabels=False, showgrid=False, zeroline=False)
     fig.update_yaxes(showticklabels=False, showgrid=False, zeroline=False)
@@ -169,7 +169,7 @@ def orthoview_quiver_ultracompact(data, fractions, colors=None, step=1,
                                  heatmap_quality=1.0, simplified_ui=False,
                                  precision=np.float32, colorscale='gray',
                                  arrow_scale=1.0, arrow_width=1,
-                                 height=1000, width=1600,
+                                 height=None, width=None,
                                  show_all_channels=True):
     """Ultra-optimized version of orthoview_quiver_plotly that produces minimal HTML files.
 
@@ -688,6 +688,230 @@ def orthoview_quiver_ultracompact(data, fractions, colors=None, step=1,
     return fig
 
 
+def plot_volume(data, vmin=None, vmax=None, color_map="gray"):
+    """Plot a 3D volume visualization of the data.
+
+    Args:
+        data: 3D numpy array to visualize
+        vmin: Minimum value for colorscale
+        vmax: Maximum value for colorscale
+        color_map: Colormap to use for visualization
+    """
+    # Create coordinate meshgrid
+    x = np.arange(data.shape[0])
+    y = np.arange(data.shape[1])
+    z = np.arange(data.shape[2])
+    X, Y, Z = np.meshgrid(x, y, z, indexing="ij")
+
+    # Create a 3D volume plot
+    fig = go.Figure(
+        data=go.Volume(
+            x=X.flatten(),
+            y=Y.flatten(),
+            z=Z.flatten(),
+            value=data.flatten(),
+            isomin=vmin
+            if vmin is not None
+            else 0.4,  # Increase minimum threshold to filter out noise
+            isomax=vmax if vmax is not None else np.max(data),
+            opacity=1.0,  # Increase opacity
+            opacityscale=[[0.4, 0.1], [0.5, 0.3], [0.8, 1.0]],
+            surface_count=10,  # Increase surface resolution
+            colorscale=color_map,
+            caps=dict(x_show=False, y_show=False, z_show=False),
+            showscale=False,  # Hide colorbar
+        )
+    )
+
+    # Update the layout
+    fig.update_layout(
+        scene=dict(
+            xaxis=dict(
+                showticklabels=False,
+                showgrid=False,
+                zeroline=False,
+                showline=False,
+                showspikes=False,
+                showbackground=False,
+                showaxeslabels=False,
+                title="",
+            ),
+            yaxis=dict(
+                showticklabels=False,
+                showgrid=False,
+                zeroline=False,
+                showline=False,
+                showspikes=False,
+                showbackground=False,
+                showaxeslabels=False,
+                title="",
+            ),
+            zaxis=dict(
+                showticklabels=False,
+                showgrid=False,
+                zeroline=False,
+                showline=False,
+                showspikes=False,
+                showbackground=False,
+                showaxeslabels=False,
+                title="",
+            ),
+            camera=dict(
+                eye=dict(x=2, y=2, z=2)  # Move camera further out
+            ),
+            aspectmode="data",  # Preserve data aspect ratio
+            bgcolor="black",  # Set background color to black
+        ),
+        paper_bgcolor="black",  # Set paper background to black
+        plot_bgcolor="black",  # Set plot background to black
+    )
+
+    fig.update_traces(hoverinfo="skip", hovertemplate=None)
+    return fig
+
+
+def plot_3d_quiver(
+    fractions,
+    directions,
+    step=1,
+    length_threshold=0.6,
+    fraction_threshold=0.15,
+    colors=None,
+    opacity=0.5,
+    line_width=1,
+    height=None,
+    width=None,
+):
+    """Plot a 3D quiver visualization of vector field data.
+
+    Args:
+        fractions: 4D numpy array (x, y, z, channels) of fraction weights
+        directions: 5D numpy array (x, y, z, channels, 3) of direction vectors
+        step: Step size for subsampling points
+        length_threshold: Minimum sum of fractions to show vector
+        fraction_threshold: Minimum fraction value to show vector
+        colors: List of colors for each channel
+        opacity: Opacity of the vectors
+        line_width: Width of the vector lines
+        height: Height of the figure in pixels
+        width: Width of the figure in pixels
+    """
+    if fractions.shape[:-1] != directions.shape[:-2]:
+        raise ValueError("Spatial dimensions of fractions and directions must match")
+    if fractions.shape[-1] != directions.shape[-2]:
+        raise ValueError("Number of channels in fractions and directions must match")
+    if directions.shape[-1] != 3:
+        raise ValueError("Directions must have 3 components (x,y,z)")
+
+    # Create coordinate meshgrid for vector field
+    x = np.arange(fractions.shape[0])
+    y = np.arange(fractions.shape[1])
+    z = np.arange(fractions.shape[2])
+    X, Y, Z = np.meshgrid(x, y, z, indexing="ij")
+
+    # Create a 3D vector field plot
+    fig = go.Figure()
+
+    # Define colors for each channel
+    if colors is None:
+        colors = ["red", "green", "blue", "yellow", "cyan", "magenta"]
+    colors = colors[: fractions.shape[-1]]  # Limit colors to number of channels
+
+    # Add vectors for each channel
+    for channel in range(fractions.shape[-1]):
+        # Scale vectors by their fractions and subsample to reduce data
+        channel_fractions = fractions[::step, ::step, ::step, channel : channel + 1][
+            ..., 0
+        ]
+        u = channel_fractions * directions[::step, ::step, ::step, channel, 0]
+        v = channel_fractions * directions[::step, ::step, ::step, channel, 1]
+        w = channel_fractions * directions[::step, ::step, ::step, channel, 2]
+
+        # Create mask for vectors above threshold length
+        fsum = fractions[::step, ::step, ::step].sum(axis=-1)
+        mask = (fsum > length_threshold) & (channel_fractions > fraction_threshold)
+
+        # Apply mask to coordinates and vectors
+        x_coords = X[::step, ::step, ::step][mask]
+        y_coords = Y[::step, ::step, ::step][mask]
+        z_coords = Z[::step, ::step, ::step][mask]
+        u = u[mask]
+        v = v[mask]
+        w = w[mask]
+
+        # Create start and end points for lines
+        x_start = x_coords - u * 2
+        y_start = y_coords - v * 2
+        z_start = z_coords - w * 2
+
+        x_end = x_start + u * 2
+        y_end = y_start + v * 2
+        z_end = z_start + w * 2
+
+        # Add lines connecting start and end points in a vectorized way
+        x_lines = np.vstack([x_start, x_end, np.full_like(x_start, np.nan)]).T.flatten()
+        y_lines = np.vstack([y_start, y_end, np.full_like(y_start, np.nan)]).T.flatten()
+        z_lines = np.vstack([z_start, z_end, np.full_like(z_start, np.nan)]).T.flatten()
+
+        fig.add_trace(
+            go.Scatter3d(
+                x=x_lines,
+                y=y_lines,
+                z=z_lines,
+                mode="lines",
+                line=dict(color=colors[channel], width=line_width),
+                opacity=opacity,
+                showlegend=False,
+            )
+        )
+
+    # Update the layout
+    fig.update_layout(
+        scene=dict(
+            xaxis=dict(
+                showticklabels=False,
+                showgrid=False,
+                zeroline=False,
+                showline=False,
+                showspikes=False,
+                showbackground=False,
+                showaxeslabels=False,
+                title="",
+            ),
+            yaxis=dict(
+                showticklabels=False,
+                showgrid=False,
+                zeroline=False,
+                showline=False,
+                showspikes=False,
+                showbackground=False,
+                showaxeslabels=False,
+                title="",
+            ),
+            zaxis=dict(
+                showticklabels=False,
+                showgrid=False,
+                zeroline=False,
+                showline=False,
+                showspikes=False,
+                showbackground=False,
+                showaxeslabels=False,
+                title="",
+            ),
+            camera=dict(eye=dict(x=2, y=2, z=2)),
+            aspectmode="data",
+            bgcolor="black",
+        ),
+        paper_bgcolor="black",
+        plot_bgcolor="black",
+        height=height,
+        width=width,
+    )
+
+    fig.update_traces(hoverinfo="skip", hovertemplate=None)
+    return fig
+
+
 def plot_spherical_function(
     theta: ArrayLike,
     phi: ArrayLike,
@@ -888,7 +1112,7 @@ def save_orthoview_html(fig, filepath, include_plotlyjs='cdn'):
 def orthoview_ultracompact(data, vmin=None, vmax=None, channel_names=None, color_map='gray',
                          downsample_factor=1, slider_step=10,
                          heatmap_quality=1.0, simplified_ui=False,
-                         precision=np.float32):
+                         precision=np.float32, height=None, width=None):
     """Ultra-optimized version of orthoview that produces minimal HTML files.
 
     Args:
@@ -1149,8 +1373,8 @@ def orthoview_ultracompact(data, vmin=None, vmax=None, channel_names=None, color
         plot_bgcolor="black",
         font=dict(color="white"),
         margin=dict(l=0, r=0, t=10, b=50),
-        height=1000,
-        width=1600,
+        height=height,
+        width=width,
     )
 
     # Turn off axes
