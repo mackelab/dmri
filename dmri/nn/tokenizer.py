@@ -364,7 +364,8 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
 
         # Next is the shared parameters which are always active
         if self.simulator.value.shared_parameter_type is not None:
-            active_thetas = jnp.concatenate([active_thetas, jnp.ones(model_mask.shape[:-1] + (1,), dtype=jnp.bool_)], axis=-1)
+            theta_dim = self.simulator.value.shared_parameter_type.theta_dim
+            active_thetas = jnp.concatenate([active_thetas, jnp.ones(model_mask.shape[:-1] + (theta_dim,), dtype=jnp.bool_)], axis=-1)
 
         # Next are the model parameters, if model_mask is true it should be multiplied by the dimension of the parameter
         for i in range(len(model_types)):

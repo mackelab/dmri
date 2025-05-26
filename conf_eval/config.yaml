@@ -18,7 +18,7 @@ select_models: true
 defaults:
   - _self_
   - mask_sample: default
-  - theta_sample: default
+  - theta_sample: default 
   - model_selection: none
   - export: ball3stick
   - export_model_selection: ball3stick

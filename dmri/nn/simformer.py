@@ -140,10 +140,12 @@ class EDMSimformer(EDM):
         if target_score is not None and cut_off_tsm > 0.:
             score_est = (theta_denoised - thetas_noisy) / std**2
             # Target score norm
-            target_score_norm = jnp.sum(target_score**2, axis=-1, keepdims=True).mean()
+            target_score_norm = jnp.sqrt(jnp.sum(target_score**2, axis=-1, keepdims=True)).mean()
             weight_tsm = 1/target_score_norm * std**2  * jnp.where((std < cut_off_tsm), 1, 0) # Only use TSM for early times
             loss_score = weight_tsm*jnp.sum((score_est - target_score)**2, axis=-1, keepdims=True)
             loss += loss_score
+
+            print("Data loss: ", loss_denoised.mean(), "Score loss: ", loss_score.mean())
 
         if weight_by_complexity:
             loss = loss * (model_mask.sum(axis=-1, keepdims=True) + 0.01)

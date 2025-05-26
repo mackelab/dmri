@@ -87,7 +87,7 @@ def _main(cfg: DictConfig):
     # Round bvals to nearest (0, 1000, 2000)
     if cfg.round_bvals:
         bvals_rounded = np.round(_bvals / 1000) * 1000
-        bvals = np.clip(bvals_rounded, 0, 2000)
+        bvals = np.clip(bvals_rounded, 0, None)
     else:
         bvals = _bvals
 
@@ -304,7 +304,7 @@ def sample_theta(cfg, key, model, acq, data, logger, model_mask=None):
 
     sample_theta_per_x = build_theta_sample_fn(cfg.theta_sample.method, cfg.theta_sample.num_samples, model, acq, data, model_mask, sim_type)
 
-    batch_size = 20_000
+    batch_size = cfg.theta_sample.eval_batch_size
     thetas_full = []
     key, subkey = jax.random.split(key)
     for batch_start in range(0, data.shape[0], batch_size):
@@ -340,7 +340,7 @@ def build_theta_sample_fn(method, num_samples,model, acq, data, model_mask, sim_
 
         def smc(rng,thetas,model_mask, acq, x_o):
             hmc_kernel = hmc.build_kernel()
-            hmc_kernel = partial(hmc_kernel, step_size=0.005, num_integration_steps=10, inverse_mass_matrix=jnp.ones(d))
+            hmc_kernel = partial(hmc_kernel, step_size=0.005, num_integration_steps=5, inverse_mass_matrix=jnp.ones(d))
 
             resampling_fn = systematic
             _log_likelihood_fn = partial(log_likelihood_fn, mask=model_mask, acq=acq, x=x_o)
@@ -362,7 +362,7 @@ def build_theta_sample_fn(method, num_samples,model, acq, data, model_mask, sim_
         def sample_mcmc_correct(key, x, model_mask):
             key, subkey = jax.random.split(key)
             K = num_samples
-            propose_fn = partial(model.sample_theta, num_steps=64 , max_noise=80)
+            propose_fn = partial(model.sample_theta, num_steps=25 , max_noise=80)
             key_k = jax.random.split(key, K)
             in_axes_model_mask = 0 if model_mask.ndim == 2 else None
             theta = jax.vmap(propose_fn, in_axes=(0,None,None,None, in_axes_model_mask))(key_k, acq.bvals, acq.bvecs, x,model_mask)

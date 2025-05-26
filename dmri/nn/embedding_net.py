@@ -19,6 +19,7 @@ class DMRIEmbeddingConfig:
     signals_embed_dim: int = 3
     bvec_repeats: int = 1
     log_transform_signals: bool = False
+    embed_signals: str = "repeat"
 
 
 class BvalBvecSignalEmbeddingNet(nnx.Module, experimental_pytree=True):
@@ -42,6 +43,7 @@ class BvalBvecSignalEmbeddingNet(nnx.Module, experimental_pytree=True):
         bvec_repeats: int = 1,
         log_transform_signals: bool = False,
         use_flash_attention: bool = False,
+        embed_signals = "repeat",
     ):
         self.model_dim = model_dim
         self.num_heads = num_heads
@@ -55,7 +57,12 @@ class BvalBvecSignalEmbeddingNet(nnx.Module, experimental_pytree=True):
             bvals_embed_dim + signals_embed_dim + 3 * bvec_repeats, model_dim, rngs=rngs
         )
         self.embed_bvals = GaussianFourierEmbedding(1, bvals_embed_dim, rngs=rngs)
-        self.embed_signals = lambda x: jnp.repeat(x, signals_embed_dim, axis=-1)
+        if embed_signals == "repeat":
+            self.embed_signals = lambda x: jnp.repeat(x, signals_embed_dim, axis=-1)
+        elif embed_signals == "fourier":
+            self.embed_signals = GaussianFourierEmbedding(1, signals_embed_dim, rngs=rngs)
+        else:
+            raise ValueError(f"Invalid embed_signals: {embed_signals}")
 
         if use_flash_attention:
             attention_fn = flex_attention

@@ -219,7 +219,7 @@ def _main(cfg: DictConfig):
     datastream = iter(loader)
 
 
-    # loss_fn(params, state, next(iter(loader)), rng_key)
+    loss_fn(params, state, next(iter(loader)), rng_key)
 
 
     if continue_training:
