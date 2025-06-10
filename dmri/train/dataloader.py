@@ -1,6 +1,7 @@
 import queue
 import threading
 import time
+import random  # Add Python's random module
 from collections import deque
 from functools import partial
 
@@ -37,7 +38,7 @@ class StreamDataLoader:
         """
         Args:
             simulator_fn: A function simulator(rng) -> batch_of_data
-                          or a jitted function that produces a single item.
+                          or a list of such functions.
                           We'll vmap/jit over it in a background thread.
             rng:          JAX PRNGKey to seed the simulator.
             batch_size:   Number of items per batch.
@@ -51,7 +52,17 @@ class StreamDataLoader:
             recycle_batches: Whether to put consumed batches back into the queue.
             recycle_threshold: Queue fullness fraction below which to start recycling (default=0.1).
         """
-        self.simulator_fn = simulator_fn
+        # Set Python's random seed
+        random.seed(seed)
+
+        # Handle both single simulator and list of simulators
+        if isinstance(simulator_fn, list):
+            self.simulators = simulator_fn
+            self.num_simulators = len(simulator_fn)
+        else:
+            self.simulators = [simulator_fn]
+            self.num_simulators = 1
+
         self.rng = jax.random.key(seed)
         self.batch_size = batch_size
         self.data_device = jax.devices(data_device)[device_idx]
@@ -63,17 +74,18 @@ class StreamDataLoader:
         self.recycle_threshold = recycle_threshold  # Store the recycle threshold
 
         # Compile the batch simulator once during initialization
-        @partial(jax.jit, device=self.simulation_device)
-        def batch_simulator(rng_key):
+        @partial(jax.jit, device=self.simulation_device, static_argnums=(1,))
+        def batch_simulator(rng_key, simulator_idx):
             rngs = jax.random.split(rng_key, self.batch_size)
-            return jax.vmap(self.simulator_fn)(rngs)
+            return jax.vmap(self.simulators[simulator_idx])(rngs)
 
         self.batch_simulator = batch_simulator
 
         # Ensure compilation is complete before proceeding
-        # Use a dummy key to trigger compilation
+        # Use a dummy key to trigger compilation for each simulator
         dummy_key = jax.random.key(0)
-        _ = self.batch_simulator(dummy_key)[0].block_until_ready()
+        for i in range(self.num_simulators):
+            _ = self.batch_simulator(dummy_key, i)[0].block_until_ready()
 
         # For the background threads
         self.event = threading.Event()
@@ -106,6 +118,16 @@ class StreamDataLoader:
             self.producer_threads.append(thread)
             thread.start()
 
+        # Wait until we have at least one batch in the queue
+        # This ensures we don't start with recycled data
+        max_wait_time = queue_timeout or 100.0 # Maximum time to wait in seconds
+        start_time = time.time()
+        while self.queue.empty() and time.time() - start_time < max_wait_time:
+            time.sleep(0.1)
+
+        if self.queue.empty():
+            raise RuntimeError(f"Failed to initialize dataloader: no data produced within timeout ({max_wait_time}s)")
+
     def _producer_loop(self, thread_rng):
         """
         The background loop that repeatedly:
@@ -127,8 +149,12 @@ class StreamDataLoader:
 
                 # Generate a batch
                 start_time = time.time()
+                # Split key for simulator selection and data generation
                 key, rng_sub = jax.random.split(key)
-                data = self.batch_simulator(rng_sub)
+                # Use Python's random for simulator selection
+                simulator_idx = random.randint(0, self.num_simulators - 1)
+                # Use the split key for data generation
+                data = self.batch_simulator(rng_sub, simulator_idx)
 
                 # PyTree-friendly conversion to CPU
                 # This handles cases where data is a nested structure (PyTree)
@@ -377,7 +403,10 @@ class StreamDataLoader:
         self.event.set()
         for thread in self.producer_threads:
             if thread.is_alive():
-                thread.join()
+                # Set a timeout for joining threads
+                thread.join(timeout=1.0)
+                if thread.is_alive():
+                    print(f"Warning: Thread {thread.name} did not terminate within timeout")
 
     def __del__(self):
         """

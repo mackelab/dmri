@@ -219,9 +219,6 @@ def _main(cfg: DictConfig):
     datastream = iter(loader)
 
 
-    loss_fn(params, state, next(iter(loader)), rng_key)
-
-
     if continue_training:
         latest_step = checkpoint_manager.get_latest_step()
         print(f"latest_step: {latest_step}")
@@ -248,6 +245,9 @@ def _main(cfg: DictConfig):
         else:
             log.warning("No valid checkpoint found. Starting from scratch.")
 
+
+    # loss_fn(params, state, next(iter(loader)), rng_key)
+
     # Get maximum training time in hours (default: run forever)
     max_train_hours = cfg.train.get("max_train_hours", float("inf"))
     log.info(f"Maximum training time: {max_train_hours} hours")
@@ -261,6 +261,7 @@ def _main(cfg: DictConfig):
         key, subkey = jax.random.split(key)
         for _ in range(inner_steps):
             data = next(datastream)
+            print(data[-2].bvals.shape)
             params, state, opt_state, loss = update(
                 params, state, opt_state, data, subkey
             )

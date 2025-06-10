@@ -3,4 +3,5 @@ prior_mask_beta: 1.
 with_posterior_score: true
 defaults:
   - sim_type: ball3stick_shared_diffusity_uniform
-  - acquisition_scheme: multi
+  - acquisition_scheme: hcp
+  - acquisition_scheme: clinical

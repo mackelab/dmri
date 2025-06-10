@@ -77,7 +77,7 @@ def load_checkpoint(path, which="latest"):
         raise ValueError(f"Invalid checkpoint type: {which}")
 
 
-    if cfg.train.track_ema:
+    if cfg.train.track_ema: 
         checkpoint = checkpoint_manager.restore(latest_step, params=params, optimizer_state=opt_state, params_ema=params)
 
     else:
