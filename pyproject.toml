@@ -20,7 +20,7 @@ tqdm = "^4.65.0"
 dipy = "^1.7.0"
 nibabel = "^5.1.0"
 pandas = "^2.0.0"
-probjax = {git = "https://github.com/mackelab/probjax.git"}
+# probjax = {git = "https://github.com/mackelab/probjax.git"}
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.3.1"
@@ -37,7 +37,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
 dmri = "dmri.train.hydra_script:main"
-dmri_eval = "dmri.train.hydra_script_eval:main"
+dmri_eval = "dmri.eval.hydra_script_eval:main"
 
 [tool.black]
 line-length = 88

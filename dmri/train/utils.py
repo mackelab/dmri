@@ -36,17 +36,21 @@ def load_cfg(path):
     timestamp_dirs.sort(reverse=True)
     most_recent_dir = timestamp_dirs[0][1]
 
-    # Load config from most recent run
-    path_to_cfg = "0/.hydra/config.yaml"
-    config_path = os.path.join(path, most_recent_dir, path_to_cfg)
+    # Try to load config from .hydra first, then fall back to 0/.hydra
+    base_path = os.path.join(path, most_recent_dir)
+    config_path = os.path.join(base_path, ".hydra", "config.yaml")
+
+    if not os.path.exists(config_path):
+        config_path = os.path.join(base_path, "0", ".hydra", "config.yaml")
+        if not os.path.exists(config_path):
+            raise FileNotFoundError(f"Could not find config.yaml in either .hydra or 0/.hydra directories in {base_path}")
+
     cfg = OmegaConf.load(config_path)
     return cfg
 
 
 def load_checkpoint(path, which="latest"):
     cfg = load_cfg(path)
-
-
     sim_type, simulator = build_simulator(cfg)
     model = build_model(cfg, sim_type)
     model.eval()
@@ -77,7 +81,7 @@ def load_checkpoint(path, which="latest"):
         raise ValueError(f"Invalid checkpoint type: {which}")
 
 
-    if cfg.train.track_ema: 
+    if cfg.train.track_ema:
         checkpoint = checkpoint_manager.restore(latest_step, params=params, optimizer_state=opt_state, params_ema=params)
 
     else:
