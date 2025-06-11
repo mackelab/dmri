@@ -39,6 +39,34 @@ def main():
     print(logo)
     _main()
 
+def build_optimizer(optimizer_cfg):
+    optimizer_type = getattr(optax, optimizer_cfg.optimizer)
+    if optimizer_cfg.scheduler:
+        scheduler_type = getattr(optax, optimizer_cfg.scheduler)
+    else:
+        scheduler_type = None
+    use_ema = optimizer_cfg.get("ema", False)
+    use_adaptive_clip = optimizer_cfg.get("adaptive_gradient_clipping", False)
+    grad_transforms = []
+    if use_adaptive_clip:
+        grad_clip = optax.adaptive_grad_clip(
+            optimizer_cfg.get("gradient_clip_value", 10.0)
+        )
+        grad_transforms.append(grad_clip)
+    if scheduler_type:
+        scheduler = scheduler_type(**optimizer_cfg.scheduler_params)
+        optimizer = optimizer_type(scheduler)
+    else:
+        lr = optimizer_cfg.get("learning_rate", 1e-4)
+        optimizer = optimizer_type(learning_rate=lr)
+    grad_transforms.append(optimizer)
+    if use_ema:
+        grad_transforms.append(optax.ema(optimizer_cfg.get("ema_decay", 0.8)))
+
+    # Initialize optimizer
+    optimizer = optax.chain(*grad_transforms)
+    return optimizer
+
 
 @hydra.main(config_path="../../conf", config_name="config.yaml", version_base=None)
 def _main(cfg: DictConfig):
@@ -69,7 +97,11 @@ def _main(cfg: DictConfig):
     rng_key = jax.random.key(seed)
     log.info(f"Seed: {seed}")
 
+    # Build simulator
+    log.info("Building simulator")
+    log.info(f"Simulator cfg: {cfg.simulator}")
     sim_type, simulator = build_simulator(cfg)
+    log.info(f"Simulator type: {sim_type}")
 
     model = build_model(cfg, sim_type)
     model.train()
@@ -105,25 +137,7 @@ def _main(cfg: DictConfig):
     start_step = 0
 
     # Learning rate scheduler and optimizer
-    optimizer_cfg = cfg.train.optimizer
-    optimizer_type = getattr(optax, optimizer_cfg.optimizer)
-    scheduler_type = getattr(optax, optimizer_cfg.scheduler)
-    use_ema = optimizer_cfg.get("ema", False)
-    use_adaptive_clip = optimizer_cfg.get("adaptive_gradient_clipping", False)
-    grad_transforms = []
-    if use_adaptive_clip:
-        grad_clip = optax.adaptive_grad_clip(
-            optimizer_cfg.get("gradient_clip_value", 10.0)
-        )
-        grad_transforms.append(grad_clip)
-    scheduler = scheduler_type(**optimizer_cfg.scheduler_params)
-    optimizer = optimizer_type(scheduler)
-    grad_transforms.append(optimizer)
-    if use_ema:
-        grad_transforms.append(optax.ema(optimizer_cfg.get("ema_decay", 0.8)))
-
-    # Initialize optimizer
-    optimizer = optax.chain(*grad_transforms)
+    optimizer = build_optimizer(cfg.train.optimizer)
 
     # Initialize optimizer state if not restored from checkpoint
     if not continue_training or start_step == 0:
@@ -132,8 +146,19 @@ def _main(cfg: DictConfig):
     # If restarts are required:
     restart_every = cfg.train.get("restart_every", None)
 
+    log.info("Building loss function")
+    log.info(f"Simulator with posterior score: {cfg.simulator.with_posterior_score}")
+    log.info(f"Model selection weight: {cfg.train.model_selection_weight}")
+    log.info(f"Model inference loss weight: {cfg.train.model_inference_loss_weight}")
+    log.info(f"Weight by complexity: {cfg.train.weight_by_complexity}")
+
     def loss_fn(params,state, data, rng):
-        p_mask, model_mask, thetas, xs, acq = data
+        if cfg.simulator.with_posterior_score:
+            p_mask, model_mask, thetas, xs, acq, target_score = data
+        else:
+            p_mask, model_mask, thetas, xs, acq = data
+            target_score = None
+
         model = nnx.merge(graphdef, params, static, state)
         model.train()
         losses = model.loss_fn(
@@ -144,9 +169,17 @@ def _main(cfg: DictConfig):
             bvals=acq.bvals,
             bvecs=acq.bvecs,
             mask_prior=p_mask,
+            target_score=target_score,
+            weight_by_complexity=cfg.train.weight_by_complexity,
+            cut_off_tsm=cfg.train.cut_off_tsm,
         )
+        loss1  = cfg.train.model_selection_weight * losses[0]
+        loss2 = cfg.train.model_inference_loss_weight * losses[1]
+        total_loss = loss1 + loss2
         _, _, _, new_state = nnx.split(model, nnx.Param, nnx.Intermediate, ...)
-        return sum(losses), (losses, new_state)
+        return total_loss, (losses, new_state)
+
+
 
     @jax.jit
     def update(params, state, opt_state, data, rng):
@@ -192,11 +225,17 @@ def _main(cfg: DictConfig):
             log.info(f"Restoring checkpoint at step {latest_step}")
             # Pass existing params as reference structure for parameter matching
             checkpoint = checkpoint_manager.restore(
-                step=latest_step, params=params, optimizer_state=opt_state
+                step=latest_step,
+                params=params,
+                optimizer_state=opt_state,
+                params_ema=None if not cfg.train.track_ema else jax.tree_map(lambda x: x, params)
             )
             if checkpoint is not None:
                 params = checkpoint["params"]
                 opt_state = checkpoint["optimizer_state"]
+                # Restore EMA params if they exist in the checkpoint
+                if "params_ema" in checkpoint and cfg.train.track_ema:
+                    params_ema = checkpoint["params_ema"]
                 step = checkpoint["step"]  # Update current step
                 start_step = step  # Set start_step to the restored step
                 log.info(f"Resumed training from step {step}")
@@ -205,18 +244,28 @@ def _main(cfg: DictConfig):
         else:
             log.warning("No valid checkpoint found. Starting from scratch.")
 
+
+    # loss_fn(params, state, next(iter(loader)), rng_key)
+
     # Get maximum training time in hours (default: run forever)
     max_train_hours = cfg.train.get("max_train_hours", float("inf"))
     log.info(f"Maximum training time: {max_train_hours} hours")
     start_time = time.time()
 
+    params_ema = jax.tree_map(lambda x: x, params) if cfg.train.track_ema else None
+    ema_decay = cfg.train.ema_decay if cfg.train.track_ema else None
+
+
     while True:
         key, subkey = jax.random.split(key)
         for _ in range(inner_steps):
             data = next(datastream)
+            print(data[-2].bvals.shape)
             params, state, opt_state, loss = update(
                 params, state, opt_state, data, subkey
             )
+            if params_ema is not None:
+                params_ema = jax.tree_map(lambda x, y: x * ema_decay + y * (1 - ema_decay), params_ema, params)
             step += 1
         total_loss = float(sum(loss))
         queue_size = int(loader.queue.qsize())
@@ -250,6 +299,7 @@ def _main(cfg: DictConfig):
                 params=params,
                 optimizer_state=opt_state,
                 loss=total_loss,
+                params_ema=params_ema
             )
             # Ensure all async checkpoint operations are finished before exiting
             checkpoint_manager.wait_until_finished()
@@ -258,16 +308,30 @@ def _main(cfg: DictConfig):
         # Evaluate model periodically
         if step > 0 and step % eval_freq == 0:
             log.info(f"Evaluating model at step {step}")
+
+            if cfg.train.track_ema:
+                params_eval = params_ema
+            else:
+                params_eval = params
             # Evaluate negative log-likelihood for masks
             key, eval_key = jax.random.split(key)
-            mask_nnl = evaluator.eval_nnl_mask(params, state, eval_loader, iters=5)
+            mask_nnl = evaluator.eval_nnl_mask(
+                params_eval, state, eval_loader, iters=cfg.train.eval.nnl_mask.iters
+            )
 
             # Evaluate negative log-likelihood for thetas
-            theta_nnl = evaluator.eval_nnl_theta(params, state, eval_loader, iters=5)
+            theta_nnl = evaluator.eval_nnl_theta(
+                params_eval, state, eval_loader, iters=cfg.train.eval.nnl_theta.iters
+            )
 
             # Evaluate ess
             ess = evaluator.eval_effective_sample_size(
-                params, state, eval_loader, eval_key, K=5, iters=1
+                params_eval,
+                state,
+                eval_loader,
+                eval_key,
+                K=cfg.train.eval.ess.K,
+                iters=cfg.train.eval.ess.iters,
             )
 
             log.info(f"Mask NLL: {mask_nnl}, Theta NLL: {theta_nnl}, ESS: {ess}")
@@ -288,6 +352,7 @@ def _main(cfg: DictConfig):
                 params=params,
                 optimizer_state=opt_state,
                 loss=total_loss,
+                params_ema=params_ema
             )
 
         # Check if we need to recover from a bad update
@@ -301,11 +366,17 @@ def _main(cfg: DictConfig):
                 if latest_step is not None:
                     # Pass current params as reference structure for parameter matching
                     checkpoint = checkpoint_manager.restore(
-                        step=latest_step, params=params, optimizer_state=opt_state
+                        step=latest_step,
+                        params=params,
+                        optimizer_state=opt_state,
+                        params_ema=params_ema
                     )
                     if checkpoint is not None:
                         params = checkpoint["params"]
                         opt_state = checkpoint["optimizer_state"]
+                        # Restore EMA params if they exist in the checkpoint
+                        if "params_ema" in checkpoint and params_ema is not None:
+                            params_ema = checkpoint["params_ema"]
                         step = checkpoint["step"]
                         log.info(f"Recovered to step {step}")
                     else:

@@ -1,6 +1,7 @@
 import queue
 import threading
 import time
+import random  # Add Python's random module
 from collections import deque
 from functools import partial
 
@@ -30,12 +31,14 @@ class StreamDataLoader:
         use_inplace_updates=False,  # New parameter for in-place updates
         ring_size=2,  # New parameter for ring buffer size
         queue_timeout=None,  # New parameter for queue timeout
-        prefetch_depth=3,  # New parameter for controlling prefetch depth
+        prefetch_depth=8,  # New parameter for controlling prefetch depth
+        recycle_batches=True,  # Whether to recycle batches back into queue
+        recycle_threshold=0.1,  # Threshold below which to start recycling (fraction of max queue size)
     ):
         """
         Args:
             simulator_fn: A function simulator(rng) -> batch_of_data
-                          or a jitted function that produces a single item.
+                          or a list of such functions.
                           We'll vmap/jit over it in a background thread.
             rng:          JAX PRNGKey to seed the simulator.
             batch_size:   Number of items per batch.
@@ -46,8 +49,20 @@ class StreamDataLoader:
             num_producers: Number of producer threads to use.
             queue_timeout: Timeout in seconds for queue operations (None = no timeout).
             prefetch_depth: Number of batches to prefetch to device (default=2).
+            recycle_batches: Whether to put consumed batches back into the queue.
+            recycle_threshold: Queue fullness fraction below which to start recycling (default=0.1).
         """
-        self.simulator_fn = simulator_fn
+        # Set Python's random seed
+        random.seed(seed)
+
+        # Handle both single simulator and list of simulators
+        if isinstance(simulator_fn, list):
+            self.simulators = simulator_fn
+            self.num_simulators = len(simulator_fn)
+        else:
+            self.simulators = [simulator_fn]
+            self.num_simulators = 1
+
         self.rng = jax.random.key(seed)
         self.batch_size = batch_size
         self.data_device = jax.devices(data_device)[device_idx]
@@ -55,6 +70,22 @@ class StreamDataLoader:
         self.num_producers = max(1, num_producers)  # Ensure at least 1 producer
         self.use_inplace_updates = use_inplace_updates
         self.ring_size = ring_size
+        self.recycle_batches = recycle_batches
+        self.recycle_threshold = recycle_threshold  # Store the recycle threshold
+
+        # Compile the batch simulator once during initialization
+        @partial(jax.jit, device=self.simulation_device, static_argnums=(1,))
+        def batch_simulator(rng_key, simulator_idx):
+            rngs = jax.random.split(rng_key, self.batch_size)
+            return jax.vmap(self.simulators[simulator_idx])(rngs)
+
+        self.batch_simulator = batch_simulator
+
+        # Ensure compilation is complete before proceeding
+        # Use a dummy key to trigger compilation for each simulator
+        dummy_key = jax.random.key(0)
+        for i in range(self.num_simulators):
+            _ = self.batch_simulator(dummy_key, i)[0].block_until_ready()
 
         # For the background threads
         self.event = threading.Event()
@@ -64,6 +95,7 @@ class StreamDataLoader:
         self.stats = {
             "batches_produced": 0,
             "batches_consumed": 0,
+            "batches_recycled": 0,  # Counter for recycled batches
             "production_time": 0.0,
             "queue_wait_time": 0.0,
         }
@@ -86,6 +118,16 @@ class StreamDataLoader:
             self.producer_threads.append(thread)
             thread.start()
 
+        # Wait until we have at least one batch in the queue
+        # This ensures we don't start with recycled data
+        max_wait_time = queue_timeout or 100.0 # Maximum time to wait in seconds
+        start_time = time.time()
+        while self.queue.empty() and time.time() - start_time < max_wait_time:
+            time.sleep(0.1)
+
+        if self.queue.empty():
+            raise RuntimeError(f"Failed to initialize dataloader: no data produced within timeout ({max_wait_time}s)")
+
     def _producer_loop(self, thread_rng):
         """
         The background loop that repeatedly:
@@ -98,12 +140,6 @@ class StreamDataLoader:
             thread_rng: The initial RNG key for this thread
         """
         try:
-            # We'll jit+vmap the user simulator to produce batch_size items at once
-            @partial(jax.jit, device=self.simulation_device)
-            def batch_simulator(rng_key):
-                rngs = jax.random.split(rng_key, self.batch_size)
-                return jax.vmap(self.simulator_fn)(rngs)
-
             key = jax.device_put(thread_rng, self.simulation_device)
             while not self.event.is_set():
                 # Wait if production is paused
@@ -113,12 +149,18 @@ class StreamDataLoader:
 
                 # Generate a batch
                 start_time = time.time()
+                # Split key for simulator selection and data generation
                 key, rng_sub = jax.random.split(key)
-                data = batch_simulator(rng_sub)
+                # Use Python's random for simulator selection
+                simulator_idx = random.randint(0, self.num_simulators - 1)
+                # Use the split key for data generation
+                data = self.batch_simulator(rng_sub, simulator_idx)
 
                 # PyTree-friendly conversion to CPU
                 # This handles cases where data is a nested structure (PyTree)
                 data_cpu = data  # jax.tree_map(np.array, data)
+                # TODO This is a hack to avoid NaNs and Infs in the data
+                data_cpu = jax.tree_map(lambda x: jax.numpy.nan_to_num(x, nan=0, posinf=0, neginf=0), data_cpu)
 
                 production_time = time.time() - start_time
                 with threading.Lock():
@@ -139,9 +181,32 @@ class StreamDataLoader:
             self.thread_exceptions.put((threading.current_thread().name, e))
             raise  # Re-raise to see in thread
 
+    def _recycle_batch(self, batch):
+        """
+        Recycle a batch by putting it back into the queue.
+        Only recycles when queue is below the configured threshold of its capacity.
+        """
+        if not self.recycle_batches:
+            return
+
+        # Only recycle if queue is below the configured threshold capacity
+        current_fullness = self.queue.qsize() / self.queue.maxsize
+        if current_fullness >= self.recycle_threshold:
+            return
+
+        try:
+            # Use non-blocking put to avoid deadlocks if queue is full
+            self.queue.put_nowait(batch)
+            with threading.Lock():
+                self.stats["batches_recycled"] += 1
+        except queue.Full:
+            # Queue is full, drop the batch
+            pass
+
     def _cpu_data_stream(self):
         """
         A generator that yields batches from the CPU queue.
+        Recycles batches back into the queue if enabled.
         Ends if the event is set or a thread exception occurred.
         """
         while not self.event.is_set():
@@ -152,16 +217,23 @@ class StreamDataLoader:
                     f"Exception in producer thread {thread_name}: {exception}"
                 )
 
-            # Blocks if queue is empty
+            # Try to get batch from queue
             try:
                 batch_cpu = self.queue.get(timeout=self.queue_timeout)
                 with threading.Lock():
                     self.stats["batches_consumed"] += 1
+
                 yield batch_cpu
+
+                # Recycle the batch by putting it back into the queue
+                if self.recycle_batches:
+                    self._recycle_batch(batch_cpu)
+
             except queue.Empty:
-                # If we hit a timeout, check if we should exit
+                # If queue is empty, check if we should exit
                 if self.event.is_set():
                     break
+                # Otherwise, continue to try again
                 continue
 
     # --------------------------------------------------------------------------
@@ -175,6 +247,8 @@ class StreamDataLoader:
           - Asynchronously copies them to `self.device` using `device_put`
           - Prefetches multiple batches to better overlap computation with I/O
           - Yields batches that are already transferred to the device
+          - Continues trying to get data even when the stream is temporarily empty
+            (which may return backup batches if enabled)
 
         Note: JAX's device_put is non-blocking by default, which means data transfer
         occurs in the background while computation proceeds.
@@ -197,19 +271,27 @@ class StreamDataLoader:
             return
 
         # Main loop - yield current batch while prefetching next
-        while prefetch_queue:
-            # Get the next batch to yield (oldest prefetched batch)
-            current_batch = prefetch_queue.popleft()
+        while prefetch_queue or not self.event.is_set():
+            # If we have batches to yield, do so
+            if prefetch_queue:
+                # Get the next batch to yield (oldest prefetched batch)
+                current_batch = prefetch_queue.popleft()
+                yield current_batch
+            else:
+                # No more batches in queue but not shutting down yet
+                # Small wait to avoid busy loop
+                time.sleep(0.01)
 
-            # Prefetch one more to maintain prefetch_depth
-            try:
-                cpu_batch = next(stream_iter)
-                batch_on_device = jax.device_put(cpu_batch, self.data_device)
-                prefetch_queue.append(batch_on_device)
-            except StopIteration:
-                pass  # No more batches to prefetch
-
-            yield current_batch
+            # Try to prefetch more to maintain prefetch_depth
+            while len(prefetch_queue) < self.prefetch_depth and not self.event.is_set():
+                try:
+                    cpu_batch = next(stream_iter)
+                    batch_on_device = jax.device_put(cpu_batch, self.data_device)
+                    prefetch_queue.append(batch_on_device)
+                except StopIteration:
+                    # Stream temporarily exhausted, try again next loop
+                    # This allows getting backup batches if the queue was empty
+                    break
 
     # --------------------------------------------------------------------------
     # Method B: In-place updates with ring buffer
@@ -253,15 +335,22 @@ class StreamDataLoader:
           - Allocates ring buffers on first batch (if not done)
           - Copies CPU data into ring buffers in-place
           - Yields them, prefetching the next
+          - Continues trying to get data even when the stream is temporarily empty
+            (which may return backup batches if enabled)
         """
         stream_iter = iter(cpu_stream)
         ring_idx = 0
 
-        # Get the first batch
+        # Try to get first batch
         try:
             first_batch_cpu = next(stream_iter)
         except StopIteration:
-            return
+            # No data available, try again once
+            try:
+                time.sleep(0.01)  # Brief pause to allow data production
+                first_batch_cpu = next(stream_iter)
+            except StopIteration:
+                return  # Still no data, exit
 
         # Init ring buffer
         self._init_ring_buffers(first_batch_cpu)
@@ -272,12 +361,29 @@ class StreamDataLoader:
         yield buf
         ring_idx = (ring_idx + 1) % self.ring_size
 
-        # Subsequent batches
-        for batch_cpu in stream_iter:
-            buf = self._copy_inplace(self.gpu_ring_buffers[ring_idx], batch_cpu)
-            self.gpu_ring_buffers[ring_idx] = buf
-            yield buf
-            ring_idx = (ring_idx + 1) % self.ring_size
+        # Main loop - continuously get batches while keeping track of the ring buffer
+        while not self.event.is_set():
+            try:
+                # Try to get next batch (may be from backup if queue is empty)
+                batch_cpu = next(stream_iter)
+
+                # Copy to current ring buffer slot and yield
+                buf = self._copy_inplace(self.gpu_ring_buffers[ring_idx], batch_cpu)
+                self.gpu_ring_buffers[ring_idx] = buf
+                yield buf
+
+                # Move to next ring buffer slot
+                ring_idx = (ring_idx + 1) % self.ring_size
+
+            except StopIteration:
+                # No batches available right now
+                if self.event.is_set():
+                    # If shutting down, exit
+                    break
+
+                # Brief pause to avoid busy loop and let backup mechanism work
+                time.sleep(0.01)
+                # Continue trying in the next iteration
 
     def __iter__(self):
         """
@@ -297,13 +403,20 @@ class StreamDataLoader:
         self.event.set()
         for thread in self.producer_threads:
             if thread.is_alive():
-                thread.join()
+                # Set a timeout for joining threads
+                thread.join(timeout=1.0)
+                if thread.is_alive():
+                    print(f"Warning: Thread {thread.name} did not terminate within timeout")
 
     def __del__(self):
         """
         Make sure the background threads are stopped if the loader is garbage-collected.
         """
-        self.close()
+        try:
+            if hasattr(self, 'event'):
+                self.close()
+        except Exception:
+            pass  # Ignore any errors during cleanup
 
     def queue_size(self):
         """Return the current size of the queue."""

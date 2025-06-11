@@ -7,6 +7,7 @@ from typing import Callable, Optional, Tuple
 from dmri.utils.transform import (
     dirichlet_to_normal,
     normal_to_dirichlet,
+    eps_mask,
 )
 
 # Test configurations
@@ -289,3 +290,19 @@ def test_normal_dirichlet_invertibility(
     assert jnp.all(jnp.isfinite(pi_recovered)), "pi_recovered should be finite"
     assert jnp.all(pi_recovered >= 0), "All probabilities should be non-negative"
     assert jnp.allclose(jnp.sum(pi_recovered), 1.0), "Probabilities should sum to 1"
+
+
+@pytest.mark.parametrize("d,seed", [
+    (3, 0), (3, 1), (3, 2),  # Small dimension tests
+    (10, 0), (10, 1), (10, 2),  # Medium dimension tests
+    (20, 0), (20, 1), (20, 2),  # Large dimension tests
+    (100, 0), (100, 1), (100, 2),  # Very large dimension tests
+    (5, 42), (15, 42), (25, 42),  # Different seeds
+])
+def test_eps_mask(d, seed):
+    alpha = jnp.ones(d)
+    mask = jax.random.bernoulli(jax.random.key(seed), 0.5, (d,))
+    pi = mask.astype(jnp.float32) / jnp.sum(mask)
+    eps = dirichlet_to_normal(alpha, pi, mask)
+    mask_pred = eps_mask(mask)
+    assert (~mask_pred == (eps == 0.)).all()
