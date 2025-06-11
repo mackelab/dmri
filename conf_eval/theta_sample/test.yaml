@@ -1,0 +1,9 @@
+num_samples: 50
+eval_batch_size: 30_000
+
+params:
+  num_steps: 1
+  max_noise: 80
+
+defaults:
+  - corrector: none

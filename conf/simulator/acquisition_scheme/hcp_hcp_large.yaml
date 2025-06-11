@@ -1,0 +1,10 @@
+name: hcp_hcp_large
+params:
+  hcp:
+    num_acquisitions: 105
+    typical_prob: 0.5
+    random_prob: 0.5
+  hcp_large:
+    num_acquisitions: 297
+    typical_prob: 0.8
+    random_prob: 0.2

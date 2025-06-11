@@ -90,7 +90,7 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
             input_tokens,
             y,
             context=context,
-            mask=mask,
+            attention_mask=mask,
             decode=decode,
             deterministic=deterministic,
         )
@@ -113,7 +113,7 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
         input_tokens,
         y,
         context=None,
-        mask=None,
+        attention_mask=None,
         decode=False,
         deterministic=False,
     ):
@@ -121,8 +121,8 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
 
         # Autoregressive mask constrained
         base_mask = jnp.tril(jnp.ones((seq_len, seq_len)))
-        if mask is not None:
-            base_mask = base_mask & mask
+        if attention_mask is not None:
+            base_mask = base_mask & attention_mask
 
         if context is not None:
             context = context[..., None, :]
@@ -132,7 +132,7 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
             y,
             y,
             context=context,
-            mask=mask,
+            mask=base_mask,
             deterministic=deterministic,
             decode=decode,
         )
@@ -203,7 +203,9 @@ class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
     def log_prob(self, model_mask, tokenizer, y, **kwargs):
         model_mask_logits = self(model_mask, tokenizer, y=y, **kwargs)
         # Correct Bernoulli log probability is negative binary cross entropy
-        bernoulli_log_prob = -optax.sigmoid_binary_cross_entropy(model_mask_logits, model_mask)
+        bernoulli_log_prob = -optax.sigmoid_binary_cross_entropy(
+            model_mask_logits, model_mask
+        )
         return jnp.sum(bernoulli_log_prob, axis=-1)
 
 

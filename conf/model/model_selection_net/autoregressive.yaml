@@ -3,6 +3,6 @@ params:
   num_layers: 4
   num_heads: 4
   widening_factor: 3
-  attn_size: 16
+  attn_size: 8
   dropout_rate: null
   context_dim: null  # Context dimension embedding

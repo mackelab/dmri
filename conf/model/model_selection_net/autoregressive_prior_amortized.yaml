@@ -1,9 +1,9 @@
 name: DMRIModelSelectionAmortizedPriorConfig
 params:
-  num_layers: 4
+  num_layers: 3
   num_heads: 4
   widening_factor: 4
-  attn_size: 16
+  attn_size: 8
   dropout_rate: null
   context_dim: 64  # Context dimension embedding
   mask_prior_dim: 1  # Model prior input dim

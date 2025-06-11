@@ -1,0 +1,196 @@
+from functools import partial
+
+import jax
+import jax.numpy as jnp
+import numpy as np
+from blackjax import hmc, tempered_smc
+from blackjax.smc.resampling import systematic
+
+
+def eval_in_batches(fn, key, *data, batch_size=10_000, logger=None, min_batch_size=100):
+    eval_results = []
+    if logger is not None:
+        print_fn = logger.info
+    else:
+        print_fn = print
+
+    current_batch_size = batch_size
+    batch_start = 0
+
+    while batch_start < data[0].shape[0]:
+        try:
+            key, subkey = jax.random.split(key)
+            print_fn(
+                f"Evaluating batch {batch_start} with batch size {current_batch_size}"
+            )
+            batch_end = min(batch_start + current_batch_size, data[0].shape[0])
+            batch_data = jax.tree_util.tree_map(
+                lambda x: x[batch_start:batch_end], data
+            )
+            batch_keys = jax.random.split(subkey, batch_data[0].shape[0])
+            batch_res = fn(batch_keys, *batch_data)
+            batch_res = np.array(batch_res)
+            eval_results.append(batch_res)
+            batch_start = batch_end
+        except Exception as e:
+            if (
+                "out of memory" in str(e).lower()
+                and current_batch_size > min_batch_size
+            ):
+                print_fn(
+                    f"Out of memory error, reducing batch size from {current_batch_size} to {current_batch_size // 2}"
+                )
+                current_batch_size = current_batch_size // 2
+                continue
+            else:
+                raise e
+
+    return np.concatenate(eval_results, axis=0)
+
+
+def build_mask_sample_fn(method, num_samples, model, acq, p_mask):
+    if method == "naive":
+
+        def sample_mask_per_x(key, x):
+            keys = jax.random.split(key, num_samples)
+            return jax.vmap(model.sample_mask, in_axes=(0, None, None, None, None))(
+                keys, acq.bvals, acq.bvecs, x, jnp.array([p_mask])
+            )
+
+        sample_mask_per_x = jax.jit(jax.vmap(sample_mask_per_x, in_axes=(0, 0)))
+
+        return sample_mask_per_x
+    else:
+        # TODO Add temperature sampling
+        raise ValueError(f"Method {method} not supported")
+
+
+def build_theta_sample_fn(
+    method, num_samples, model, acq, model_mask, sim_type, params, params_corrector
+):
+    num_steps = params.get("num_steps", 25)
+    max_noise = params.get("max_noise", 80)
+
+    def base_sample_fn(key, x, model_mask):
+        K = num_samples
+        in_axes_model_mask = 0 if model_mask.ndim == 2 else None
+        sample_fn = jax.vmap(
+            partial(model.sample_theta, num_steps=num_steps, max_noise=max_noise),
+            in_axes=(0, None, None, None, in_axes_model_mask),
+        )
+        keys = jax.random.split(key, K)
+        theta = sample_fn(keys, acq.bvals, acq.bvecs, x, model_mask)
+        return theta
+
+    corrector = build_corrector(method, model, acq, model_mask, sim_type, params_corrector)
+
+    # Combine sampling and correction
+    def sample_theta_per_x(key, x, model_mask):
+        key1, key2 = jax.random.split(key)
+        theta = base_sample_fn(key1, x, model_mask)
+        theta_corrected = corrector(key2, theta, x, model_mask)
+        return theta_corrected
+
+    if model_mask is None or model_mask.ndim > 1:
+        sample_theta_per_x = jax.jit(jax.vmap(sample_theta_per_x, in_axes=(0, 0, 0)))
+    else:
+        sample_theta_per_x = jax.jit(
+            jax.vmap(partial(sample_theta_per_x, model_mask=model_mask), in_axes=(0, 0))
+        )
+
+    return sample_theta_per_x
+
+
+def build_model_fn(sim_type):
+    def log_likelihood_fn(theta, mask, acq, x):
+        simulator = sim_type.from_theta(theta, model_mask=mask)
+        ll = simulator.log_likelihood(acq, x)
+        ll = jnp.where(jnp.isfinite(ll), ll, -jnp.inf)
+        return ll
+
+    def log_prior_fn(theta):
+        return jax.scipy.stats.norm.logpdf(theta, 0, 1).sum()
+
+    def log_posterior_fn(theta, mask, acq, x):
+        return log_prior_fn(theta) + log_likelihood_fn(theta, mask, acq, x)
+
+    return log_posterior_fn, log_prior_fn, log_likelihood_fn
+
+
+def build_corrector(method, model, acq, model_mask, sim_type, params):
+    d = model.tokenizer.simulator.theta_dim
+    posterior_fn, prior_fn, likelihood_fn = build_model_fn(sim_type)
+
+    num_integration_steps = params.get("num_integration_steps", 5)
+    step_size = params.get("step_size", 0.005)
+    hmc_kernel = hmc.build_kernel()
+    hmc_kernel = partial(
+        hmc_kernel,
+        num_integration_steps=num_integration_steps,
+        step_size=step_size,
+        inverse_mass_matrix=jnp.ones(d),
+    )
+
+    if method == "auto":
+        method = "smc_corrected" if model_mask.ndim < 3 else "mcmc_corrected"
+
+    if method == "uncorrected":
+
+        def corrector(key, theta, x, model_mask):
+            return theta
+    elif method == "smc_corrected":
+        lam_start = params.get("lam_start", 0.99)
+        num_steps = params.get("num_steps", 5)
+        num_inner_steps = params.get("num_inner_steps", 1)
+
+        def corrector(key, theta, x, model_mask):
+            assert model_mask is None or model_mask.ndim <= 1, (
+                "Model mask must be None or 1D"
+            )
+            resampling_fn = systematic
+            _log_likelihood_fn = partial(likelihood_fn, mask=model_mask, acq=acq, x=x)
+            smc = tempered_smc(
+                prior_fn,
+                _log_likelihood_fn,
+                hmc_kernel,
+                hmc.init,
+                {},
+                resampling_fn,
+                num_inner_steps,
+            )
+            state = smc.init(theta)
+            state = state._replace(lmbda=lam_start)
+
+            def step(state, rng):
+                state, i = state
+                lmbda = lam_start + (i + 1) * (1 - lam_start) / num_steps
+                new_state, _ = smc.step(rng, state, lmbda)
+                return (new_state, i + 1), None
+
+            rng_keys = jax.random.split(key, num_steps)
+            final_state, _ = jax.lax.scan(step, (state, 0), rng_keys)
+            return final_state[0].particles
+
+    elif method == "mcmc_corrected":
+        num_steps = params.get("num_steps", 5)
+
+        def corrector(key, theta, x, model_mask):
+            alg = hmc(
+                partial(posterior_fn, mask=model_mask, acq=acq, x=x),
+                step_size,
+                jnp.ones(d),
+                num_integration_steps,
+            )
+            state = alg.init(theta)
+
+            def step(state, key):
+                state, _ = alg.step(key, state)
+                return state, None
+
+            keys = jax.random.split(key, num_steps)
+            state, _ = jax.lax.scan(step, state, keys)
+            return state.position
+    else:
+        raise ValueError(f"Method {method} not supported")
+
+    return corrector

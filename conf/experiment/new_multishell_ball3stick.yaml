@@ -1,0 +1,17 @@
+# @package _global_
+name: new_multishell_ball3stick_simformer6
+use_wandb: true
+
+hydra:
+  sweeper:
+    params:
+      wandb.project: new_multishell_ball3stick
+      train.ema_decay: 0.9999
+
+
+defaults:
+  - _self_
+  - override /partition: h100
+  - override /simulator: multishell_ball3stick_shared_with_score
+  - override /model: mask_amortized_pp
+  - override /model/inference_net: simformer6

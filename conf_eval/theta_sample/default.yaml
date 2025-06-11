@@ -1,0 +1,10 @@
+method: uncorrected
+num_samples: 50
+eval_batch_size: 30_000
+
+params:
+  num_steps: 16
+  max_noise: 80
+
+defaults:
+  - corrector: auto

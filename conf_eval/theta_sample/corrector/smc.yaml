@@ -1,0 +1,6 @@
+name: smc_corrected
+lam_start: 0.99
+num_steps: 5
+num_inner_steps: 1
+num_integration_steps: 2
+step_size: 0.005

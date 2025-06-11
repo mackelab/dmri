@@ -1,0 +1,26 @@
+# @package _global_
+name: dmri_ball_sticks_new_pp_only_diffusion2
+use_wandb: true
+
+hydra:
+  sweeper:
+    params:
+      wandb.project: dmri_ball_sticks_shared_param
+      model.model_dim: 128
+      train.optimizer.scheduler_params.transition_steps: 200_000
+      model.embedding_net.params.log_transform_signals: False
+      train.eval_freq: 100_000
+      train.model_selection_weight: 0.
+      train.dataloader.train_params.batch_size: 4096
+      train.dataloader.train_params.max_queue_size: 1_000
+      train.dataloader.train_params.num_producers: 1
+      simulator.prior_mask_alpha: 10.
+
+
+
+defaults:
+  - _self_
+  - override /partition: h100
+  - override /simulator: ball3stick_shared
+  - override /model: mask_amortized_pp
+  - override /train/optimizer: default_new

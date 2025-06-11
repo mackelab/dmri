@@ -3,8 +3,8 @@
 hydra:
   mode: MULTIRUN
   launcher:
-    timeout_min: 1440
+    timeout_min: 2880
     gres: gpu
     partition: h100-ferranti
     cpus_per_task: 12
-    mem_gb: 64
+    mem_gb: 32

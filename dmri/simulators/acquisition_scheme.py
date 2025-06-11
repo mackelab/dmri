@@ -112,16 +112,63 @@ register_dataclass(
     acquisition_scheme, data_fields=("bvals", "bvecs"), meta_fields=("delta", "Delta")
 )
 
-def random_hcp_acquisition(rng, num_acquisitions=105) -> acquisition_scheme:
-    rng1, rng2, rng3, rng4, rng5 = jax.random.split(rng, 5)
-    bvals_typical = jnp.array(5 * [0.0] + 50 * [1000.0] + 50 * [2000.0])
-    bvals_rand_int = jax.random.choice(
-        rng1, jnp.linspace(0, 4000, 800), shape=(num_acquisitions,), replace=False
-    )
-    bvals_float = jax.random.uniform(rng2, shape=(num_acquisitions,)) * 4000
+from dipy.io.gradients import read_bvals_bvecs
 
+import os
+_bvals_typ, bvecs_typ = read_bvals_bvecs(os.path.join(os.path.dirname(__file__), "data/bvals"), os.path.join(os.path.dirname(__file__), "data/bvecs"))
+# Round bvals to nearest (0, 1000, 2000)
+bvals_typ = np.round(_bvals_typ / 1000) * 1000
+bvals_typ = np.clip(bvals_typ, 0, 2000)
+idx = np.argsort(bvals_typ)
+bvals_typ = bvals_typ[idx]
+bvecs_typ = bvecs_typ[idx]
+
+_bvals_large, bvecs_large = read_bvals_bvecs(os.path.join(os.path.dirname(__file__), "data/bvals_large"), os.path.join(os.path.dirname(__file__), "data/bvecs_large"))
+# Round bvals to nearest (0, 1000, 2000)
+bvals_large = np.round(_bvals_large / 1000) * 1000
+bvals_large = np.clip(bvals_large, 0, 4000)
+idx = np.argsort(bvals_large)
+bvals_typ_large = bvals_large[idx]
+bvecs_typ_large = bvecs_large[idx]
+
+def random_hcp_large_acquisition(rng, num_acquisitions=297, typical_prob=0.8, random_prob=0.2) -> acquisition_scheme:
+    rng1, rng2, rng3, rng4, rng5 = jax.random.split(rng, 5)
+    bvals_typical_large = jnp.array(bvals_typ_large)
+    bvecs_typical_large = jnp.array(bvecs_typ_large)
+    bvals_float = jax.random.uniform(rng2, shape=(num_acquisitions,)) * 4000
+    # TODO remove restrictrictions
     bvals = jax.random.choice(
-        rng3, jnp.stack([bvals_typical, bvals_rand_int, bvals_float])
+        rng3, jnp.stack([bvals_typical_large, bvals_float]), p=jnp.array([typical_prob, random_prob])
+    )
+    bvals = jnp.sort(bvals)
+    mask = jax.random.choice(
+        rng4, jnp.array([0, 1]), shape=(num_acquisitions,), p=jnp.array([0.01, 0.99])
+    )
+
+    bvals = bvals * mask
+
+    bvals = jnp.sort(bvals)
+
+    # Create random directions
+    rng5_1, rng5_2 = jax.random.split(rng5, 2)
+    bvecs = jax.random.normal(rng5_1, shape=(num_acquisitions, 3))
+    bvecs = bvecs / jnp.linalg.norm(bvecs, axis=1)[:, None]
+
+    bvecs = jax.random.choice(
+        rng5_2, jnp.stack([bvecs_typical_large, bvecs], axis=0), axis=0, p=jnp.array([typical_prob, random_prob])
+    )
+
+    return acquisition_scheme(bvals, bvecs)
+
+
+def random_hcp_acquisition(rng, num_acquisitions=105, typical_prob=0.5, random_prob=0.5) -> acquisition_scheme:
+    rng1, rng2, rng3, rng4, rng5 = jax.random.split(rng, 5)
+    bvals_typical = jnp.array(bvals_typ)
+    bvecs_typical = jnp.array(bvecs_typ)
+    bvals_float = jax.random.uniform(rng2, shape=(num_acquisitions,)) * 4000
+    # TODO remove restrictrictions
+    bvals = jax.random.choice(
+        rng3, jnp.stack([bvals_typical, bvals_float]), p=jnp.array([typical_prob, random_prob])
     )
 
     mask = jax.random.choice(
@@ -132,8 +179,13 @@ def random_hcp_acquisition(rng, num_acquisitions=105) -> acquisition_scheme:
     bvals = jnp.sort(bvals)
 
     # Create random directions
-    bvecs = jax.random.normal(rng5, shape=(num_acquisitions, 3))
+    rng5_1, rng5_2 = jax.random.split(rng5, 2)
+    bvecs = jax.random.normal(rng5_1, shape=(num_acquisitions, 3))
     bvecs = bvecs / jnp.linalg.norm(bvecs, axis=1)[:, None]
+
+    bvecs = jax.random.choice(
+        rng5_2, jnp.stack([bvecs_typical, bvecs], axis=0), axis=0, p=jnp.array([typical_prob, random_prob])
+    )
 
     return acquisition_scheme(bvals, bvecs)
 
