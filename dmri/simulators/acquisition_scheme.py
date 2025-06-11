@@ -311,7 +311,6 @@ def random_advanced_reasearch_acquisition_scheme(rng, num_acquisitions=500):
     return acquisition_scheme(bvals, bvecs)
 
 
-
 def get_biobank_bvals():
     bvals = np.array(
         [

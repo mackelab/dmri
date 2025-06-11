@@ -218,7 +218,6 @@ def _main(cfg: DictConfig):
     step = start_step
     datastream = iter(loader)
 
-
     if continue_training:
         latest_step = checkpoint_manager.get_latest_step()
         print(f"latest_step: {latest_step}")

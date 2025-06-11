@@ -1,0 +1,16 @@
+# @package _global_
+name: dmri_all_gaussian_no_dropout
+use_wandb: true
+
+hydra:
+  sweeper:
+    params:
+      wandb.project: dmri_all_gaussian
+      model.model_dim: 128
+
+
+defaults:
+  - _self_
+  - override /partition: h100
+  - override /simulator: all_gaussian
+  - override /train/optimizer: default_new_ema

@@ -1,0 +1,16 @@
+# @package _global_
+name: dmri_simple_new_restarts
+use_wandb: true
+
+hydra:
+  sweeper:
+    params:
+      wandb.project: dmri_simple_new
+      model.model_dim: 128
+
+
+defaults:
+  - _self_
+  - override /partition: h100
+  - override /simulator: simple
+  - override /train/optimizer: default_new_restarts
