@@ -5,11 +5,13 @@ import jax.numpy as jnp
 import numpy as np
 from jax.tree_util import register_dataclass
 from jax.typing import ArrayLike
+from dmri.utils.dmriutils import ssfp_signal_fn
 
 WATER_DIFFUSION_CONSTANT = 2.299e-3  # mm^2/s
 WATER_IN_AXON_DIFFUSION_CONSTANT = 1.7e-3  # mm^2/s
 NAA_IN_AXONS = 0.00015e-3  # mm^2/s
 WATER_GYROMAGNETIC_RATIO = 267.513e6  # 1/(sT)
+WATER_GYROMAGNETIC_RATIO_MS_MT = 267.513 # rad/ms/mT
 
 ACQ_CONSTANTS = {
     "HCP": {"delta": 0.0106, "Delta": 0.0431},
@@ -37,7 +39,7 @@ class acquisition_scheme:  # noqa: N801
     Delta: ArrayLike = field(default_factory=lambda: 0.0431)  # In seconds
 
     @property
-    def q_values(self):
+    def qvals(self):
         """Calculate the q-values for the acquisition scheme.
 
         Returns:
@@ -108,9 +110,92 @@ class acquisition_scheme:  # noqa: N801
         return acquisition_scheme(bvals, gradient_directions, delta, Delta)
 
 
+@dataclass
+class ssfp_acquisition_scheme:
+    """A class representing a Steady-State Free Precession (SSFP) acquisition scheme.
+
+    This class encapsulates the parameters needed to define a SSFP acquisition,
+    including b-values, gradient directions, and timing parameters.
+    """
+    bvecs: ArrayLike # unit vectors
+    TRs: ArrayLike # In ms
+    flipAngles: ArrayLike # In degrees
+    diffGradAmps: ArrayLike # In T/m
+    diffGradDur: ArrayLike # In ms
+    B1: ArrayLike = field(default_factory=lambda: 1.0)  # unitless
+    T1: ArrayLike = field(default_factory=lambda: 400)  # In ms
+    T2: ArrayLike = field(default_factory=lambda: 45)  # In ms
+    delta: ArrayLike = field(default_factory=lambda: 0.0106)  # In seconds
+    Delta: ArrayLike = field(default_factory=lambda: 0.0431)  # In seconds
+
+
+    @property
+    def sa(self):
+        """Calculate the sine of the flip angle."""
+        return jnp.sin(self.flipAngles * self.B1 * jnp.pi / 180.0)
+
+    @property
+    def ca(self):
+        """Calculate the cosine of the flip angle."""
+        return jnp.cos(self.flipAngles * self.B1 * jnp.pi / 180.0)
+
+    @property
+    def E1(self):
+        """Calculate the longitudinal relaxation parameter."""
+        return jnp.exp(-self.TRs / (self.T1))
+
+    @property
+    def E2(self):
+        """Calculate the transverse relaxation parameter."""
+        return jnp.exp(-self.TRs / (self.T2))
+
+    @property
+    def logE1(self):
+        """Calculate the log of the longitudinal relaxation parameter."""
+        return -self.TRs / self.T1
+
+    @property
+    def logE2(self):
+        """Calculate the log of the transverse relaxation parameter."""
+        return -self.TRs / self.T2
+
+    @property
+    def qvals(self):
+        """Calculate the q-values for the acquisition scheme."""
+        return WATER_GYROMAGNETIC_RATIO_MS_MT * self.diffGradAmps * self.diffGradDur / 1000.0 # In 1/mm
+
+    @property
+    def bvals(self):
+        """Calculate the b-values for the acquisition scheme."""
+        # TODO: Not working
+        # s_up = ssfp_signal_fn(self, self.delta, self.E1, self.E2, self.sa, self.ca)
+        # s_down = ssfp_signal_fn(self, 0.0, self.E1, self.E2, self.sa, self.ca)
+        # return - 1/self.Delta *(jnp.log(s_up) - jnp.log(s_down))
+
+        return (2 * jnp.pi * self.qvals)**2 * self.Delta  # In s/mm^2
+
+
 register_dataclass(
     acquisition_scheme, data_fields=("bvals", "bvecs"), meta_fields=("delta", "Delta")
 )
+
+register_dataclass(
+    ssfp_acquisition_scheme, data_fields=("bvecs", "TRs", "flipAngles", "diffGradAmps", "diffGradDur"), meta_fields=("B1", "T1", "T2", "delta", "Delta")
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 from dipy.io.gradients import read_bvals_bvecs
 

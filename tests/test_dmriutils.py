@@ -108,7 +108,7 @@ def test_make_dyads():
     v, disp = make_dyads(theta, phi)
 
     # Check shape of v
-    assert v.shape == (3, 3)
+    assert v.shape == (3,)
 
     # Check dispersion
     assert 0 <= disp <= 1

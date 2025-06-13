@@ -5,6 +5,119 @@ import nibabel as nb
 import os
 
 
+
+def ssfp_signal_fn(acq,adc, E1, E2, sa, ca):
+    """Calculate the Steady-State Free Precession (SSFP) signal.
+
+    This function computes the SSFP signal based on acquisition parameters, apparent diffusion coefficient,
+    and relaxation parameters. The signal calculation takes into account diffusion effects and relaxation
+    times through the E1 and E2 parameters.
+
+    Args:
+        acq: Acquisition parameters object containing:
+            - gyro: Gyromagnetic ratio
+            - diffGradAmps: Diffusion gradient amplitudes
+            - diffGradDur: Diffusion gradient duration
+            - TRs: Repetition time
+        adc (float): Apparent diffusion coefficient
+        E1 (float): Longitudinal relaxation parameter (exp(-TR/T1))
+        E2 (float): Transverse relaxation parameter (exp(-TR/T2))
+        sa (float): Sine of the flip angle
+        ca (float): Cosine of the flip angle
+
+    Returns:
+        float: The calculated SSFP signal. Note that noise will be added externally.
+    """
+    qval = acq.qvals
+    A1 = jnp.exp(-qval**2 * acq.TRs * adc)
+    A2 = jnp.exp(-qval**2 * acq.diffGradDur * adc)
+    A2_03 = jnp.exp(-qval**2 * acq.diffGradDur * adc / 3.0)
+
+    s = E2 * A1 / A2_03**4 * (1.0 - E1 * ca) + E2 / A2_03 * (ca - E1)
+    r = 1.0 - E1 * ca + E2**2 * A1 * A2_03 * (ca - E1)
+    K = (
+        (1.0 - E1 * A1 * ca - E2**2 * A1**2 / A2_03**2 * (E1 * A1 - ca)) /
+        (E2 * A1 / A2_03**4 * (1.0 + ca) * (1.0 - E1 * A1))
+    )
+
+    F1 = K - jnp.sqrt(K**2 - A2**2)
+    Mminus_top = -(1.0 - E1) * E2 / A2_03**2 * (F1 - E2 * A1 * A2_03**2) * sa
+    Mminus_bottom = r - F1 * s
+    signal = Mminus_top / Mminus_bottom # Noise will be added externally
+    return signal
+
+
+def log_ssfp_signal_fn(acq, adc, logE1, logE2, sa, ca):
+    """Calculate the log of the Steady-State Free Precession (SSFP) signal in a numerically stable way.
+
+    This function computes the log of the SSFP signal while maintaining numerical stability by
+    working in log space throughout the calculation. This is particularly useful for fitting
+    and optimization tasks where working in log space is preferred.
+
+    Args:
+        acq: Acquisition parameters object containing:
+            - gyro: Gyromagnetic ratio
+            - diffGradAmps: Diffusion gradient amplitudes
+            - diffGradDur: Diffusion gradient duration
+            - TRs: Repetition time
+        adc (float): Apparent diffusion coefficient
+        logE1 (float): Log of longitudinal relaxation parameter (log(exp(-TR/T1)))
+        logE2 (float): Log of transverse relaxation parameter (log(exp(-TR/T2)))
+        sa (float): Sine of the flip angle
+        ca (float): Cosine of the flip angle
+
+    Returns:
+        float: The log of the calculated SSFP signal
+    """
+    qval = acq.qvals
+    # Calculate log terms directly
+    logA1 = -qval**2 * acq.TRs * adc
+    logA2 = -qval**2 * acq.diffGradDur * adc
+    logA2_03 = -qval**2 * acq.diffGradDur * adc / 3.0
+
+    E1 = jnp.exp(logE1)
+    term1 = logE2 + logA1 - 4 * logA2_03 + jnp.log1p(-E1 * ca)
+    term2 = logE2 - logA2_03 + jnp.log(ca - E1)
+    log_s = jnp.logaddexp(term1, term2)
+
+    # Calculate r in log space
+    log_r_term1 = jnp.log(jnp.abs(1.0 - E1 * ca))
+    log_r_term2 = 2 * logE2 + logA1 + logA2_03 + jnp.log(jnp.abs(ca - E1))
+    log_r = jnp.logaddexp(log_r_term1, log_r_term2)
+
+    # Calculate K in log space
+    log_K_num = jnp.log(jnp.abs(
+        1.0 - E1 * jnp.exp(logA1) * ca -
+        jnp.exp(2 * logE2 + 2 * logA1 - 2 * logA2_03) * (E1 * jnp.exp(logA1) - ca)
+    ))
+    log_K_den = jnp.log(jnp.abs(
+        jnp.exp(logE2 + logA1 - 4 * logA2_03) * (1.0 + ca) * (1.0 - E1 * jnp.exp(logA1))
+    ))
+    log_K = log_K_num - log_K_den
+
+    # Calculate F1 in log space
+    K = jnp.exp(log_K)
+    F1 = K - jnp.sqrt(K**2 - jnp.exp(2 * logA2))
+    log_F1 = jnp.log(jnp.abs(F1))
+
+    # Calculate final terms in log space
+    # Numerator: -(1-E1) * E2 / A2_03^2 * (F1 - E2*A1*A2_03^2) * sa
+    log_Mminus_top = jnp.log(jnp.abs(
+        -(1.0 - E1) * jnp.exp(logE2) / jnp.exp(2 * logA2_03) *
+        (jnp.exp(log_F1) - jnp.exp(logE2 + logA1 + 2 * logA2_03)) * sa
+    ))
+
+    # Denominator: r - F1 * s
+    log_Mminus_bottom = jnp.log(jnp.abs(
+        jnp.exp(log_r) - jnp.exp(log_F1 + log_s)
+    ))
+
+    # Final log signal
+    log_signal = log_Mminus_top - log_Mminus_bottom
+    return log_signal
+
+
+
 def fit_diffusion_tensor_linearized(
     logS: ArrayLike, bvals: ArrayLike, bvecs: ArrayLike
 ) -> ArrayLike:
@@ -227,7 +340,6 @@ def make_dyads(
     )
 
     dyadic_tensor = jnp.matmul(v, v.T) / len(theta_samples)
-    print(dyadic_tensor.shape)
     L, E = jnp.linalg.eigh(dyadic_tensor)
 
     ind = jnp.argsort(-L)
