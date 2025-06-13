@@ -2,9 +2,10 @@ import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
-from dmri.simulators.base import SignalCompartment, acquisition_scheme
+from dmri.simulators.base import SignalCompartment
+from dmri.simulators.acquisition_scheme import acquisition_scheme, ssfp_acquisition_scheme
 from dmri.simulators.sphereical_distributions import Uniform
-
+from dmri.utils.dmriutils import ssfp_signal_fn
 
 class Ball(SignalCompartment):
     """The Ball model is a simple model that represents free water diffusion in
@@ -253,6 +254,120 @@ class MultiShellStaticBall(MultiShellBall):
             The log signal
         """
         return multi_shell_ball_log_signal_fn(aquisition_scheme.bvals, cls.lam, cls.lam_std)
+
+class SSFPBall(SignalCompartment):
+    """
+    The SSFPBall model is a Ball with a fixed lambda value.
+    The lam parameter is shared from a global parameter state as a class attribute.
+    """
+
+    theta_dim: int = 1
+    lam_min: float = 0.
+    lam_max: float = 0.01
+
+    def __init__(self, lam: float) -> None:
+        self.lam = lam
+
+    @classmethod
+    def signal_fn(
+        cls, acq: ssfp_acquisition_scheme, lam: float, rng=None
+    ) -> ArrayLike:
+        """Compute the log signal for given b-values and b-vectors."""
+        # Relaxation terms
+        # E1 = jnp.exp(-acq.TRs / (1e-3 * acq.T1))  # T1
+        # E2 = jnp.exp(-acq.TRs / (1e-3 * acq.T2))  # T2
+
+        # # Flipping terms
+        # sa = jnp.sin(acq.flipAngles * acq.B1 * jnp.pi / 180.0)  # sin(flip * B1)
+        # ca = jnp.cos(acq.flipAngles * acq.B1 * jnp.pi / 180.0)  # cos(flip * B1)
+        E1 = acq.E1
+        E2 = acq.E2
+        sa = acq.sa
+        ca = acq.ca
+
+        signal = ssfp_signal_fn(acq, lam, E1, E2, sa, ca)
+        return signal
+
+    @classmethod
+    def log_signal_fn(
+        cls, acq: ssfp_acquisition_scheme, lam: float, rng=None
+    ) -> ArrayLike:
+        """Compute the log signal for given b-values and b-vectors."""
+
+        signal = cls.signal_fn(acq, lam, rng)
+        return jnp.log(signal)
+
+    @classmethod
+    def to_theta(cls, lam: float) -> ArrayLike:
+        """Convert to the parameter space theta.
+        Since there are no learnable parameters, return an empty array.
+        """
+        u_lam = (lam - cls.lam_min) / (cls.lam_max - cls.lam_min)
+        theta = jax.scipy.stats.norm.ppf(u_lam)
+        return theta
+
+    @classmethod
+    def to_params(cls, theta: ArrayLike) -> tuple:
+        """Convert the parameter space theta to parameters.
+        Since there are no learnable parameters, return an empty tuple.
+        """
+        u_lam = jax.scipy.stats.norm.cdf(theta)
+        lam = u_lam * (cls.lam_max - cls.lam_min) + cls.lam_min
+        return (lam,)
+
+class SSFPStaticBall(SSFPBall):
+    """
+    The SSFPStaticBall model is a SSFPBall with a fixed lambda value.
+    The lam parameter is shared from a global parameter state as a class attribute.
+    """
+    theta_dim: int = 0  # No learnable parameters, lam is fixed
+    lam: float = None
+
+    def __init__(self) -> None:
+        pass
+
+    @classmethod
+    def from_global_params(cls, params: ArrayLike, idx: list[int]) -> "StaticBall":
+        """Create a StaticBall from a global theta value.
+        """
+        cls.lam = params[idx[0]]
+        assert len(idx) == 1, "SSFPStaticBall only has one fixed parameter, lam"
+        return cls
+
+
+    @classmethod
+    def to_theta(cls) -> ArrayLike:
+        """Convert to the parameter space theta.
+        Since there are no learnable parameters, return an empty array.
+        """
+        return jnp.array([])
+
+    @classmethod
+    def to_params(cls, theta: ArrayLike) -> tuple:
+        """Convert the parameter space theta to parameters.
+        Since there are no learnable parameters, return an empty tuple.
+        """
+        return ()
+
+    @classmethod
+    def signal_fn(
+        cls, aquisition_scheme: ssfp_acquisition_scheme, rng=None
+    ) -> ArrayLike:
+        """Compute the signal for given b-values and b-vectors.
+        """
+        return cls.signal_fn(aquisition_scheme, cls.lam, rng)
+
+    @classmethod
+    def log_signal_fn(
+        cls, aquisition_scheme: ssfp_acquisition_scheme, rng=None
+    ) -> ArrayLike:
+        """Compute the log signal for given b-values and b-vectors.
+        """
+        return cls.log_signal_fn(aquisition_scheme, cls.lam, rng)
+
+
+
+
 
 
 def multi_shell_ball_log_signal_fn(

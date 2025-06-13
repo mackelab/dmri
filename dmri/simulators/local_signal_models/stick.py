@@ -8,8 +8,8 @@ from dmri.utils.dmriutils import (
     cartesian_to_unitsphere,
     fit_diffusion_tensor_linearized,
     unitsphere_to_cartesian,
+    ssfp_signal_fn,
 )
-
 
 class Stick(SignalCompartment):
     """The Stick model represents a single fiber bundle with a fixed orientation i.e.
@@ -343,6 +343,100 @@ class MultiShellStaticStick(MultiShellStick):
         return MultiShellStick.log_signal_fn(
             aquisition_scheme, mu, cls.lam_par, cls.lam_par_std
         )
+
+
+class SSFPStick(Stick):
+    """
+    The SSFPStick model is a Stick with a fixed lambda value.
+    The lam_par parameter is shared from a global parameter state as a class attribute,
+    while the mu parameter remains learnable.
+    """
+    theta_dim: int = 3
+    lam_par: float
+    lam_min: float = 0.
+    lam_max: float = 0.01
+
+    def __init__(self, mu: ArrayLike, lam_par: float) -> None:
+        self.mu = mu
+        self.lam_par = lam_par
+
+    @classmethod
+    def signal_fn(
+        cls, aquisition_scheme: acquisition_scheme, mu: ArrayLike, lam_par: float, rng=None
+    ) -> ArrayLike:
+        """Compute the signal for given b-values and b-vectors."""
+
+        mu_cart = unitsphere_to_cartesian(mu)
+        adc_aniso = lam_par * (jnp.sum(aquisition_scheme.bvecs * mu_cart, axis=-1)) ** 2
+
+        signal = ssfp_signal_fn(aquisition_scheme, adc_aniso, aquisition_scheme.E1, aquisition_scheme.E2, aquisition_scheme.sa, aquisition_scheme.ca)
+        return signal
+
+    @classmethod
+    def log_signal_fn(
+        cls, aquisition_scheme: acquisition_scheme, mu: ArrayLike, lam_par: float, rng=None
+    ) -> ArrayLike:
+        """Compute the log signal for given b-values and b-vectors."""
+        signal = cls.signal_fn(aquisition_scheme, mu, lam_par, rng)
+        return jnp.log(signal)
+
+
+class SSFPStaticStick(SSFPStick):
+    """
+    The SSFPStaticStick model is a SSFPStick with a fixed lambda value.
+    The lam_par parameter is shared from a global parameter state as a class attribute.
+    """
+    theta_dim: int = 2  # No learnable parameters, lam_par is fixed
+    lam_par: float = None
+
+    def __init__(self, mu: ArrayLike) -> None:
+        self.mu = mu
+
+    @classmethod
+    def from_global_params(cls, params: ArrayLike, idx: list[int]) -> type:
+        """Create a SSFPStaticStick from a global theta value."""
+        cls.lam_par = params[idx[0]]
+        return cls
+
+
+    @classmethod
+    def to_theta(cls, mu: ArrayLike) -> ArrayLike:
+        """Convert only the mu parameter to the parameter space theta.
+        The lam_par parameter is a class attribute and not included in theta.
+        """
+        # Only convert mu parameters to theta space
+        mu0_normalized = 1 - jnp.cos(
+            mu[0]
+        )  # Ensures uniform distribution on upper hemisphere
+        mu1_normalized = (mu[1] + jnp.pi) / (2 * jnp.pi)
+        theta = jnp.array([mu0_normalized, mu1_normalized])
+        theta = jax.scipy.stats.norm.ppf(theta)
+        return theta
+
+    @classmethod
+    def to_params(cls, theta: ArrayLike) -> tuple:
+        """Convert the parameter space theta to the mu value.
+        The lam_par parameter is a class attribute and not included in theta.
+        """
+        theta = jax.scipy.stats.norm.cdf(theta)
+        mu1 = arccos_stable(1 - theta[0])  # Ensures output is in upper hemisphere
+        mu2 = theta[1] * 2 * jnp.pi - jnp.pi
+        mu = jnp.array([mu1, mu2])
+        return (mu,)
+
+    @classmethod
+    def signal_fn(
+        cls, aquisition_scheme: acquisition_scheme, mu: ArrayLike, rng=None
+    ) -> ArrayLike:
+        """Compute the signal for given b-values and b-vectors."""
+        return SSFPStick.signal_fn(aquisition_scheme, mu, cls.lam_par, rng)
+
+    @classmethod
+    def log_signal_fn(
+        cls, aquisition_scheme: acquisition_scheme, mu: ArrayLike, rng=None
+    ) -> ArrayLike:
+        """Compute the log signal for given b-values and b-vectors."""
+        return SSFPStick.log_signal_fn(aquisition_scheme, mu, cls.lam_par, rng)
 
 
 

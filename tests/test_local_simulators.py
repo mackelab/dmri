@@ -22,6 +22,8 @@ from dmri.simulators import (
     WatsonStick,
     WatsonZeppelin,
     Zeppelin,
+    SSFPBall,
+    SSFPStick,
     acquisition_scheme,
     BallStickSharedDiffusivity,
 )
@@ -144,7 +146,7 @@ def test_stabally_differentiable(compartment_model):
 def test_signal_properties(compartment_model):
     """Test fundamental properties of the signal."""
     # Create acquisition scheme with varying b-values
-    bvals = jnp.array([0, 100, 500, 1000, 2000])
+    bvals = jnp.array([0., 100., 500., 1000., 2000.])
     bvecs = jnp.array([[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 0], [1, 0, 1]])
     bvecs = bvecs / jnp.linalg.norm(bvecs, axis=-1, keepdims=True)
     acq = acquisition_scheme(bvals, bvecs)
@@ -170,7 +172,7 @@ def test_gradient_computation(compartment_model):
         # pytest.xfail("MultiCompartmentModel model needs currently not implemented")
         pass
 
-    bvals = jnp.array([0, 100, 1000])
+    bvals = jnp.array([0., 100., 1000.])
     bvecs = jnp.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
     bvecs = bvecs / jnp.linalg.norm(bvecs, axis=-1, keepdims=True)
     acq = acquisition_scheme(bvals, bvecs)
