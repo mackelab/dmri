@@ -18,7 +18,7 @@ class Ball(SignalCompartment):
     """
 
     theta_dim: int = 1
-    lam_min: float = 0.00001
+    lam_min: float = 0.0
     lam_max: float = 0.01  # 1e-3 mm^2/s is the diffusivity of free water
 
     def __init__(self, lam: float) -> None:

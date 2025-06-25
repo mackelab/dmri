@@ -256,10 +256,9 @@ def _main(cfg: DictConfig):
     ema_decay = cfg.train.ema_decay if cfg.train.track_ema else None
 
     while True:
-        key, subkey = jax.random.split(key)
         for _ in range(inner_steps):
+            key, subkey = jax.random.split(key)
             data = next(datastream)
-            print(data[-2].bvals.shape)
             params, state, opt_state, loss = update(
                 params, state, opt_state, data, subkey
             )

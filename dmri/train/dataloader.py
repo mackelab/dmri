@@ -33,7 +33,7 @@ class StreamDataLoader:
         queue_timeout=None,  # New parameter for queue timeout
         prefetch_depth=8,  # New parameter for controlling prefetch depth
         recycle_batches=True,  # Whether to recycle batches back into queue
-        recycle_threshold=0.1,  # Threshold below which to start recycling (fraction of max queue size)
+        recycle_threshold=0.5,  # Threshold below which to start recycling (fraction of max queue size)
     ):
         """
         Args:
@@ -146,7 +146,7 @@ class StreamDataLoader:
             while not self.event.is_set():
                 # Wait if production is paused
                 if self.paused.is_set():
-                    time.sleep(0.1)
+                    time.sleep(0.01)
                     continue
 
                 # Generate a batch
@@ -163,7 +163,7 @@ class StreamDataLoader:
                 data_cpu = data  # jax.tree_map(np.array, data)
                 # TODO This is a hack to avoid NaNs and Infs in the data
                 data_cpu = jax.tree_map(
-                    lambda x: jax.numpy.nan_to_num(x, nan=0, posinf=0, neginf=0),
+                    lambda x: jax.numpy.nan_to_num(x, nan=1.0, posinf=1.0, neginf=0.0),
                     data_cpu,
                 )
 
@@ -259,44 +259,46 @@ class StreamDataLoader:
         occurs in the background while computation proceeds.
         """
         stream_iter = iter(cpu_stream)
-        prefetch_queue = deque(maxlen=self.prefetch_depth)
+        prefetch_queue = queue.Queue(maxsize=self.prefetch_depth)
 
-        # Initial prefetching phase - fill the prefetch queue
-        for _ in range(self.prefetch_depth):
+        def prefetch_worker():
+            """Background thread that continuously tries to maintain prefetch depth"""
+            while not self.event.is_set():
+                if prefetch_queue.qsize() < self.prefetch_depth:
+                    try:
+                        cpu_batch = next(stream_iter)
+                        batch_on_device = jax.device_put(cpu_batch, self.data_device)
+                        prefetch_queue.put(batch_on_device, timeout=0.1)
+                    except (StopIteration, queue.Full):
+                        # Brief pause to avoid busy loop
+                        time.sleep(0.001)
+                else:
+                    # Brief pause if queue is full
+                    time.sleep(0.001)
+
+        # Start prefetch worker thread
+        prefetch_thread = threading.Thread(target=prefetch_worker, daemon=True)
+        prefetch_thread.start()
+        # Block until the prefetch queue is filled
+        while prefetch_queue.qsize() < self.prefetch_depth:
+            time.sleep(0.1)
+        current_batch = prefetch_queue.get(timeout=0.05)
+        yield current_batch
+        # Main loop - yield batches as soon as they're available
+        while not self.event.is_set():
+            print(prefetch_queue.qsize())
             try:
-                cpu_batch = next(stream_iter)
-                # Non-blocking device transfer
-                batch_on_device = jax.device_put(cpu_batch, self.data_device)
-                prefetch_queue.append(batch_on_device)
-            except StopIteration:
-                break
-
-        # If no batches were prefetched, we're done
-        if not prefetch_queue:
-            return
-
-        # Main loop - yield current batch while prefetching next
-        while prefetch_queue or not self.event.is_set():
-            # If we have batches to yield, do so
-            if prefetch_queue:
-                # Get the next batch to yield (oldest prefetched batch)
-                current_batch = prefetch_queue.popleft()
+                # Get batch with minimal timeout to avoid blocking
+                current_batch = prefetch_queue.get(timeout=0.05)
+                if (
+                    prefetch_queue.qsize()
+                    < self.prefetch_depth * self.recycle_threshold
+                ):
+                    prefetch_queue.put(current_batch)
                 yield current_batch
-            else:
-                # No more batches in queue but not shutting down yet
-                # Small wait to avoid busy loop
-                time.sleep(0.01)
-
-            # Try to prefetch more to maintain prefetch_depth
-            while len(prefetch_queue) < self.prefetch_depth and not self.event.is_set():
-                try:
-                    cpu_batch = next(stream_iter)
-                    batch_on_device = jax.device_put(cpu_batch, self.data_device)
-                    prefetch_queue.append(batch_on_device)
-                except StopIteration:
-                    # Stream temporarily exhausted, try again next loop
-                    # This allows getting backup batches if the queue was empty
-                    break
+            except queue.Empty:
+                # Just return whatever is available
+                yield current_batch
 
     # --------------------------------------------------------------------------
     # Method B: In-place updates with ring buffer
@@ -395,11 +397,18 @@ class StreamDataLoader:
         Returns a generator that yields GPU batches, prefetching them in parallel.
         """
         cpu_stream = self._cpu_data_stream()
+
         # `yield from` the prefetch generator
         if self.use_inplace_updates:
-            yield from self._prefetch_data_stream_inplace(cpu_stream)
+            device_stream = self._prefetch_data_stream_inplace(cpu_stream)
         else:
-            yield from self._prefetch_data_stream(cpu_stream)
+            device_stream = self._prefetch_data_stream(cpu_stream)
+
+        # Initialize the device stream
+        _ = next(device_stream)
+
+        while True:
+            yield next(device_stream)
 
     def close(self):
         """
