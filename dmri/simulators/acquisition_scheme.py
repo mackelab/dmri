@@ -126,46 +126,54 @@ class ssfp_acquisition_scheme:
         Delta (ArrayLike): Diffusion time (pulse separation), in seconds [s]
     """
 
-    bvecs: ArrayLike # unit vectors
-    T1: ArrayLike  # ms
-    T2: ArrayLike # ms
-    B1: ArrayLike # unitless
-    diffGradAmps: ArrayLike # mT/mm
+    bvecs: ArrayLike  # unit vectors
+    T1: ArrayLike  # s
+    T2: ArrayLike  # s
+    B1: ArrayLike  # unitless
+    diffGradAmps: ArrayLike  # G/mm
     flipAngles: ArrayLike = field(default_factory=lambda: 14.0) # degrees
     TRs: ArrayLike = field(default_factory=lambda: 0.0210) # seconds
     diffGradDur: ArrayLike = field(default_factory=lambda: 0.01016) # seconds
     delta: ArrayLike = field(default_factory=lambda: 0.0106)
     Delta: ArrayLike = field(default_factory=lambda: 0.0431)
+    gyromag_ratio: ArrayLike = field(default_factory=lambda: 4258 * 2 * jnp.pi)  # Hz/G
+
+    def __post_init__(self):
+        # Make unit conversions
+        self.T1 = self.T1 * 1e-3  # ms -> s
+        self.T2 = self.T2 * 1e-3  # ms -> s
+        self.diffGradAmps = self.diffGradAmps * 1e-1  # Convert to G/mm
+        self.flipAngles = self.flipAngles * jnp.pi / 180.0  # Convert to radians
 
     @property
     def sa(self) -> ArrayLike:
         """sin(flip angle * B1) [unitless]."""
-        return jnp.sin(self.flipAngles * self.B1 * jnp.pi / 180.0)
+        return jnp.sin(self.flipAngles * self.B1)
 
     @property
     def ca(self) -> ArrayLike:
         """cos(flip angle * B1) [unitless]."""
-        return jnp.cos(self.flipAngles * self.B1 * jnp.pi / 180.0)
+        return jnp.cos(self.flipAngles * self.B1)
 
     @property
     def E1(self) -> ArrayLike:
         """Longitudinal relaxation term E1 = exp(-TR/T1) [unitless]."""
-        return jnp.exp(-self.TRs / (self.T1 * 1e-3))
+        return jnp.exp(-self.TRs / self.T1)
 
     @property
     def E2(self) -> ArrayLike:
         """Transverse relaxation term E2 = exp(-TR/T2) [unitless]."""
-        return jnp.exp(-self.TRs / (self.T2 * 1e-3))
+        return jnp.exp(-self.TRs / self.T2)
 
     @property
     def logE1(self) -> ArrayLike:
         """Logarithm of longitudinal relaxation: logE1 = -TR/T1 [unitless]."""
-        return -self.TRs / (self.T1 * 1e-3)
+        return -self.TRs / self.T1
 
     @property
     def logE2(self) -> ArrayLike:
         """Logarithm of transverse relaxation: logE2 = -TR/T2 [unitless]."""
-        return -self.TRs / (self.T2 * 1e-3)
+        return -self.TRs / self.T2
 
     @property
     def qvals(self) -> ArrayLike:
@@ -173,22 +181,11 @@ class ssfp_acquisition_scheme:
 
         γ in rad/(ms·mT), G in T/m (≡ mT/mm), δ in ms.
         """
-        return WATER_GYROMAGNETIC_RATIO_MS_MT * self.diffGradAmps * self.diffGradDur / 1000.0 # mT/mm
+        return self.gyromag_ratio * self.diffGradAmps * self.diffGradDur
 
     @property
     def bvals(self) -> ArrayLike:
-        """Approximate b-values, b = (γ·G·δ)^2 · (Δ - δ/3) [s/mm²]."""
-        # Convert Δ and δ into milliseconds for consistency, then to seconds in result
-        # Here, diffGradDur is ms, Δ is s -> convert diffGradDur to s:
-        dur_s = self.diffGradDur / 1000.0 # seconds
-        Δ_minus_δ3 = self.Delta - dur_s / 3.0 # seconds
-        q = self.qvals  # [1/mm]
-        return q**2 * Δ_minus_δ3
-
-    @property
-    def eff_bvals(self) -> ArrayLike:
-        """ Effective b-values, b = - 1/D log(S_ssfp/S_ssfp)
-        """
+        """Effective b-values, b = - 1/D log(S_ssfp/S_ssfp)"""
         diffusivity = 0.08 * 1e-3 # mm^2/ms
         ssfp_signal_up = ssfp_signal_fn(diffusivity, self.qvals, self.E1, self.E2, self.sa, self.ca, self.TRs, self.diffGradDur)
         ssfp_signal_down = ssfp_signal_fn(diffusivity, self.qvals, self.E1, self.E2, self.sa, self.ca, self.TRs, 0.)

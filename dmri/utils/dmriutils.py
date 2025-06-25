@@ -14,6 +14,7 @@ def ssfp_signal_fn(
     ca: ArrayLike,
     TR: ArrayLike,
     diff_grad_dur: ArrayLike,
+    S0: ArrayLike = 1.0,
 ):
     """
     Simulate the SSFP signal attenuation (S/S0) due to diffusion using JAX.
@@ -35,82 +36,72 @@ def ssfp_signal_fn(
     A2 = jnp.exp(-(qval**2) * diff_grad_dur * adc)
     A2_03 = jnp.exp(-(qval**2) * diff_grad_dur * adc / 3.0)
 
-    s = E2 * A1 / A2_03**4 * (1 - E1 * ca) + E2 / A2_03 * (ca - E1)
-    r = 1 - E1 * ca + E2**2 * A1 * A2_03 * (ca - E1)
-
-    K = (1 - E1 * A1 * ca - (E2**2 * A1**2 / A2_03**2) * (E1 * A1 - ca)) / (
-        E2 * A1 / A2_03**4 * (1 + ca) * (1 - E1 * A1)
+    s = E2 * A1 / A2_03**4 * (1.0 - E1 * ca) + E2 / A2_03 * (ca - E1)
+    r = 1.0 - E1 * ca + E2**2 * A1 * A2_03 * (ca - E1)
+    K = (1.0 - E1 * A1 * ca - E2**2 * A1**2 / A2_03**2 * (E1 * A1 - ca)) / (
+        E2 * A1 / A2_03**4 * (1.0 + ca) * (1.0 - E1 * A1)
     )
 
     F1 = K - jnp.sqrt(K**2 - A2**2)
-    Mminus_top = -(1 - E1) * E2 / A2_03**2 * (F1 - E2 * A1 * A2_03**2) * sa
+    Mminus_top = -(1.0 - E1) * E2 / A2_03**2 * (F1 - E2 * A1 * A2_03**2) * sa
     Mminus_bottom = r - F1 * s
 
-    return Mminus_top / Mminus_bottom
+    signal = jnp.sqrt((S0 * Mminus_top / Mminus_bottom) ** 2)
+    return signal
 
-
-def log_ssfp_signal_fn(
+def freed_ssfp_signal_fn(
     adc: ArrayLike,
     qval: ArrayLike,
-    logE1: ArrayLike,
-    logE2: ArrayLike,
+    TR: ArrayLike,
+    T1: ArrayLike,
+    T2: ArrayLike,
     sa: ArrayLike,
     ca: ArrayLike,
-    TR: ArrayLike,
-    diff_grad_dur: ArrayLike,
+    S0: ArrayLike = 1.0,
 ):
     """
     Simulate the SSFP signal attenuation (S/S0) due to diffusion using JAX.
-
-    Parameters:
-        adc (float): Apparent diffusion coefficient [mm²/ms]
-        qval (float): Diffusion encoding factor [1/mm]
-        logE1 (float): Log of longitudinal relaxation term, unitless
-        logE2 (float): Log of transverse relaxation term, unitless
-        sa (float): sin(flip_angle * B1_scale), unitless
-        ca (float): cos(flip_angle * B1_scale), unitless
-        TR (float): Repetition time [ms]
-        diff_grad_dur (float): Gradient duration [ms]
-
-    Returns:
-        float: Normalized SSFP signal (S/S0), unitless
     """
-    logA1 = -qval**2 * TR * adc
-    logA2 = -qval**2 * diff_grad_dur * adc
-    logA2_03 = logA2 / 3.0
 
-    # 2) reconstruct A1, A2, A2_03 in exp form
-    A1 = jnp.exp(logA1)
-    A2 = jnp.exp(logA2)
-    A2_03 = jnp.exp(logA2_03)
+    def E1p(p):
+        return jnp.exp(-TR / T1 - adc * qval**2 * TR * p**2)
 
-    # 3) reconstruct E1, E2
-    E1 = jnp.exp(logE1)
-    E2 = jnp.exp(logE2)
+    def E2p(p):
+        return jnp.exp(-TR / T2 - adc * qval**2 * ((p**2 + p + 1 / 3) * TR))
 
-    # 4) log-space sum for s = t1 + t2
-    logt1 = logE2 + logA1 - 4 * logA2_03 + jnp.log1p(-E1 * ca)    # log(E2*A1/A2_03^4 * (1 - E1*ca))
-    logt2 = logE2 - logA2_03 + jnp.log(ca - E1)                    # log(E2/A2_03 * (ca - E1))
-    log_s = jax.scipy.special.logsumexp(jnp.stack([logt1, logt2]))                  # log(s)
-    s = jnp.exp(log_s)
+    def Ap(p):
+        return 0.5 * (E1p(p) - 1) * (1 + ca)
 
-    # 5) r = term3 + term4
-    term3 = 1 - E1 * ca
-    logterm4 = 2 * logE2 + logA1 + logA2_03 + jnp.log(ca - E1)    # log(E2^2 * A1 * A2_03 * (ca - E1))
-    term4 = jnp.exp(logterm4)
-    r = term3 + term4
+    def Bp(p):
+        return 0.5 * (E1p(p) + 1) * (1 - ca)
 
-    # 6) compute K, F1
-    num = 1 - E1 * A1 * ca - (E2**2 * A1**2 / A2_03**2) * (E1 * A1 - ca)
-    denom = E2 * A1 / (A2_03**4) * (1 + ca) * (1 - E1 * A1)
-    K = num / denom
-    sqrt_term = jnp.sqrt(jnp.maximum(K**2 - A2**2, 1e-20))
-    F1 = K - sqrt_term
+    def Cp(p):
+        return E1p(p) - ca
 
-    # 7) final signal
-    Mminus_top = -(1 - E1) * E2 / (A2_03**2) * (F1 - E2 * A1 * A2_03**2) * sa
-    Mminus_bottom = r - F1 * s
-    return Mminus_top / Mminus_bottom
+    def np_(p):
+        return -E2p(-p) * E2p(p - 1) * Ap(p) ** 2 * Bp(p - 1) / Bp(p)
+
+    def dp(p):
+        return (Ap(p) - Bp(p)) + E2p(-p - 1) * E2p(p) * Bp(p) * Cp(p + 1) / Bp(p + 1)
+
+    def ep(p):
+        return -E2p(p) * E2p(-p - 1) * Bp(p) * Cp(p + 1) / Bp(p + 1)
+
+    def scan_body(carry, k):
+        x1 = carry
+        # For the last iteration (k=1), use the base case
+        # For all other iterations, use the recursive formula
+        x1_new = jnp.where(k == 1, np_(k) / (dp(k) + ep(k)), np_(k) / (dp(k) + x1))
+        return x1_new, None
+
+    # Initialize with 0.0 and scan from 10 down to 1
+    k_values = jnp.arange(10, 0, -1)
+    x1, _ = jax.lax.scan(scan_body, 0.0, k_values)
+
+    r1 = x1 / (E2p(-1) * Bp(0)) + (E2p(0) * Cp(1)) / Bp(1)
+    S = r1 * sa * (1 - E1p(0)) * E2p(-1) / (Ap(0) - Bp(0) + E2p(-1) * Cp(0) * r1)
+
+    return S0*jnp.abs(S)
 
 def fit_diffusion_tensor_linearized(
     logS: ArrayLike, bvals: ArrayLike, bvecs: ArrayLike
