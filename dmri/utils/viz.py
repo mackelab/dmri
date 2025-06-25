@@ -14,10 +14,21 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 
-def orthoview_quiver_plotly(data, fractions, step=1, colors=None,
-                            xy_slice=None, xz_slice=None, yz_slice=None, height=None, width=None):
+def orthoview_quiver_plotly(
+    data,
+    fractions,
+    step=1,
+    colors=None,
+    xy_slice=None,
+    xz_slice=None,
+    yz_slice=None,
+    height=None,
+    width=None,
+):
     if data.ndim != 5 or data.shape[-1] != 3:
-        raise ValueError("Data must have shape (x, y, z, channels, 3) where last dim is vector (u, v, w)")
+        raise ValueError(
+            "Data must have shape (x, y, z, channels, 3) where last dim is vector (u, v, w)"
+        )
 
     x_max, y_max, z_max, channels, _ = data.shape
     fractions = fractions.reshape(x_max, y_max, z_max, channels)
@@ -28,29 +39,43 @@ def orthoview_quiver_plotly(data, fractions, step=1, colors=None,
     y_pad = (max_dim - y_max) // 2
     z_pad = (max_dim - z_max) // 2
 
-    data = np.pad(data, ((x_pad, x_pad), (y_pad, y_pad), (z_pad, z_pad), (0, 0), (0, 0)), mode='constant')
-    fractions = np.pad(fractions, ((x_pad, x_pad), (y_pad, y_pad), (z_pad, z_pad), (0, 0)), mode='constant')
+    data = np.pad(
+        data,
+        ((x_pad, x_pad), (y_pad, y_pad), (z_pad, z_pad), (0, 0), (0, 0)),
+        mode="constant",
+    )
+    fractions = np.pad(
+        fractions,
+        ((x_pad, x_pad), (y_pad, y_pad), (z_pad, z_pad), (0, 0)),
+        mode="constant",
+    )
     x_max, y_max, z_max, _, _ = data.shape
 
     data = fractions[..., None] * data
     fsum = np.sum(fractions, axis=-1)
 
-    def create_line_quiver_2d_vectorized(X, Y, U, V, color='white', scale=1.0):
+    def create_line_quiver_2d_vectorized(X, Y, U, V, color="white", scale=1.0):
         x0 = X - U * scale
         x1 = X + U * scale
         y0 = Y - V * scale
         y1 = Y + V * scale
 
-        x_lines = np.vstack([x0.flatten(), x1.flatten(), np.full(X.size, np.nan)]).T.flatten()
-        y_lines = np.vstack([y0.flatten(), y1.flatten(), np.full(X.size, np.nan)]).T.flatten()
+        x_lines = np.vstack(
+            [x0.flatten(), x1.flatten(), np.full(X.size, np.nan)]
+        ).T.flatten()
+        y_lines = np.vstack(
+            [y0.flatten(), y1.flatten(), np.full(X.size, np.nan)]
+        ).T.flatten()
 
-        return [go.Scatter(
-            x=x_lines,
-            y=y_lines,
-            mode='lines',
-            line=dict(color=color, width=1),
-            showlegend=False
-        )]
+        return [
+            go.Scatter(
+                x=x_lines,
+                y=y_lines,
+                mode="lines",
+                line=dict(color=color, width=1),
+                showlegend=False,
+            )
+        ]
 
     fig = make_subplots(
         rows=2,
@@ -62,10 +87,10 @@ def orthoview_quiver_plotly(data, fractions, step=1, colors=None,
     )
 
     if colors is None:
-        colors = ['red', 'blue', 'green']
+        colors = ["red", "blue", "green"]
 
     # --- Generalized slice plotting with per-axis control ---
-    all_trace_groups = {'XY': [], 'XZ': [], 'YZ': []}
+    all_trace_groups = {"XY": [], "XZ": [], "YZ": []}
 
     def handle_axis(axis_name, axis_size, slice_selector, plot_func, row, col):
         if slice_selector is None:
@@ -83,7 +108,9 @@ def orthoview_quiver_plotly(data, fractions, step=1, colors=None,
             traces = plot_func(idx)
             for trace in traces:
                 fig.add_trace(trace, row=row, col=col)
-            trace_groups.append([len(fig.data) - len(traces) + i for i in range(len(traces))])
+            trace_groups.append(
+                [len(fig.data) - len(traces) + i for i in range(len(traces))]
+            )
         all_trace_groups[axis_name] = trace_groups
 
         if len(slice_list) > 1:
@@ -97,20 +124,29 @@ def orthoview_quiver_plotly(data, fractions, step=1, colors=None,
                 # Turn on selected group
                 for idx_ in group:
                     vis[idx_] = True
-                steps.append({
-                    "method": "update",
-                    "label": f"{slice_list[i]}",
-                    "args": [{"visible": vis}]
-                })
+                steps.append(
+                    {
+                        "method": "update",
+                        "label": f"{slice_list[i]}",
+                        "args": [{"visible": vis}],
+                    }
+                )
             fig.update_layout(
-                sliders=list(fig.layout.sliders) + [{
-                    "active": 0,
-                    "currentvalue": {"prefix": f"{axis_name} Slice: "},
-                    "steps": steps,
-                    "x": 0.05 if axis_name == 'XY' else 0.35 if axis_name == 'XZ' else 0.65,
-                    "y": 0.0,
-                    "len": 0.25
-                }]
+                sliders=list(fig.layout.sliders)
+                + [
+                    {
+                        "active": 0,
+                        "currentvalue": {"prefix": f"{axis_name} Slice: "},
+                        "steps": steps,
+                        "x": 0.05
+                        if axis_name == "XY"
+                        else 0.35
+                        if axis_name == "XZ"
+                        else 0.65,
+                        "y": 0.0,
+                        "len": 0.25,
+                    }
+                ]
             )
             # Set all but first slice of this axis invisible
             for group in trace_groups[1:]:
@@ -119,36 +155,62 @@ def orthoview_quiver_plotly(data, fractions, step=1, colors=None,
 
     # Define plotting functions per axis
     def plot_xy(x_idx):
-        traces = [go.Heatmap(z=fsum[x_idx, :, :].T, colorscale='gray', zmin=0, zmax=1, showscale=False)]
+        traces = [
+            go.Heatmap(
+                z=fsum[x_idx, :, :].T,
+                colorscale="gray",
+                zmin=0,
+                zmax=1,
+                showscale=False,
+            )
+        ]
         for c in range(channels):
             U = data[x_idx, :, :, c, 0]
             V = data[x_idx, :, :, c, 1]
             Y, Z = np.mgrid[0:y_max:step, 0:z_max:step]
-            traces += create_line_quiver_2d_vectorized(Y, Z, U[::step, ::step], V[::step, ::step], colors[c % len(colors)])
+            traces += create_line_quiver_2d_vectorized(
+                Y, Z, U[::step, ::step], V[::step, ::step], colors[c % len(colors)]
+            )
         return traces
 
     def plot_xz(y_idx):
-        traces = [go.Heatmap(z=fsum[:, y_idx, :].T, colorscale='gray', zmin=0, zmax=1, showscale=False)]
+        traces = [
+            go.Heatmap(
+                z=fsum[:, y_idx, :].T,
+                colorscale="gray",
+                zmin=0,
+                zmax=1,
+                showscale=False,
+            )
+        ]
         for c in range(channels):
             U = data[:, y_idx, :, c, 0]
             V = data[:, y_idx, :, c, 2]
             X, Z = np.mgrid[0:x_max:step, 0:z_max:step]
-            traces += create_line_quiver_2d_vectorized(X, Z, U[::step, ::step], V[::step, ::step], colors[c % len(colors)])
+            traces += create_line_quiver_2d_vectorized(
+                X, Z, U[::step, ::step], V[::step, ::step], colors[c % len(colors)]
+            )
         return traces
 
     def plot_yz(z_idx):
-        traces = [go.Heatmap(z=fsum[:, :, z_idx], colorscale='gray', zmin=0, zmax=1, showscale=False)]
+        traces = [
+            go.Heatmap(
+                z=fsum[:, :, z_idx], colorscale="gray", zmin=0, zmax=1, showscale=False
+            )
+        ]
         for c in range(channels):
             U = data[:, :, z_idx, c, 0]
             V = data[:, :, z_idx, c, 1]
             X, Y_ = np.mgrid[0:x_max:step, 0:y_max:step]
-            traces += create_line_quiver_2d_vectorized(X, Y_, U[::step, ::step].T, V[::step, ::step].T, colors[c % len(colors)])
+            traces += create_line_quiver_2d_vectorized(
+                X, Y_, U[::step, ::step].T, V[::step, ::step].T, colors[c % len(colors)]
+            )
         return traces
 
     # Process axes
-    handle_axis('XY', x_max, xy_slice, plot_xy, row=1, col=1)
-    handle_axis('XZ', y_max, xz_slice, plot_xz, row=2, col=1)
-    handle_axis('YZ', z_max, yz_slice, plot_yz, row=1, col=2)
+    handle_axis("XY", x_max, xy_slice, plot_xy, row=1, col=1)
+    handle_axis("XZ", y_max, xz_slice, plot_xz, row=2, col=1)
+    handle_axis("YZ", z_max, yz_slice, plot_yz, row=1, col=2)
 
     fig.update_layout(
         paper_bgcolor="black",
@@ -164,13 +226,23 @@ def orthoview_quiver_plotly(data, fractions, step=1, colors=None,
     return fig
 
 
-def orthoview_quiver_ultracompact(data, fractions, colors=None, step=1,
-                                 downsample_factor=1, slider_step=10,
-                                 heatmap_quality=1.0, simplified_ui=False,
-                                 precision=np.float32, colorscale='gray',
-                                 arrow_scale=1.0, arrow_width=1,
-                                 height=None, width=None,
-                                 show_all_channels=True):
+def orthoview_quiver_ultracompact(
+    data,
+    fractions,
+    colors=None,
+    step=1,
+    downsample_factor=1,
+    slider_step=10,
+    heatmap_quality=1.0,
+    simplified_ui=False,
+    precision=np.float32,
+    colorscale="gray",
+    arrow_scale=1.0,
+    arrow_width=1,
+    height=None,
+    width=None,
+    show_all_channels=True,
+):
     """Ultra-optimized version of orthoview_quiver_plotly that produces minimal HTML files.
 
     Args:
@@ -194,7 +266,9 @@ def orthoview_quiver_ultracompact(data, fractions, colors=None, step=1,
         plotly figure object
     """
     if data.ndim != 5 or data.shape[-1] != 3:
-        raise ValueError("Data must have shape (x, y, z, channels, 3) where last dim is vector (u, v, w)")
+        raise ValueError(
+            "Data must have shape (x, y, z, channels, 3) where last dim is vector (u, v, w)"
+        )
 
     x_max, y_max, z_max, channels, _ = data.shape
     fractions = fractions.reshape(x_max, y_max, z_max, channels)
@@ -213,13 +287,17 @@ def orthoview_quiver_ultracompact(data, fractions, colors=None, step=1,
         # Scale fractions to 0-255 range for int8
         fractions_min = fractions.min()
         fractions_max = fractions.max() + 1e-10
-        fractions = ((fractions - fractions_min) / (fractions_max - fractions_min) * 255).astype(np.int8)
+        fractions = (
+            (fractions - fractions_min) / (fractions_max - fractions_min) * 255
+        ).astype(np.int8)
 
     # Apply downsampling if requested
     if downsample_factor > 1:
         # Use simple striding for downsampling
         data = data[::downsample_factor, ::downsample_factor, ::downsample_factor, :, :]
-        fractions = fractions[::downsample_factor, ::downsample_factor, ::downsample_factor, :]
+        fractions = fractions[
+            ::downsample_factor, ::downsample_factor, ::downsample_factor, :
+        ]
         x_max, y_max, z_max, channels, _ = data.shape
 
     # Pad to cube
@@ -228,8 +306,16 @@ def orthoview_quiver_ultracompact(data, fractions, colors=None, step=1,
     y_pad = (max_dim - y_max) // 2
     z_pad = (max_dim - z_max) // 2
 
-    data = np.pad(data, ((x_pad, x_pad), (y_pad, y_pad), (z_pad, z_pad), (0, 0), (0, 0)), mode='constant')
-    fractions = np.pad(fractions, ((x_pad, x_pad), (y_pad, y_pad), (z_pad, z_pad), (0, 0)), mode='constant')
+    data = np.pad(
+        data,
+        ((x_pad, x_pad), (y_pad, y_pad), (z_pad, z_pad), (0, 0), (0, 0)),
+        mode="constant",
+    )
+    fractions = np.pad(
+        fractions,
+        ((x_pad, x_pad), (y_pad, y_pad), (z_pad, z_pad), (0, 0)),
+        mode="constant",
+    )
     x_max, y_max, z_max, _, _ = data.shape
 
     # Weight vectors by fractions
@@ -264,7 +350,7 @@ def orthoview_quiver_ultracompact(data, fractions, colors=None, step=1,
             return slice_data
 
     # Optimized function to create quiver plots with fewer points
-    def create_line_quiver_2d_optimized(X, Y, U, V, color='white', density_factor=1.0):
+    def create_line_quiver_2d_optimized(X, Y, U, V, color="white", density_factor=1.0):
         # Adjust density based on the quality factor
         if density_factor < 1.0:
             skip = max(1, int(1.0 / density_factor))
@@ -296,13 +382,13 @@ def orthoview_quiver_ultracompact(data, fractions, colors=None, step=1,
         return go.Scatter(
             x=x_lines,
             y=y_lines,
-            mode='lines',
+            mode="lines",
             line=dict(color=color, width=arrow_width),
-            showlegend=False
+            showlegend=False,
         )
 
     if colors is None:
-        colors = ['red', 'blue', 'green']
+        colors = ["red", "blue", "green"]
 
     # Create figure
     fig = make_subplots(
@@ -332,6 +418,7 @@ def orthoview_quiver_ultracompact(data, fractions, colors=None, step=1,
 
     # For simplified UI, limit to a max of 5 slices
     if simplified_ui:
+
         def limit_indices(indices, middle):
             if len(indices) <= 5:
                 return indices
@@ -341,12 +428,14 @@ def orthoview_quiver_ultracompact(data, fractions, colors=None, step=1,
             result = [indices[0]]  # First
 
             if middle_idx > 0:
-                result.append(indices[middle_idx//2])  # Quarter
+                result.append(indices[middle_idx // 2])  # Quarter
 
             result.append(middle)  # Middle
 
-            if middle_idx < len(indices)-1:
-                result.append(indices[(middle_idx + len(indices))//2])  # Three-quarter
+            if middle_idx < len(indices) - 1:
+                result.append(
+                    indices[(middle_idx + len(indices)) // 2]
+                )  # Three-quarter
 
             result.append(indices[-1])  # Last
 
@@ -368,7 +457,7 @@ def orthoview_quiver_ultracompact(data, fractions, colors=None, step=1,
         colorscale=colorscale,
         zmin=0,
         zmax=np.max(fsum) if np.max(fsum) > 0 else 1,
-        showscale=False
+        showscale=False,
     )
     fig.add_trace(xy_heatmap, row=1, col=1)
     xy_plane_traces["heatmap"] = 0  # First trace added
@@ -379,7 +468,7 @@ def orthoview_quiver_ultracompact(data, fractions, colors=None, step=1,
         colorscale=colorscale,
         zmin=0,
         zmax=np.max(fsum) if np.max(fsum) > 0 else 1,
-        showscale=False
+        showscale=False,
     )
     fig.add_trace(xz_heatmap, row=2, col=1)
     xz_plane_traces["heatmap"] = 1  # Second trace added
@@ -390,7 +479,7 @@ def orthoview_quiver_ultracompact(data, fractions, colors=None, step=1,
         colorscale=colorscale,
         zmin=0,
         zmax=np.max(fsum) if np.max(fsum) > 0 else 1,
-        showscale=False
+        showscale=False,
     )
     fig.add_trace(yz_heatmap, row=1, col=2)
     yz_plane_traces["heatmap"] = 2  # Third trace added
@@ -405,9 +494,12 @@ def orthoview_quiver_ultracompact(data, fractions, colors=None, step=1,
         V = data[x_slice, :, :, c, 1]
         Y, Z = np.mgrid[0:y_max:step, 0:z_max:step]
         quiver_trace = create_line_quiver_2d_optimized(
-            Y, Z, U[::step, ::step], V[::step, ::step],
+            Y,
+            Z,
+            U[::step, ::step],
+            V[::step, ::step],
             colors[c % len(colors)],
-            heatmap_quality
+            heatmap_quality,
         )
         fig.add_trace(quiver_trace, row=1, col=1)
         xy_plane_traces["quivers"].append(trace_idx)
@@ -418,9 +510,12 @@ def orthoview_quiver_ultracompact(data, fractions, colors=None, step=1,
         V = data[:, y_slice, :, c, 2]
         X, Z = np.mgrid[0:x_max:step, 0:z_max:step]
         quiver_trace = create_line_quiver_2d_optimized(
-            X, Z, U[::step, ::step], V[::step, ::step],
+            X,
+            Z,
+            U[::step, ::step],
+            V[::step, ::step],
             colors[c % len(colors)],
-            heatmap_quality
+            heatmap_quality,
         )
         fig.add_trace(quiver_trace, row=2, col=1)
         xz_plane_traces["quivers"].append(trace_idx)
@@ -431,9 +526,12 @@ def orthoview_quiver_ultracompact(data, fractions, colors=None, step=1,
         V = data[:, :, z_slice, c, 1]
         X, Y_ = np.mgrid[0:x_max:step, 0:y_max:step]
         quiver_trace = create_line_quiver_2d_optimized(
-            X, Y_, U[::step, ::step].T, V[::step, ::step].T,
+            X,
+            Y_,
+            U[::step, ::step].T,
+            V[::step, ::step].T,
             colors[c % len(colors)],
-            heatmap_quality
+            heatmap_quality,
         )
         fig.add_trace(quiver_trace, row=1, col=2)
         yz_plane_traces["quivers"].append(trace_idx)
@@ -442,13 +540,21 @@ def orthoview_quiver_ultracompact(data, fractions, colors=None, step=1,
     # Initialize default visibility state
     for i in range(trace_idx):
         # Heatmaps are always visible
-        if i in [xy_plane_traces["heatmap"], xz_plane_traces["heatmap"], yz_plane_traces["heatmap"]]:
+        if i in [
+            xy_plane_traces["heatmap"],
+            xz_plane_traces["heatmap"],
+            yz_plane_traces["heatmap"],
+        ]:
             fig.data[i].visible = True
         # Show all quivers or just first channel depending on settings
         elif show_all_channels:
             fig.data[i].visible = True
         # Otherwise, only show first channel's quivers
-        elif i in [xy_plane_traces["quivers"][0], xz_plane_traces["quivers"][0], yz_plane_traces["quivers"][0]]:
+        elif i in [
+            xy_plane_traces["quivers"][0],
+            xz_plane_traces["quivers"][0],
+            yz_plane_traces["quivers"][0],
+        ]:
             fig.data[i].visible = True
         else:
             fig.data[i].visible = False
@@ -474,9 +580,12 @@ def orthoview_quiver_ultracompact(data, fractions, colors=None, step=1,
                 V = data[x_idx, :, :, c, 1]
                 Y, Z = np.mgrid[0:y_max:step, 0:z_max:step]
                 quiver = create_line_quiver_2d_optimized(
-                    Y, Z, U[::step, ::step], V[::step, ::step],
+                    Y,
+                    Z,
+                    U[::step, ::step],
+                    V[::step, ::step],
                     colors[c % len(colors)],
-                    heatmap_quality
+                    heatmap_quality,
                 )
 
                 # Use index-based keys for multiple trace updates
@@ -499,21 +608,25 @@ def orthoview_quiver_ultracompact(data, fractions, colors=None, step=1,
                 step_data["y"].append(quiver.y)
 
         # Create a single step for this slice
-        x_steps.append({
-            "method": "restyle",
-            "label": str(x_idx),
-            "args": [step_data, step_indices]
-        })
+        x_steps.append(
+            {
+                "method": "restyle",
+                "label": str(x_idx),
+                "args": [step_data, step_indices],
+            }
+        )
 
-    sliders.append({
-        "active": x_indices.index(x_slice) if x_slice in x_indices else 0,
-        "currentvalue": {"prefix": "X: " if simplified_ui else "X Slice: "},
-        "steps": x_steps,
-        "x": 0.05,
-        "y": 0.0,
-        "len": 0.25,
-        "pad": {"t": 50}
-    })
+    sliders.append(
+        {
+            "active": x_indices.index(x_slice) if x_slice in x_indices else 0,
+            "currentvalue": {"prefix": "X: " if simplified_ui else "X Slice: "},
+            "steps": x_steps,
+            "x": 0.05,
+            "y": 0.0,
+            "len": 0.25,
+            "pad": {"t": 50},
+        }
+    )
 
     # Y slider
     y_steps = []
@@ -533,9 +646,12 @@ def orthoview_quiver_ultracompact(data, fractions, colors=None, step=1,
                 V = data[:, y_idx, :, c, 2]
                 X, Z = np.mgrid[0:x_max:step, 0:z_max:step]
                 quiver = create_line_quiver_2d_optimized(
-                    X, Z, U[::step, ::step], V[::step, ::step],
+                    X,
+                    Z,
+                    U[::step, ::step],
+                    V[::step, ::step],
                     colors[c % len(colors)],
-                    heatmap_quality
+                    heatmap_quality,
                 )
 
                 # Use index-based keys for multiple trace updates
@@ -558,21 +674,25 @@ def orthoview_quiver_ultracompact(data, fractions, colors=None, step=1,
                 step_data["y"].append(quiver.y)
 
         # Create a single step for this slice
-        y_steps.append({
-            "method": "restyle",
-            "label": str(y_idx),
-            "args": [step_data, step_indices]
-        })
+        y_steps.append(
+            {
+                "method": "restyle",
+                "label": str(y_idx),
+                "args": [step_data, step_indices],
+            }
+        )
 
-    sliders.append({
-        "active": y_indices.index(y_slice) if y_slice in y_indices else 0,
-        "currentvalue": {"prefix": "Y: " if simplified_ui else "Y Slice: "},
-        "steps": y_steps,
-        "x": 0.35,
-        "y": 0.0,
-        "len": 0.25,
-        "pad": {"t": 50}
-    })
+    sliders.append(
+        {
+            "active": y_indices.index(y_slice) if y_slice in y_indices else 0,
+            "currentvalue": {"prefix": "Y: " if simplified_ui else "Y Slice: "},
+            "steps": y_steps,
+            "x": 0.35,
+            "y": 0.0,
+            "len": 0.25,
+            "pad": {"t": 50},
+        }
+    )
 
     # Z slider
     z_steps = []
@@ -592,9 +712,12 @@ def orthoview_quiver_ultracompact(data, fractions, colors=None, step=1,
                 V = data[:, :, z_idx, c, 1]
                 X, Y_ = np.mgrid[0:x_max:step, 0:y_max:step]
                 quiver = create_line_quiver_2d_optimized(
-                    X, Y_, U[::step, ::step].T, V[::step, ::step].T,
+                    X,
+                    Y_,
+                    U[::step, ::step].T,
+                    V[::step, ::step].T,
                     colors[c % len(colors)],
-                    heatmap_quality
+                    heatmap_quality,
                 )
 
                 # Use index-based keys for multiple trace updates
@@ -617,21 +740,25 @@ def orthoview_quiver_ultracompact(data, fractions, colors=None, step=1,
                 step_data["y"].append(quiver.y)
 
         # Create a single step for this slice
-        z_steps.append({
-            "method": "restyle",
-            "label": str(z_idx),
-            "args": [step_data, step_indices]
-        })
+        z_steps.append(
+            {
+                "method": "restyle",
+                "label": str(z_idx),
+                "args": [step_data, step_indices],
+            }
+        )
 
-    sliders.append({
-        "active": z_indices.index(z_slice) if z_slice in z_indices else 0,
-        "currentvalue": {"prefix": "Z: " if simplified_ui else "Z Slice: "},
-        "steps": z_steps,
-        "x": 0.65,
-        "y": 0.0,
-        "len": 0.25,
-        "pad": {"t": 50}
-    })
+    sliders.append(
+        {
+            "active": z_indices.index(z_slice) if z_slice in z_indices else 0,
+            "currentvalue": {"prefix": "Z: " if simplified_ui else "Z Slice: "},
+            "steps": z_steps,
+            "x": 0.65,
+            "y": 0.0,
+            "len": 0.25,
+            "pad": {"t": 50},
+        }
+    )
 
     # Channel dropdown - simplified if requested
     updatemenus = []
@@ -643,31 +770,39 @@ def orthoview_quiver_ultracompact(data, fractions, colors=None, step=1,
             # Set visibility for all traces
             for i in range(trace_idx):
                 # Heatmaps are always visible
-                if i in [xy_plane_traces["heatmap"], xz_plane_traces["heatmap"], yz_plane_traces["heatmap"]]:
+                if i in [
+                    xy_plane_traces["heatmap"],
+                    xz_plane_traces["heatmap"],
+                    yz_plane_traces["heatmap"],
+                ]:
                     visibility.append(True)
                 # Only show current channel's quivers
-                elif i in [xy_plane_traces["quivers"][c], xz_plane_traces["quivers"][c], yz_plane_traces["quivers"][c]]:
+                elif i in [
+                    xy_plane_traces["quivers"][c],
+                    xz_plane_traces["quivers"][c],
+                    yz_plane_traces["quivers"][c],
+                ]:
                     visibility.append(True)
                 # Hide other channel's quivers
                 else:
                     visibility.append(False)
 
-            buttons.append({
-                "method": "update",
-                "label": str(c),
-                "args": [{"visible": visibility}]
-            })
+            buttons.append(
+                {"method": "update", "label": str(c), "args": [{"visible": visibility}]}
+            )
 
-        updatemenus.append({
-            "buttons": buttons,
-            "direction": "right" if simplified_ui else "up",
-            "showactive": True,
-            "active": 0,
-            "x": 0.85,
-            "y": 0.05,
-            "xanchor": "left",
-            "yanchor": "bottom"
-        })
+        updatemenus.append(
+            {
+                "buttons": buttons,
+                "direction": "right" if simplified_ui else "up",
+                "showactive": True,
+                "active": 0,
+                "x": 0.85,
+                "y": 0.05,
+                "xanchor": "left",
+                "yanchor": "bottom",
+            }
+        )
 
     # Update layout with all sliders and dropdown
     fig.update_layout(
@@ -1090,7 +1225,7 @@ def plot_spherical_distribution_fod(
     return ax
 
 
-def save_orthoview_html(fig, filepath, include_plotlyjs='cdn'):
+def save_orthoview_html(fig, filepath, include_plotlyjs="cdn"):
     """Save orthoview figure to HTML file with optimized settings.
 
     Args:
@@ -1109,10 +1244,21 @@ def save_orthoview_html(fig, filepath, include_plotlyjs='cdn'):
         include_mathjax=False,
     )
 
-def orthoview_ultracompact(data, vmin=None, vmax=None, channel_names=None, color_map='gray',
-                         downsample_factor=1, slider_step=10,
-                         heatmap_quality=1.0, simplified_ui=False,
-                         precision=np.float32, height=None, width=None):
+
+def orthoview_ultracompact(
+    data,
+    vmin=None,
+    vmax=None,
+    channel_names=None,
+    color_map="gray",
+    downsample_factor=1,
+    slider_step=10,
+    heatmap_quality=1.0,
+    simplified_ui=False,
+    precision=np.float32,
+    height=None,
+    width=None,
+):
     """Ultra-optimized version of orthoview that produces minimal HTML files.
 
     Args:
@@ -1132,8 +1278,6 @@ def orthoview_ultracompact(data, vmin=None, vmax=None, channel_names=None, color
     # Check for 4D data (x, y, z, channels)
     if data.ndim == 3:
         data = data[..., np.newaxis]  # Add channel dimension if missing
-
-
 
     # Convert data precision if requested
     if precision == np.float16 or precision == np.float32 or precision == np.float64:
@@ -1163,14 +1307,15 @@ def orthoview_ultracompact(data, vmin=None, vmax=None, channel_names=None, color
 
     x_max, y_max, z_max, channels = data.shape
 
-
     # Pad to cube
     max_dim = max(x_max, y_max, z_max)
     x_pad = (max_dim - x_max) // 2
     y_pad = (max_dim - y_max) // 2
     z_pad = (max_dim - z_max) // 2
 
-    data = np.pad(data, ((x_pad, x_pad), (y_pad, y_pad), (z_pad, z_pad), (0, 0)), mode='constant')
+    data = np.pad(
+        data, ((x_pad, x_pad), (y_pad, y_pad), (z_pad, z_pad), (0, 0)), mode="constant"
+    )
     x_max, y_max, z_max, _ = data.shape
 
     # Initial slices (middle)
@@ -1218,9 +1363,21 @@ def orthoview_ultracompact(data, vmin=None, vmax=None, channel_names=None, color
         xz_data = downsample_slice(data[:, y_slice, :, c].T, heatmap_quality)
         yz_data = downsample_slice(data[:, :, z_slice, c], heatmap_quality)
 
-        traces.append(go.Heatmap(z=xy_data, colorscale=color_map, zmin=vmin, zmax=vmax, showscale=False))
-        traces.append(go.Heatmap(z=xz_data, colorscale=color_map, zmin=vmin, zmax=vmax, showscale=False))
-        traces.append(go.Heatmap(z=yz_data, colorscale=color_map, zmin=vmin, zmax=vmax, showscale=False))
+        traces.append(
+            go.Heatmap(
+                z=xy_data, colorscale=color_map, zmin=vmin, zmax=vmax, showscale=False
+            )
+        )
+        traces.append(
+            go.Heatmap(
+                z=xz_data, colorscale=color_map, zmin=vmin, zmax=vmax, showscale=False
+            )
+        )
+        traces.append(
+            go.Heatmap(
+                z=yz_data, colorscale=color_map, zmin=vmin, zmax=vmax, showscale=False
+            )
+        )
 
     # Add all traces to figure
     for i, trace in enumerate(traces):
@@ -1258,6 +1415,7 @@ def orthoview_ultracompact(data, vmin=None, vmax=None, channel_names=None, color
 
     # For simplified UI, limit to a max of 5 slices
     if simplified_ui:
+
         def limit_indices(indices, middle):
             if len(indices) <= 5:
                 return indices
@@ -1267,12 +1425,14 @@ def orthoview_ultracompact(data, vmin=None, vmax=None, channel_names=None, color
             result = [indices[0]]  # First
 
             if middle_idx > 0:
-                result.append(indices[middle_idx//2])  # Quarter
+                result.append(indices[middle_idx // 2])  # Quarter
 
             result.append(middle)  # Middle
 
-            if middle_idx < len(indices)-1:
-                result.append(indices[(middle_idx + len(indices))//2])  # Three-quarter
+            if middle_idx < len(indices) - 1:
+                result.append(
+                    indices[(middle_idx + len(indices)) // 2]
+                )  # Three-quarter
 
             result.append(indices[-1])  # Last
 
@@ -1287,54 +1447,81 @@ def orthoview_ultracompact(data, vmin=None, vmax=None, channel_names=None, color
     sliders = [
         dict(
             active=x_indices.index(x_slice) if x_slice in x_indices else 0,
-            currentvalue={"prefix": "X: " if simplified_ui else "X Slice: ","suffix": ""},
+            currentvalue={
+                "prefix": "X: " if simplified_ui else "X Slice: ",
+                "suffix": "",
+            },
             steps=[
                 dict(
                     method="restyle",
                     label=str(i),
                     args=[
-                        {"z": [downsample_slice(data[i, :, :, c].T, heatmap_quality) for c in range(channels)]},
-                        list(range(0, 3 * channels, 3))
-                    ]
-                ) for i in x_indices
+                        {
+                            "z": [
+                                downsample_slice(data[i, :, :, c].T, heatmap_quality)
+                                for c in range(channels)
+                            ]
+                        },
+                        list(range(0, 3 * channels, 3)),
+                    ],
+                )
+                for i in x_indices
             ],
-            x=0.,
+            x=0.0,
             y=0.13,
-            len=0.25
+            len=0.25,
         ),
         dict(
             active=y_indices.index(y_slice) if y_slice in y_indices else 0,
-            currentvalue={"prefix": "Y: " if simplified_ui else "Y Slice: ","suffix": ""},
+            currentvalue={
+                "prefix": "Y: " if simplified_ui else "Y Slice: ",
+                "suffix": "",
+            },
             steps=[
                 dict(
                     method="restyle",
                     label=str(i),
                     args=[
-                        {"z": [downsample_slice(data[:, i, :, c].T, heatmap_quality) for c in range(channels)]},
-                        list(range(1, 3 * channels, 3))
-                    ]
-                ) for i in y_indices
+                        {
+                            "z": [
+                                downsample_slice(data[:, i, :, c].T, heatmap_quality)
+                                for c in range(channels)
+                            ]
+                        },
+                        list(range(1, 3 * channels, 3)),
+                    ],
+                )
+                for i in y_indices
             ],
             x=0.3,
             y=0.13,
-            len=0.25
+            len=0.25,
         ),
         dict(
             active=z_indices.index(z_slice) if z_slice in z_indices else 0,
-            currentvalue={"prefix": "Z: " if simplified_ui else "Z Slice: ", "suffix": ""},
+            currentvalue={
+                "prefix": "Z: " if simplified_ui else "Z Slice: ",
+                "suffix": "",
+            },
             steps=[
                 dict(
                     method="restyle",
                     label=str(i),
                     args=[
-                        {"z": [downsample_slice(data[:, :, i, c], heatmap_quality) for c in range(channels)]},
-                        list(range(2, 3 * channels, 3))
-                    ]
-                ) for i in z_indices
+                        {
+                            "z": [
+                                downsample_slice(data[:, :, i, c], heatmap_quality)
+                                for c in range(channels)
+                            ]
+                        },
+                        list(range(2, 3 * channels, 3)),
+                    ],
+                )
+                for i in z_indices
             ],
             x=0.6,
             y=0.13,
-            len=0.25
+            len=0.25,
         ),
     ]
 
@@ -1347,12 +1534,9 @@ def orthoview_ultracompact(data, vmin=None, vmax=None, channel_names=None, color
                 dict(
                     label=str(c) if channel_names is None else channel_names[c],
                     method="update",
-                    args=[
-                        {"visible": [
-                            (i // 3) == c for i in range(3 * channels)
-                        ]}
-                    ],
-                ) for c in range(channels)
+                    args=[{"visible": [(i // 3) == c for i in range(3 * channels)]}],
+                )
+                for c in range(channels)
             ],
             direction="up" if not simplified_ui else "right",
             showactive=True,

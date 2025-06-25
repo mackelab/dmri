@@ -39,6 +39,7 @@ def main():
     print(logo)
     _main()
 
+
 def build_optimizer(optimizer_cfg):
     optimizer_type = getattr(optax, optimizer_cfg.optimizer)
     if optimizer_cfg.scheduler:
@@ -152,7 +153,7 @@ def _main(cfg: DictConfig):
     log.info(f"Model inference loss weight: {cfg.train.model_inference_loss_weight}")
     log.info(f"Weight by complexity: {cfg.train.weight_by_complexity}")
 
-    def loss_fn(params,state, data, rng):
+    def loss_fn(params, state, data, rng):
         if cfg.simulator.with_posterior_score:
             p_mask, model_mask, thetas, xs, acq, target_score = data
         else:
@@ -173,18 +174,16 @@ def _main(cfg: DictConfig):
             weight_by_complexity=cfg.train.weight_by_complexity,
             cut_off_tsm=cfg.train.cut_off_tsm,
         )
-        loss1  = cfg.train.model_selection_weight * losses[0]
+        loss1 = cfg.train.model_selection_weight * losses[0]
         loss2 = cfg.train.model_inference_loss_weight * losses[1]
         total_loss = loss1 + loss2
         _, _, _, new_state = nnx.split(model, nnx.Param, nnx.Intermediate, ...)
         return total_loss, (losses, new_state)
 
-
-
     @jax.jit
     def update(params, state, opt_state, data, rng):
         (_, (losses, new_state)), grads = jax.value_and_grad(loss_fn, has_aux=True)(
-            params,state, data, rng
+            params, state, data, rng
         )
         updates, opt_state = optimizer.update(grads, opt_state, params=params)
         new_params = optax.apply_updates(params, updates)
@@ -228,7 +227,9 @@ def _main(cfg: DictConfig):
                 step=latest_step,
                 params=params,
                 optimizer_state=opt_state,
-                params_ema=None if not cfg.train.track_ema else jax.tree_map(lambda x: x, params)
+                params_ema=None
+                if not cfg.train.track_ema
+                else jax.tree_map(lambda x: x, params),
             )
             if checkpoint is not None:
                 params = checkpoint["params"]
@@ -244,7 +245,6 @@ def _main(cfg: DictConfig):
         else:
             log.warning("No valid checkpoint found. Starting from scratch.")
 
-
     # loss_fn(params, state, next(iter(loader)), rng_key)
 
     # Get maximum training time in hours (default: run forever)
@@ -255,7 +255,6 @@ def _main(cfg: DictConfig):
     params_ema = jax.tree_map(lambda x: x, params) if cfg.train.track_ema else None
     ema_decay = cfg.train.ema_decay if cfg.train.track_ema else None
 
-
     while True:
         key, subkey = jax.random.split(key)
         for _ in range(inner_steps):
@@ -265,7 +264,9 @@ def _main(cfg: DictConfig):
                 params, state, opt_state, data, subkey
             )
             if params_ema is not None:
-                params_ema = jax.tree_map(lambda x, y: x * ema_decay + y * (1 - ema_decay), params_ema, params)
+                params_ema = jax.tree_map(
+                    lambda x, y: x * ema_decay + y * (1 - ema_decay), params_ema, params
+                )
             step += 1
         total_loss = float(sum(loss))
         queue_size = int(loader.queue.qsize())
@@ -299,7 +300,7 @@ def _main(cfg: DictConfig):
                 params=params,
                 optimizer_state=opt_state,
                 loss=total_loss,
-                params_ema=params_ema
+                params_ema=params_ema,
             )
             # Ensure all async checkpoint operations are finished before exiting
             checkpoint_manager.wait_until_finished()
@@ -352,7 +353,7 @@ def _main(cfg: DictConfig):
                 params=params,
                 optimizer_state=opt_state,
                 loss=total_loss,
-                params_ema=params_ema
+                params_ema=params_ema,
             )
 
         # Check if we need to recover from a bad update
@@ -369,7 +370,7 @@ def _main(cfg: DictConfig):
                         step=latest_step,
                         params=params,
                         optimizer_state=opt_state,
-                        params_ema=params_ema
+                        params_ema=params_ema,
                     )
                     if checkpoint is not None:
                         params = checkpoint["params"]

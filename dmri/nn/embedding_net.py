@@ -43,7 +43,7 @@ class BvalBvecSignalEmbeddingNet(nnx.Module, experimental_pytree=True):
         bvec_repeats: int = 1,
         log_transform_signals: bool = False,
         use_flash_attention: bool = False,
-        embed_signals = "repeat",
+        embed_signals="repeat",
     ):
         self.model_dim = model_dim
         self.num_heads = num_heads
@@ -60,7 +60,9 @@ class BvalBvecSignalEmbeddingNet(nnx.Module, experimental_pytree=True):
         if embed_signals == "repeat":
             self.embed_signals = lambda x: jnp.repeat(x, signals_embed_dim, axis=-1)
         elif embed_signals == "fourier":
-            self.embed_signals = GaussianFourierEmbedding(1, signals_embed_dim, rngs=rngs)
+            self.embed_signals = GaussianFourierEmbedding(
+                1, signals_embed_dim, rngs=rngs
+            )
         else:
             raise ValueError(f"Invalid embed_signals: {embed_signals}")
 
@@ -97,5 +99,5 @@ class BvalBvecSignalEmbeddingNet(nnx.Module, experimental_pytree=True):
         tokens = self.initial_layer(data)
         out_tokens = self.transformer(
             tokens, deterministic=deterministic, decode=decode
-            )
+        )
         return out_tokens

@@ -11,7 +11,7 @@ WATER_DIFFUSION_CONSTANT = 2.299e-3  # mm^2/s
 WATER_IN_AXON_DIFFUSION_CONSTANT = 1.7e-3  # mm^2/s
 NAA_IN_AXONS = 0.00015e-3  # mm^2/s
 WATER_GYROMAGNETIC_RATIO = 267.513e6  # 1/(sT)
-WATER_GYROMAGNETIC_RATIO_MS_MT = 267.513 # rad/ms/mT
+WATER_GYROMAGNETIC_RATIO_MS_MT = 267.513  # rad/ms/mT
 
 ACQ_CONSTANTS = {
     "HCP": {"delta": 0.0106, "Delta": 0.0431},
@@ -109,98 +109,110 @@ class acquisition_scheme:  # noqa: N801
 
         return acquisition_scheme(bvals, gradient_directions, delta, Delta)
 
-
 @dataclass
 class ssfp_acquisition_scheme:
     """A class representing a Steady-State Free Precession (SSFP) acquisition scheme.
 
-    This class encapsulates the parameters needed to define a SSFP acquisition,
-    including b-values, gradient directions, and timing parameters.
+    Fields:
+        bvecs (ArrayLike): Diffusion gradient unit vectors
+        TRs (ArrayLike): Repetition times, in milliseconds [ms]
+        flipAngles (ArrayLike): Flip angles, in degrees [°]
+        diffGradAmps (ArrayLike): Diffusion gradient amplitudes, in tesla per meter [T/m]
+        diffGradDur (ArrayLike): Diffusion gradient durations, in milliseconds [ms]
+        B1 (ArrayLike): B1 scaling, unitless
+        T1 (ArrayLike): Longitudinal relaxation times, in milliseconds [ms]
+        T2 (ArrayLike): Transverse relaxation times, in milliseconds [ms]
+        delta (ArrayLike): Diffusion pulse duration, in seconds [s]
+        Delta (ArrayLike): Diffusion time (pulse separation), in seconds [s]
     """
-    bvecs: ArrayLike # unit vectors
-    TRs: ArrayLike # In ms
-    flipAngles: ArrayLike # In degrees
-    diffGradAmps: ArrayLike # In T/m
-    diffGradDur: ArrayLike # In ms
-    B1: ArrayLike = field(default_factory=lambda: 1.0)  # unitless
-    T1: ArrayLike = field(default_factory=lambda: 400)  # In ms
-    T2: ArrayLike = field(default_factory=lambda: 45)  # In ms
-    delta: ArrayLike = field(default_factory=lambda: 0.0106)  # In seconds
-    Delta: ArrayLike = field(default_factory=lambda: 0.0431)  # In seconds
 
+    bvecs: ArrayLike # unit vectors
+    T1: ArrayLike  # ms
+    T2: ArrayLike # ms
+    B1: ArrayLike # unitless
+    diffGradAmps: ArrayLike # mT/mm
+    flipAngles: ArrayLike = field(default_factory=lambda: 14.0) # degrees
+    TRs: ArrayLike = field(default_factory=lambda: 0.0210) # seconds
+    diffGradDur: ArrayLike = field(default_factory=lambda: 0.01016) # seconds
+    delta: ArrayLike = field(default_factory=lambda: 0.0106)
+    Delta: ArrayLike = field(default_factory=lambda: 0.0431)
 
     @property
-    def sa(self):
-        """Calculate the sine of the flip angle."""
+    def sa(self) -> ArrayLike:
+        """sin(flip angle * B1) [unitless]."""
         return jnp.sin(self.flipAngles * self.B1 * jnp.pi / 180.0)
 
     @property
-    def ca(self):
-        """Calculate the cosine of the flip angle."""
+    def ca(self) -> ArrayLike:
+        """cos(flip angle * B1) [unitless]."""
         return jnp.cos(self.flipAngles * self.B1 * jnp.pi / 180.0)
 
     @property
-    def E1(self):
-        """Calculate the longitudinal relaxation parameter."""
-        return jnp.exp(-self.TRs / (self.T1))
+    def E1(self) -> ArrayLike:
+        """Longitudinal relaxation term E1 = exp(-TR/T1) [unitless]."""
+        return jnp.exp(-self.TRs / (self.T1 * 1e-3))
 
     @property
-    def E2(self):
-        """Calculate the transverse relaxation parameter."""
-        return jnp.exp(-self.TRs / (self.T2))
+    def E2(self) -> ArrayLike:
+        """Transverse relaxation term E2 = exp(-TR/T2) [unitless]."""
+        return jnp.exp(-self.TRs / (self.T2 * 1e-3))
 
     @property
-    def logE1(self):
-        """Calculate the log of the longitudinal relaxation parameter."""
-        return -self.TRs / self.T1
+    def logE1(self) -> ArrayLike:
+        """Logarithm of longitudinal relaxation: logE1 = -TR/T1 [unitless]."""
+        return -self.TRs / (self.T1 * 1e-3)
 
     @property
-    def logE2(self):
-        """Calculate the log of the transverse relaxation parameter."""
-        return -self.TRs / self.T2
+    def logE2(self) -> ArrayLike:
+        """Logarithm of transverse relaxation: logE2 = -TR/T2 [unitless]."""
+        return -self.TRs / (self.T2 * 1e-3)
 
     @property
-    def qvals(self):
-        """Calculate the q-values for the acquisition scheme."""
-        return WATER_GYROMAGNETIC_RATIO_MS_MT * self.diffGradAmps * self.diffGradDur / 1000.0 # In 1/mm
+    def qvals(self) -> ArrayLike:
+        """Diffusion encoding q-values, q = γ·G·δ [1/mm].
+
+        γ in rad/(ms·mT), G in T/m (≡ mT/mm), δ in ms.
+        """
+        return WATER_GYROMAGNETIC_RATIO_MS_MT * self.diffGradAmps * self.diffGradDur / 1000.0 # mT/mm
 
     @property
-    def bvals(self):
-        """Calculate the b-values for the acquisition scheme."""
-        # TODO: Not working
-        # s_up = ssfp_signal_fn(self, self.delta, self.E1, self.E2, self.sa, self.ca)
-        # s_down = ssfp_signal_fn(self, 0.0, self.E1, self.E2, self.sa, self.ca)
-        # return - 1/self.Delta *(jnp.log(s_up) - jnp.log(s_down))
+    def bvals(self) -> ArrayLike:
+        """Approximate b-values, b = (γ·G·δ)^2 · (Δ - δ/3) [s/mm²]."""
+        # Convert Δ and δ into milliseconds for consistency, then to seconds in result
+        # Here, diffGradDur is ms, Δ is s -> convert diffGradDur to s:
+        dur_s = self.diffGradDur / 1000.0 # seconds
+        Δ_minus_δ3 = self.Delta - dur_s / 3.0 # seconds
+        q = self.qvals  # [1/mm]
+        return q**2 * Δ_minus_δ3
 
-        return (2 * jnp.pi * self.qvals)**2 * self.Delta  # In s/mm^2
-
+    @property
+    def eff_bvals(self) -> ArrayLike:
+        """ Effective b-values, b = - 1/D log(S_ssfp/S_ssfp)
+        """
+        diffusivity = 0.08 * 1e-3 # mm^2/ms
+        ssfp_signal_up = ssfp_signal_fn(diffusivity, self.qvals, self.E1, self.E2, self.sa, self.ca, self.TRs, self.diffGradDur)
+        ssfp_signal_down = ssfp_signal_fn(diffusivity, self.qvals, self.E1, self.E2, self.sa, self.ca, self.TRs, 0.)
+        return -1/diffusivity * jnp.log(ssfp_signal_up / ssfp_signal_down)
 
 register_dataclass(
     acquisition_scheme, data_fields=("bvals", "bvecs"), meta_fields=("delta", "Delta")
 )
 
 register_dataclass(
-    ssfp_acquisition_scheme, data_fields=("bvecs", "TRs", "flipAngles", "diffGradAmps", "diffGradDur"), meta_fields=("B1", "T1", "T2", "delta", "Delta")
+    ssfp_acquisition_scheme,
+    data_fields=("bvecs", "TRs", "flipAngles", "diffGradAmps", "diffGradDur"),
+    meta_fields=("B1", "T1", "T2", "delta", "Delta"),
 )
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 from dipy.io.gradients import read_bvals_bvecs
 
 import os
-_bvals_typ, bvecs_typ = read_bvals_bvecs(os.path.join(os.path.dirname(__file__), "data/bvals"), os.path.join(os.path.dirname(__file__), "data/bvecs"))
+
+_bvals_typ, bvecs_typ = read_bvals_bvecs(
+    os.path.join(os.path.dirname(__file__), "data/bvals"),
+    os.path.join(os.path.dirname(__file__), "data/bvecs"),
+)
 # Round bvals to nearest (0, 1000, 2000)
 bvals_typ = np.round(_bvals_typ / 1000) * 1000
 bvals_typ = np.clip(bvals_typ, 0, 2000)
@@ -208,7 +220,10 @@ idx = np.argsort(bvals_typ)
 bvals_typ = bvals_typ[idx]
 bvecs_typ = bvecs_typ[idx]
 
-_bvals_large, bvecs_large = read_bvals_bvecs(os.path.join(os.path.dirname(__file__), "data/bvals_large"), os.path.join(os.path.dirname(__file__), "data/bvecs_large"))
+_bvals_large, bvecs_large = read_bvals_bvecs(
+    os.path.join(os.path.dirname(__file__), "data/bvals_large"),
+    os.path.join(os.path.dirname(__file__), "data/bvecs_large"),
+)
 # Round bvals to nearest (0, 1000, 2000)
 bvals_large = np.round(_bvals_large / 1000) * 1000
 bvals_large = np.clip(bvals_large, 0, 4000)
@@ -216,14 +231,19 @@ idx = np.argsort(bvals_large)
 bvals_typ_large = bvals_large[idx]
 bvecs_typ_large = bvecs_large[idx]
 
-def random_hcp_large_acquisition(rng, num_acquisitions=297, typical_prob=0.8, random_prob=0.2) -> acquisition_scheme:
+
+def random_hcp_large_acquisition(
+    rng, num_acquisitions=297, typical_prob=0.8, random_prob=0.2
+) -> acquisition_scheme:
     rng1, rng2, rng3, rng4, rng5 = jax.random.split(rng, 5)
     bvals_typical_large = jnp.array(bvals_typ_large)
     bvecs_typical_large = jnp.array(bvecs_typ_large)
     bvals_float = jax.random.uniform(rng2, shape=(num_acquisitions,)) * 4000
     # TODO remove restrictrictions
     bvals = jax.random.choice(
-        rng3, jnp.stack([bvals_typical_large, bvals_float]), p=jnp.array([typical_prob, random_prob])
+        rng3,
+        jnp.stack([bvals_typical_large, bvals_float]),
+        p=jnp.array([typical_prob, random_prob]),
     )
     bvals = jnp.sort(bvals)
     mask = jax.random.choice(
@@ -240,20 +260,27 @@ def random_hcp_large_acquisition(rng, num_acquisitions=297, typical_prob=0.8, ra
     bvecs = bvecs / jnp.linalg.norm(bvecs, axis=1)[:, None]
 
     bvecs = jax.random.choice(
-        rng5_2, jnp.stack([bvecs_typical_large, bvecs], axis=0), axis=0, p=jnp.array([typical_prob, random_prob])
+        rng5_2,
+        jnp.stack([bvecs_typical_large, bvecs], axis=0),
+        axis=0,
+        p=jnp.array([typical_prob, random_prob]),
     )
 
     return acquisition_scheme(bvals, bvecs)
 
 
-def random_hcp_acquisition(rng, num_acquisitions=105, typical_prob=0.5, random_prob=0.5) -> acquisition_scheme:
+def random_hcp_acquisition(
+    rng, num_acquisitions=105, typical_prob=0.5, random_prob=0.5
+) -> acquisition_scheme:
     rng1, rng2, rng3, rng4, rng5 = jax.random.split(rng, 5)
     bvals_typical = jnp.array(bvals_typ)
     bvecs_typical = jnp.array(bvecs_typ)
     bvals_float = jax.random.uniform(rng2, shape=(num_acquisitions,)) * 4000
     # TODO remove restrictrictions
     bvals = jax.random.choice(
-        rng3, jnp.stack([bvals_typical, bvals_float]), p=jnp.array([typical_prob, random_prob])
+        rng3,
+        jnp.stack([bvals_typical, bvals_float]),
+        p=jnp.array([typical_prob, random_prob]),
     )
 
     mask = jax.random.choice(
@@ -269,7 +296,10 @@ def random_hcp_acquisition(rng, num_acquisitions=105, typical_prob=0.5, random_p
     bvecs = bvecs / jnp.linalg.norm(bvecs, axis=1)[:, None]
 
     bvecs = jax.random.choice(
-        rng5_2, jnp.stack([bvecs_typical, bvecs], axis=0), axis=0, p=jnp.array([typical_prob, random_prob])
+        rng5_2,
+        jnp.stack([bvecs_typical, bvecs], axis=0),
+        axis=0,
+        p=jnp.array([typical_prob, random_prob]),
     )
 
     return acquisition_scheme(bvals, bvecs)

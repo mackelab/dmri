@@ -120,13 +120,15 @@ class StreamDataLoader:
 
         # Wait until we have at least one batch in the queue
         # This ensures we don't start with recycled data
-        max_wait_time = queue_timeout or 100.0 # Maximum time to wait in seconds
+        max_wait_time = queue_timeout or 100.0  # Maximum time to wait in seconds
         start_time = time.time()
         while self.queue.empty() and time.time() - start_time < max_wait_time:
             time.sleep(0.1)
 
         if self.queue.empty():
-            raise RuntimeError(f"Failed to initialize dataloader: no data produced within timeout ({max_wait_time}s)")
+            raise RuntimeError(
+                f"Failed to initialize dataloader: no data produced within timeout ({max_wait_time}s)"
+            )
 
     def _producer_loop(self, thread_rng):
         """
@@ -160,7 +162,10 @@ class StreamDataLoader:
                 # This handles cases where data is a nested structure (PyTree)
                 data_cpu = data  # jax.tree_map(np.array, data)
                 # TODO This is a hack to avoid NaNs and Infs in the data
-                data_cpu = jax.tree_map(lambda x: jax.numpy.nan_to_num(x, nan=0, posinf=0, neginf=0), data_cpu)
+                data_cpu = jax.tree_map(
+                    lambda x: jax.numpy.nan_to_num(x, nan=0, posinf=0, neginf=0),
+                    data_cpu,
+                )
 
                 production_time = time.time() - start_time
                 with threading.Lock():
@@ -406,14 +411,16 @@ class StreamDataLoader:
                 # Set a timeout for joining threads
                 thread.join(timeout=1.0)
                 if thread.is_alive():
-                    print(f"Warning: Thread {thread.name} did not terminate within timeout")
+                    print(
+                        f"Warning: Thread {thread.name} did not terminate within timeout"
+                    )
 
     def __del__(self):
         """
         Make sure the background threads are stopped if the loader is garbage-collected.
         """
         try:
-            if hasattr(self, 'event'):
+            if hasattr(self, "event"):
                 self.close()
         except Exception:
             pass  # Ignore any errors during cleanup

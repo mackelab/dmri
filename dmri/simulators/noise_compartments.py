@@ -13,6 +13,7 @@ from dmri.simulators.base import NoiseCompartment
 # Uses a inverse uniform distribution to sample the std or a uniform distribution on the snr
 # and then compute the std by 1/snr
 
+
 class RicianNoise(NoiseCompartment):
     theta_dim = 1
 
@@ -123,6 +124,7 @@ class BoundedGaussianNoise(GaussianNoise):
         u = jax.scipy.stats.norm.cdf(theta)
         return (u * (cls.max_snr - cls.min_snr) + cls.min_snr,)
 
+
 class RicianNoiseSNR7080(BoundedRicianNoise):
     min_snr = 70
     max_snr = 80
@@ -182,17 +184,21 @@ class GaussianNoiseSNR4050(BoundedGaussianNoise):
     min_snr = 40
     max_snr = 50
 
+
 class GaussianNoiseSNR3040(BoundedGaussianNoise):
     min_snr = 30
     max_snr = 40
+
 
 class GaussianNoiseSNR2030(BoundedGaussianNoise):
     min_snr = 20
     max_snr = 30
 
+
 class GaussianNoiseSNR1020(BoundedGaussianNoise):
     min_snr = 10
     max_snr = 20
+
 
 class GaussianNoiseSNR310(BoundedGaussianNoise):
     min_snr = 3

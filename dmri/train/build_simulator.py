@@ -83,10 +83,18 @@ def build_simulator(cfg: DictConfig):
                     x_o = dmri_simulator.signal(acq, rng=rng5)
                     return p_mask, model_mask, theta, x_o, acq
                 else:
+
                     def posterior_potential(theta):
-                        dmri_simulator = sim_type.from_theta(theta, model_mask=model_mask)
-                        x_o = jax.lax.stop_gradient(dmri_simulator.signal(acq, rng=rng5))
-                        return dmri_simulator.log_likelihood(acq, x_o).sum() + jax.scipy.stats.norm.logpdf(theta, 0, 1).sum(-1), x_o
+                        dmri_simulator = sim_type.from_theta(
+                            theta, model_mask=model_mask
+                        )
+                        x_o = jax.lax.stop_gradient(
+                            dmri_simulator.signal(acq, rng=rng5)
+                        )
+                        return dmri_simulator.log_likelihood(
+                            acq, x_o
+                        ).sum() + jax.scipy.stats.norm.logpdf(theta, 0, 1).sum(-1), x_o
+
                     score, x_o = jax.grad(posterior_potential, has_aux=True)(theta)
                     return p_mask, model_mask, theta, x_o, acq, score
 

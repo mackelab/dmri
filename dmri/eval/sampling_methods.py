@@ -82,7 +82,9 @@ def build_theta_sample_fn(
         theta = sample_fn(keys, acq.bvals, acq.bvecs, x, model_mask)
         return theta
 
-    corrector = build_corrector(method, model, acq, model_mask, sim_type, params_corrector)
+    corrector = build_corrector(
+        method, model, acq, model_mask, sim_type, params_corrector
+    )
 
     # Combine sampling and correction
     def sample_theta_per_x(key, x, model_mask):

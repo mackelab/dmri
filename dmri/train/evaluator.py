@@ -108,7 +108,6 @@ def build_pure_eval_fns(graphdef, static, sim_type):
         prior_logprob = jax.scipy.stats.norm.logpdf(thetas).sum(-1)
         return ll + prior_logprob
 
-
     @partial(jax.jit, static_argnames=["K"])
     def smc_ess(params, state, rng, data, K=100):
         model_mask = data[1]
@@ -123,7 +122,9 @@ def build_pure_eval_fns(graphdef, static, sim_type):
 
         def sample_thetas(rng):
             keys = jax.random.split(rng, xs.shape[0])
-            return jax.vmap(partial(model.sample_theta, num_steps=64, max_noise=80))(keys, acq.bvals, acq.bvecs, xs, model_mask)
+            return jax.vmap(partial(model.sample_theta, num_steps=64, max_noise=80))(
+                keys, acq.bvals, acq.bvecs, xs, model_mask
+            )
 
         thetas_post = jax.vmap(sample_thetas)(keys_K)
 
@@ -132,33 +133,50 @@ def build_pure_eval_fns(graphdef, static, sim_type):
         def smc_ess_single(thetas_post, xs, acq, model_mask):
             def log_prior_fn(thetas):
                 return jax.scipy.stats.norm.logpdf(thetas).sum(-1)
+
             def log_likelihood_fn(thetas):
                 simulator = sim_type.from_theta(thetas, model_mask=model_mask)
                 ll = simulator.log_likelihood(acq, xs)
                 return ll
 
             hmc_kernel = hmc.build_kernel()
-            hmc_kernel = partial(hmc_kernel, step_size=0.001, num_integration_steps=20, inverse_mass_matrix=jnp.ones(thetas_post.shape[1]))
+            hmc_kernel = partial(
+                hmc_kernel,
+                step_size=0.001,
+                num_integration_steps=20,
+                inverse_mass_matrix=jnp.ones(thetas_post.shape[1]),
+            )
 
             resampling_fn = systematic
 
-            smc = tempered_smc(log_prior_fn, log_likelihood_fn, hmc_kernel, hmc.init, {}, resampling_fn, 2)
+            smc = tempered_smc(
+                log_prior_fn,
+                log_likelihood_fn,
+                hmc_kernel,
+                hmc.init,
+                {},
+                resampling_fn,
+                2,
+            )
             state = smc.init(thetas_post)
-            state =state._replace(lmbda=0.999)
+            state = state._replace(lmbda=0.999)
 
             def step(state, rng):
                 state, i = state
-                lmbda = 0.999 + (i+1)*0.001/1
+                lmbda = 0.999 + (i + 1) * 0.001 / 1
                 new_state, info = smc.step(rng, state, lmbda)
-                return (new_state, i+1), info
+                return (new_state, i + 1), info
 
             rng_keys = jax.random.split(key2, 1)
             final_state, _ = jax.lax.scan(step, (state, 0), rng_keys)
             final_weights = final_state[0].weights
-            ess = 1/jnp.sum(final_weights**2, axis=0)
+            ess = 1 / jnp.sum(final_weights**2, axis=0)
             ess /= K
             return ess
-        ess = jax.vmap(smc_ess_single, in_axes=(1,0,0,0))(thetas_post, xs, acq, model_mask)
+
+        ess = jax.vmap(smc_ess_single, in_axes=(1, 0, 0, 0))(
+            thetas_post, xs, acq, model_mask
+        )
         return jnp.mean(ess)
 
     return Evaluator(
@@ -236,7 +254,6 @@ class Evaluator(NamedTuple):
             if i == iters:
                 break
         return ess / iters
-
 
     def eval_tarp_mask():
         pass

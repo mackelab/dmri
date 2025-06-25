@@ -4,19 +4,23 @@ import jax.numpy as jnp
 import numpy as np
 from dmri.train.dataloader import StreamDataLoader
 
+
 def has_gpu():
     """Check if GPU is available without raising an error"""
     try:
-        return len(jax.devices('gpu')) > 0
+        return len(jax.devices("gpu")) > 0
     except RuntimeError:
         return False
+
 
 @pytest.fixture
 def single_simulator():
     def simulator(rng):
         # Simple simulator that returns a random array
         return jax.random.normal(rng, shape=(10,))
+
     return simulator
+
 
 @pytest.fixture
 def multiple_simulators():
@@ -34,17 +38,19 @@ def multiple_simulators():
 
     return [simulator1, simulator2, simulator3]
 
+
 def create_loader(simulator_fn, **kwargs):
     """Helper function to create a loader with default CPU settings"""
     default_kwargs = {
-        'batch_size': 32,
-        'max_queue_size': 100,
-        'num_producers': 2,
-        'data_device': 'cpu',
-        'simulation_device': 'cpu',
+        "batch_size": 32,
+        "max_queue_size": 100,
+        "num_producers": 2,
+        "data_device": "cpu",
+        "simulation_device": "cpu",
     }
     default_kwargs.update(kwargs)
     return StreamDataLoader(simulator_fn=simulator_fn, **default_kwargs)
+
 
 def test_single_simulator(single_simulator):
     # Test with a single simulator
@@ -59,9 +65,12 @@ def test_single_simulator(single_simulator):
         batches.append(batch)
 
     # Verify batches are different
-    for i in range(len(batches)-1):
-        assert not np.array_equal(batches[i], batches[i+1]), f"Batches {i} and {i+1} are equal"
+    for i in range(len(batches) - 1):
+        assert not np.array_equal(batches[i], batches[i + 1]), (
+            f"Batches {i} and {i + 1} are equal"
+        )
     loader.close()
+
 
 def test_multiple_simulators(multiple_simulators):
     # Test with multiple simulators
@@ -86,6 +95,7 @@ def test_multiple_simulators(multiple_simulators):
 
     loader.close()
 
+
 def test_dataloader_stats(single_simulator):
     # Test statistics tracking
     loader = create_loader(single_simulator)
@@ -109,7 +119,7 @@ def test_dataloader_recycling(single_simulator):
     loader = create_loader(
         single_simulator,
         recycle_batches=True,
-        recycle_threshold=0.5  # Start recycling when queue is half full
+        recycle_threshold=0.5,  # Start recycling when queue is half full
     )
 
     # Get a few batches
@@ -124,6 +134,7 @@ def test_dataloader_recycling(single_simulator):
 
     loader.close()
 
+
 def test_dataloader_context_manager(single_simulator):
     # Test context manager functionality
     with create_loader(single_simulator) as loader:
@@ -134,14 +145,11 @@ def test_dataloader_context_manager(single_simulator):
     # Loader should be closed after context
     assert not any(thread.is_alive() for thread in loader.producer_threads)
 
+
 @pytest.mark.skipif(not has_gpu(), reason="GPU not available")
 def test_gpu_dataloader(single_simulator):
     """Test dataloader with GPU if available"""
-    loader = create_loader(
-        single_simulator,
-        data_device='gpu',
-        simulation_device='cpu'
-    )
+    loader = create_loader(single_simulator, data_device="gpu", simulation_device="cpu")
 
     # Get a batch
     batch = next(iter(loader))
