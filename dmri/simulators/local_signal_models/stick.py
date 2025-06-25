@@ -373,14 +373,15 @@ class SSFPStick(Stick):
         mu_cart = unitsphere_to_cartesian(mu)
         adc_aniso = lam_par * (jnp.sum(acq.bvecs * mu_cart, axis=-1)) ** 2
 
-        signal = ssfp_signal_fn(
-            acq,
-            adc_aniso,
-            acq.E1,
-            acq.E2,
-            acq.sa,
-            acq.ca,
-        )
+        qvals = acq.qvals
+        E1 = acq.E1
+        E2 = acq.E2
+        sa = acq.sa
+        ca = acq.ca
+        TR = acq.TRs
+        grad_diff_dur = acq.diffGradDur
+
+        signal = ssfp_signal_fn(adc_aniso, qvals, E1, E2, sa, ca, TR, grad_diff_dur)
         return signal
 
     @classmethod
