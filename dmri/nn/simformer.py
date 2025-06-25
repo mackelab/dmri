@@ -108,7 +108,20 @@ class EDMSimformer(EDM):
         # Prevent automatic parameter updates
         super().__init__(transformer, loss_type=loss_type)
 
-    def loss(self, rng, theta, tokenizer, y, model_mask, tokens_cfg, target_score=None, attention_mask=None, loss_mask=None, weight_by_complexity=False, cut_off_tsm=0.1):
+    def loss(
+        self,
+        rng,
+        theta,
+        tokenizer,
+        y,
+        model_mask,
+        tokens_cfg,
+        target_score=None,
+        attention_mask=None,
+        loss_mask=None,
+        weight_by_complexity=False,
+        cut_off_tsm=0.1,
+    ):
         assert loss_mask is None
         rng0, rng1 = jax.random.split(rng)
         t = self.noise_schedule(rng0, (theta.shape[0],))
@@ -116,36 +129,60 @@ class EDMSimformer(EDM):
         eps = jax.random.normal(rng1, theta.shape)
         thetas_noisy = theta + std * eps
         if self.loss_type == "x0":
-            theta_denoised = self.denoise(t,thetas_noisy, tokenizer, y=y, model_mask=model_mask, tokens_cfg=tokens_cfg, attention_mask=attention_mask)
+            theta_denoised = self.denoise(
+                t,
+                thetas_noisy,
+                tokenizer,
+                y=y,
+                model_mask=model_mask,
+                tokens_cfg=tokens_cfg,
+                attention_mask=attention_mask,
+            )
             weight = self.weight_fn(t)
-            loss_denoised = weight * jnp.sum((theta_denoised - theta)**2, axis=-1, keepdims=True)
+            loss_denoised = weight * jnp.sum(
+                (theta_denoised - theta) ** 2, axis=-1, keepdims=True
+            )
             loss = loss_denoised
         elif self.loss_type == "v":
             print("using v loss")
-            total_std = jnp.sqrt(1. + std**2)
-            alpha_t = 1. / total_std
+            total_std = jnp.sqrt(1.0 + std**2)
+            alpha_t = 1.0 / total_std
             sigma_t = std / total_std
             v_target = alpha_t * eps - sigma_t * theta
-            theta_denoised = self.denoise(t,thetas_noisy, tokenizer, y=y, model_mask=model_mask, tokens_cfg=tokens_cfg, attention_mask=attention_mask)
+            theta_denoised = self.denoise(
+                t,
+                thetas_noisy,
+                tokenizer,
+                y=y,
+                model_mask=model_mask,
+                tokens_cfg=tokens_cfg,
+                attention_mask=attention_mask,
+            )
             eps_pred = (thetas_noisy - theta_denoised) / std
             v = alpha_t * eps_pred - sigma_t * theta_denoised
             weight = self.weight_fn_v(t)
-            loss_v = weight * jnp.sum((v - v_target)**2, axis=-1, keepdims=True)
+            loss_v = weight * jnp.sum((v - v_target) ** 2, axis=-1, keepdims=True)
             loss = loss_v
         else:
             raise ValueError(f"Loss type {self.loss_type} not supported")
 
-
-
-        if target_score is not None and cut_off_tsm > 0.:
+        if target_score is not None and cut_off_tsm > 0.0:
             score_est = (theta_denoised - thetas_noisy) / std**2
             # Target score norm
-            target_score_norm = jnp.sqrt(jnp.sum(target_score**2, axis=-1, keepdims=True)).mean()
-            weight_tsm = 1/target_score_norm * std**2  * jnp.where((std < cut_off_tsm), 1, 0) # Only use TSM for early times
-            loss_score = weight_tsm*jnp.sum((score_est - target_score)**2, axis=-1, keepdims=True)
+            target_score_norm = jnp.sqrt(
+                jnp.sum(target_score**2, axis=-1, keepdims=True)
+            ).mean()
+            weight_tsm = (
+                1 / target_score_norm * std**2 * jnp.where((std < cut_off_tsm), 1, 0)
+            )  # Only use TSM for early times
+            loss_score = weight_tsm * jnp.sum(
+                (score_est - target_score) ** 2, axis=-1, keepdims=True
+            )
             loss += loss_score
 
-            print("Data loss: ", loss_denoised.mean(), "Score loss: ", loss_score.mean())
+            print(
+                "Data loss: ", loss_denoised.mean(), "Score loss: ", loss_score.mean()
+            )
 
         if weight_by_complexity:
             loss = loss * (model_mask.sum(axis=-1, keepdims=True) + 0.01)
@@ -165,8 +202,8 @@ class EDMSimformer(EDM):
         max_noise=None,
         num_steps=16,
         sample_method="ode",
-        rho = 7,
-        min_noise_nugget = 0.0,
+        rho=7,
+        min_noise_nugget=0.0,
     ):
         if max_noise is not None:
             self.max_noise = max_noise
@@ -175,6 +212,7 @@ class EDMSimformer(EDM):
         ts = self.solve_schedule(num_steps, rho) + min_noise_nugget
 
         if sample_method == "ode":
+
             def drift(t, x):
                 t = jnp.atleast_1d(t)
                 f = self.drift(t, x)
@@ -190,7 +228,6 @@ class EDMSimformer(EDM):
                     model_mask=model_mask,
                 )
                 return (f - 0.5 * g**2 * score).reshape(x.shape)
-
 
             state, _ = odeint(
                 drift,
@@ -231,7 +268,7 @@ class EDMSimformer(EDM):
                 eps,
                 ts,
                 return_state=True,
-                #filter_state=lambda *args: None,
+                # filter_state=lambda *args: None,
             )
             x = state.y0
             return x
@@ -247,8 +284,8 @@ class EDMSimformer(EDM):
         model_mask=None,
         max_noise=None,
         num_steps=16,
-        rho = 7,
-        min_noise_nugget = 0.0,
+        rho=7,
+        min_noise_nugget=0.0,
     ):
         if max_noise is not None:
             self.max_noise = max_noise
@@ -307,8 +344,8 @@ class EDMSimformer(EDM):
         attention_mask=None,
         max_noise=None,
         num_steps=16,
-        rho = 7,
-        min_noise_nugget = 0.0,
+        rho=7,
+        min_noise_nugget=0.0,
     ):
         if max_noise is not None:
             self.max_noise = max_noise

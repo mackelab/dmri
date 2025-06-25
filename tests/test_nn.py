@@ -27,6 +27,7 @@ from dmri.simulators import Ball2Stick, Ball3Stick, BallStickZeppelinNoise
 def rng():
     return nnx.Rngs(0)
 
+
 @pytest.fixture(params=[Ball2Stick, Ball3Stick, BallStickZeppelinNoise])
 def simulator(request):
     return request.param
@@ -167,7 +168,10 @@ def test_dmri_tokenizer_pp(rng, simulator, data):
     encoded_theta = tokenizer.encode(theta=theta, model_mask=model_mask)
     assert encoded_theta.shape == (
         100,
-        len(simulator.model_types) + len(simulator.noise_types) + len(simulator.model_types)-1,
+        len(simulator.model_types)
+        + len(simulator.noise_types)
+        + len(simulator.model_types)
+        - 1,
         64,
     )
 

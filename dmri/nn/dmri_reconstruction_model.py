@@ -50,6 +50,7 @@ class DMRIInferenceModelConfigMaskPriorAmortized:
         default_factory=DMRIThetaInferenceConfig
     )
 
+
 @dataclass
 class DMRIInferenceModelConfigMaskPriorAmortizedPP:
     simulator: type[MultiCompartment]
@@ -64,6 +65,7 @@ class DMRIInferenceModelConfigMaskPriorAmortizedPP:
     theta_inference_cfg: DMRIThetaInferenceConfig = field(
         default_factory=DMRIThetaInferenceConfig
     )
+
 
 class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
     def __init__(self, cfg: DMRIInferenceModelConfig, rngs):
@@ -84,7 +86,7 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         if cfg.model_selection_cfg.context_dim is not None:
             # We expect a mask prior input
             self.mask_prior_need = True
-            mask_prior_dim = params.pop("mask_prior_dim",1)
+            mask_prior_dim = params.pop("mask_prior_dim", 1)
             self.mask_prior_embed = GaussianFourierEmbedding(
                 mask_prior_dim,
                 cfg.model_selection_cfg.context_dim,
@@ -187,9 +189,10 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         model_types: Optional[list[type]] = None,
         noise_types: Optional[list[type]] = None,
     ):
-        theta_token_mask = self.tokenizer.theta_token_mask(model_mask, model_types=model_types, noise_types=noise_types)
+        theta_token_mask = self.tokenizer.theta_token_mask(
+            model_mask, model_types=model_types, noise_types=noise_types
+        )
         # Expand this by the
-
 
     def marginalization_mask(
         self,
@@ -259,7 +262,13 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
             attention_mask = None
 
         if use_loss_mask:
-            loss_mask = ~jax.vmap(partial(self.tokenizer.theta_mask, model_types=model_types, noise_types=noise_types))(model_mask)
+            loss_mask = ~jax.vmap(
+                partial(
+                    self.tokenizer.theta_mask,
+                    model_types=model_types,
+                    noise_types=noise_types,
+                )
+            )(model_mask)
         else:
             loss_mask = None
 

@@ -5,118 +5,112 @@ import nibabel as nb
 import os
 
 
+def ssfp_signal_fn(
+    adc: ArrayLike,
+    qval: ArrayLike,
+    E1: ArrayLike,
+    E2: ArrayLike,
+    sa: ArrayLike,
+    ca: ArrayLike,
+    TR: ArrayLike,
+    diff_grad_dur: ArrayLike,
+):
+    """
+    Simulate the SSFP signal attenuation (S/S0) due to diffusion using JAX.
 
-def ssfp_signal_fn(acq,adc, E1, E2, sa, ca):
-    """Calculate the Steady-State Free Precession (SSFP) signal.
-
-    This function computes the SSFP signal based on acquisition parameters, apparent diffusion coefficient,
-    and relaxation parameters. The signal calculation takes into account diffusion effects and relaxation
-    times through the E1 and E2 parameters.
-
-    Args:
-        acq: Acquisition parameters object containing:
-            - gyro: Gyromagnetic ratio
-            - diffGradAmps: Diffusion gradient amplitudes
-            - diffGradDur: Diffusion gradient duration
-            - TRs: Repetition time
-        adc (float): Apparent diffusion coefficient
-        E1 (float): Longitudinal relaxation parameter (exp(-TR/T1))
-        E2 (float): Transverse relaxation parameter (exp(-TR/T2))
-        sa (float): Sine of the flip angle
-        ca (float): Cosine of the flip angle
+    Parameters:
+        adc (float): Apparent diffusion coefficient [mm²/ms]
+        qval (float): Diffusion encoding factor [1/mm]
+        E1 (float): Longitudinal relaxation term, unitless
+        E2 (float): Transverse relaxation term, unitless
+        sa (float): sin(flip_angle * B1_scale), unitless
+        ca (float): cos(flip_angle * B1_scale), unitless
+        TR (float): Repetition time [ms]
+        diff_grad_dur (float): Gradient duration [ms]
 
     Returns:
-        float: The calculated SSFP signal. Note that noise will be added externally.
+        float: Normalized SSFP signal (S/S0), unitless
     """
-    qval = acq.qvals
-    A1 = jnp.exp(-qval**2 * acq.TRs * adc)
-    A2 = jnp.exp(-qval**2 * acq.diffGradDur * adc)
-    A2_03 = jnp.exp(-qval**2 * acq.diffGradDur * adc / 3.0)
+    A1 = jnp.exp(-(qval**2) * TR * adc)
+    A2 = jnp.exp(-(qval**2) * diff_grad_dur * adc)
+    A2_03 = jnp.exp(-(qval**2) * diff_grad_dur * adc / 3.0)
 
-    s = E2 * A1 / A2_03**4 * (1.0 - E1 * ca) + E2 / A2_03 * (ca - E1)
-    r = 1.0 - E1 * ca + E2**2 * A1 * A2_03 * (ca - E1)
-    K = (
-        (1.0 - E1 * A1 * ca - E2**2 * A1**2 / A2_03**2 * (E1 * A1 - ca)) /
-        (E2 * A1 / A2_03**4 * (1.0 + ca) * (1.0 - E1 * A1))
+    s = E2 * A1 / A2_03**4 * (1 - E1 * ca) + E2 / A2_03 * (ca - E1)
+    r = 1 - E1 * ca + E2**2 * A1 * A2_03 * (ca - E1)
+
+    K = (1 - E1 * A1 * ca - (E2**2 * A1**2 / A2_03**2) * (E1 * A1 - ca)) / (
+        E2 * A1 / A2_03**4 * (1 + ca) * (1 - E1 * A1)
     )
 
     F1 = K - jnp.sqrt(K**2 - A2**2)
-    Mminus_top = -(1.0 - E1) * E2 / A2_03**2 * (F1 - E2 * A1 * A2_03**2) * sa
+    Mminus_top = -(1 - E1) * E2 / A2_03**2 * (F1 - E2 * A1 * A2_03**2) * sa
     Mminus_bottom = r - F1 * s
-    signal = Mminus_top / Mminus_bottom # Noise will be added externally
-    return signal
+
+    return Mminus_top / Mminus_bottom
 
 
-def log_ssfp_signal_fn(acq, adc, logE1, logE2, sa, ca):
-    """Calculate the log of the Steady-State Free Precession (SSFP) signal in a numerically stable way.
+def log_ssfp_signal_fn(
+    adc: ArrayLike,
+    qval: ArrayLike,
+    logE1: ArrayLike,
+    logE2: ArrayLike,
+    sa: ArrayLike,
+    ca: ArrayLike,
+    TR: ArrayLike,
+    diff_grad_dur: ArrayLike,
+):
+    """
+    Simulate the SSFP signal attenuation (S/S0) due to diffusion using JAX.
 
-    This function computes the log of the SSFP signal while maintaining numerical stability by
-    working in log space throughout the calculation. This is particularly useful for fitting
-    and optimization tasks where working in log space is preferred.
-
-    Args:
-        acq: Acquisition parameters object containing:
-            - gyro: Gyromagnetic ratio
-            - diffGradAmps: Diffusion gradient amplitudes
-            - diffGradDur: Diffusion gradient duration
-            - TRs: Repetition time
-        adc (float): Apparent diffusion coefficient
-        logE1 (float): Log of longitudinal relaxation parameter (log(exp(-TR/T1)))
-        logE2 (float): Log of transverse relaxation parameter (log(exp(-TR/T2)))
-        sa (float): Sine of the flip angle
-        ca (float): Cosine of the flip angle
+    Parameters:
+        adc (float): Apparent diffusion coefficient [mm²/ms]
+        qval (float): Diffusion encoding factor [1/mm]
+        logE1 (float): Log of longitudinal relaxation term, unitless
+        logE2 (float): Log of transverse relaxation term, unitless
+        sa (float): sin(flip_angle * B1_scale), unitless
+        ca (float): cos(flip_angle * B1_scale), unitless
+        TR (float): Repetition time [ms]
+        diff_grad_dur (float): Gradient duration [ms]
 
     Returns:
-        float: The log of the calculated SSFP signal
+        float: Normalized SSFP signal (S/S0), unitless
     """
-    qval = acq.qvals
-    # Calculate log terms directly
-    logA1 = -qval**2 * acq.TRs * adc
-    logA2 = -qval**2 * acq.diffGradDur * adc
-    logA2_03 = -qval**2 * acq.diffGradDur * adc / 3.0
+    logA1 = -qval**2 * TR * adc
+    logA2 = -qval**2 * diff_grad_dur * adc
+    logA2_03 = logA2 / 3.0
 
+    # 2) reconstruct A1, A2, A2_03 in exp form
+    A1 = jnp.exp(logA1)
+    A2 = jnp.exp(logA2)
+    A2_03 = jnp.exp(logA2_03)
+
+    # 3) reconstruct E1, E2
     E1 = jnp.exp(logE1)
-    term1 = logE2 + logA1 - 4 * logA2_03 + jnp.log1p(-E1 * ca)
-    term2 = logE2 - logA2_03 + jnp.log(ca - E1)
-    log_s = jnp.logaddexp(term1, term2)
+    E2 = jnp.exp(logE2)
 
-    # Calculate r in log space
-    log_r_term1 = jnp.log(jnp.abs(1.0 - E1 * ca))
-    log_r_term2 = 2 * logE2 + logA1 + logA2_03 + jnp.log(jnp.abs(ca - E1))
-    log_r = jnp.logaddexp(log_r_term1, log_r_term2)
+    # 4) log-space sum for s = t1 + t2
+    logt1 = logE2 + logA1 - 4 * logA2_03 + jnp.log1p(-E1 * ca)    # log(E2*A1/A2_03^4 * (1 - E1*ca))
+    logt2 = logE2 - logA2_03 + jnp.log(ca - E1)                    # log(E2/A2_03 * (ca - E1))
+    log_s = jax.scipy.special.logsumexp(jnp.stack([logt1, logt2]))                  # log(s)
+    s = jnp.exp(log_s)
 
-    # Calculate K in log space
-    log_K_num = jnp.log(jnp.abs(
-        1.0 - E1 * jnp.exp(logA1) * ca -
-        jnp.exp(2 * logE2 + 2 * logA1 - 2 * logA2_03) * (E1 * jnp.exp(logA1) - ca)
-    ))
-    log_K_den = jnp.log(jnp.abs(
-        jnp.exp(logE2 + logA1 - 4 * logA2_03) * (1.0 + ca) * (1.0 - E1 * jnp.exp(logA1))
-    ))
-    log_K = log_K_num - log_K_den
+    # 5) r = term3 + term4
+    term3 = 1 - E1 * ca
+    logterm4 = 2 * logE2 + logA1 + logA2_03 + jnp.log(ca - E1)    # log(E2^2 * A1 * A2_03 * (ca - E1))
+    term4 = jnp.exp(logterm4)
+    r = term3 + term4
 
-    # Calculate F1 in log space
-    K = jnp.exp(log_K)
-    F1 = K - jnp.sqrt(K**2 - jnp.exp(2 * logA2))
-    log_F1 = jnp.log(jnp.abs(F1))
+    # 6) compute K, F1
+    num = 1 - E1 * A1 * ca - (E2**2 * A1**2 / A2_03**2) * (E1 * A1 - ca)
+    denom = E2 * A1 / (A2_03**4) * (1 + ca) * (1 - E1 * A1)
+    K = num / denom
+    sqrt_term = jnp.sqrt(jnp.maximum(K**2 - A2**2, 1e-20))
+    F1 = K - sqrt_term
 
-    # Calculate final terms in log space
-    # Numerator: -(1-E1) * E2 / A2_03^2 * (F1 - E2*A1*A2_03^2) * sa
-    log_Mminus_top = jnp.log(jnp.abs(
-        -(1.0 - E1) * jnp.exp(logE2) / jnp.exp(2 * logA2_03) *
-        (jnp.exp(log_F1) - jnp.exp(logE2 + logA1 + 2 * logA2_03)) * sa
-    ))
-
-    # Denominator: r - F1 * s
-    log_Mminus_bottom = jnp.log(jnp.abs(
-        jnp.exp(log_r) - jnp.exp(log_F1 + log_s)
-    ))
-
-    # Final log signal
-    log_signal = log_Mminus_top - log_Mminus_bottom
-    return log_signal
-
-
+    # 7) final signal
+    Mminus_top = -(1 - E1) * E2 / (A2_03**2) * (F1 - E2 * A1 * A2_03**2) * sa
+    Mminus_bottom = r - F1 * s
+    return Mminus_top / Mminus_bottom
 
 def fit_diffusion_tensor_linearized(
     logS: ArrayLike, bvals: ArrayLike, bvecs: ArrayLike
@@ -432,9 +426,9 @@ def reorder_angles_3fib(mu1, mu2, mu3, f1, f2, f3):
     new_f3 = jnp.zeros_like(f3)
 
     # Use first sample as reference vectors
-    v1_ref = sph2cart(mu1[0,0], mu1[0,1])
-    v2_ref = sph2cart(mu2[0,0], mu2[0,1])
-    v3_ref = sph2cart(mu3[0,0], mu3[0,1])
+    v1_ref = sph2cart(mu1[0, 0], mu1[0, 1])
+    v2_ref = sph2cart(mu2[0, 0], mu2[0, 1])
+    v3_ref = sph2cart(mu3[0, 0], mu3[0, 1])
 
     # Copy first sample directly
     new_mu1 = new_mu1.at[0].set(mu1[0])
@@ -447,49 +441,77 @@ def reorder_angles_3fib(mu1, mu2, mu3, f1, f2, f3):
     # Process remaining samples
     for j in range(1, mu1.shape[0]):
         # Convert current sample to cartesian
-        v1 = sph2cart(mu1[j,0], mu1[j,1])
-        v2 = sph2cart(mu2[j,0], mu2[j,1])
-        v3 = sph2cart(mu3[j,0], mu3[j,1])
+        v1 = sph2cart(mu1[j, 0], mu1[j, 1])
+        v2 = sph2cart(mu2[j, 0], mu2[j, 1])
+        v3 = sph2cart(mu3[j, 0], mu3[j, 1])
 
         # Calculate dot products with v1_ref
-        dots = jnp.array([
-            jnp.dot(v1_ref, v1)/(jnp.linalg.norm(v1_ref)*jnp.linalg.norm(v1)),
-            jnp.dot(v1_ref, v2)/(jnp.linalg.norm(v1_ref)*jnp.linalg.norm(v2)),
-            jnp.dot(v1_ref, v3)/(jnp.linalg.norm(v1_ref)*jnp.linalg.norm(v3))
-        ])
+        dots = jnp.array(
+            [
+                jnp.dot(v1_ref, v1) / (jnp.linalg.norm(v1_ref) * jnp.linalg.norm(v1)),
+                jnp.dot(v1_ref, v2) / (jnp.linalg.norm(v1_ref) * jnp.linalg.norm(v2)),
+                jnp.dot(v1_ref, v3) / (jnp.linalg.norm(v1_ref) * jnp.linalg.norm(v3)),
+            ]
+        )
 
         # Find best match for v1_ref
         best_match = jnp.argmax(dots)
 
         # Reorder based on best match with v1_ref using where
-        angles1 = jnp.where(best_match == 0, mu1[j],
-                  jnp.where(best_match == 1, mu2[j], mu3[j]))
-        frac1 = jnp.where(best_match == 0, f1[j],
-                 jnp.where(best_match == 1, f2[j], f3[j]))
+        angles1 = jnp.where(
+            best_match == 0, mu1[j], jnp.where(best_match == 1, mu2[j], mu3[j])
+        )
+        frac1 = jnp.where(
+            best_match == 0, f1[j], jnp.where(best_match == 1, f2[j], f3[j])
+        )
 
         # Get remaining angles and fractions
-        remaining_angles = jnp.where(best_match == 0, jnp.array([mu2[j], mu3[j]]),
-                          jnp.where(best_match == 1, jnp.array([mu1[j], mu3[j]]),
-                                                  jnp.array([mu1[j], mu2[j]])))
-        remaining_fracs = jnp.where(best_match == 0, jnp.array([f2[j], f3[j]]),
-                          jnp.where(best_match == 1, jnp.array([f1[j], f3[j]]),
-                                                  jnp.array([f1[j], f2[j]])))
+        remaining_angles = jnp.where(
+            best_match == 0,
+            jnp.array([mu2[j], mu3[j]]),
+            jnp.where(
+                best_match == 1,
+                jnp.array([mu1[j], mu3[j]]),
+                jnp.array([mu1[j], mu2[j]]),
+            ),
+        )
+        remaining_fracs = jnp.where(
+            best_match == 0,
+            jnp.array([f2[j], f3[j]]),
+            jnp.where(
+                best_match == 1, jnp.array([f1[j], f3[j]]), jnp.array([f1[j], f2[j]])
+            ),
+        )
 
-        v_remaining = jnp.where(best_match == 0, jnp.array([v2, v3]),
-                     jnp.where(best_match == 1, jnp.array([v1, v3]),
-                                              jnp.array([v1, v2])))
+        v_remaining = jnp.where(
+            best_match == 0,
+            jnp.array([v2, v3]),
+            jnp.where(best_match == 1, jnp.array([v1, v3]), jnp.array([v1, v2])),
+        )
 
         # Find best match for v2_ref among remaining vectors
-        dots_v2 = jnp.array([
-            jnp.dot(v2_ref, v_remaining[0])/(jnp.linalg.norm(v2_ref)*jnp.linalg.norm(v_remaining[0])),
-            jnp.dot(v2_ref, v_remaining[1])/(jnp.linalg.norm(v2_ref)*jnp.linalg.norm(v_remaining[1]))
-        ])
+        dots_v2 = jnp.array(
+            [
+                jnp.dot(v2_ref, v_remaining[0])
+                / (jnp.linalg.norm(v2_ref) * jnp.linalg.norm(v_remaining[0])),
+                jnp.dot(v2_ref, v_remaining[1])
+                / (jnp.linalg.norm(v2_ref) * jnp.linalg.norm(v_remaining[1])),
+            ]
+        )
 
         # Order remaining two vectors based on similarity to v2_ref using where
-        angles2 = jnp.where(dots_v2[0] > dots_v2[1], remaining_angles[0], remaining_angles[1])
-        angles3 = jnp.where(dots_v2[0] > dots_v2[1], remaining_angles[1], remaining_angles[0])
-        frac2 = jnp.where(dots_v2[0] > dots_v2[1], remaining_fracs[0], remaining_fracs[1])
-        frac3 = jnp.where(dots_v2[0] > dots_v2[1], remaining_fracs[1], remaining_fracs[0])
+        angles2 = jnp.where(
+            dots_v2[0] > dots_v2[1], remaining_angles[0], remaining_angles[1]
+        )
+        angles3 = jnp.where(
+            dots_v2[0] > dots_v2[1], remaining_angles[1], remaining_angles[0]
+        )
+        frac2 = jnp.where(
+            dots_v2[0] > dots_v2[1], remaining_fracs[0], remaining_fracs[1]
+        )
+        frac3 = jnp.where(
+            dots_v2[0] > dots_v2[1], remaining_fracs[1], remaining_fracs[0]
+        )
 
         # Store reordered angles and fractions
         new_mu1 = new_mu1.at[j].set(angles1)

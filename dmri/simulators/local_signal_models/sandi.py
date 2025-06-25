@@ -1,5 +1,7 @@
 from dmri.simulators.convolved_models import ConvolvedSignalCompartment
-from dmri.simulators.local_signal_models.signal_response_kernels import SimpleSANDIKernel
+from dmri.simulators.local_signal_models.signal_response_kernels import (
+    SimpleSANDIKernel,
+)
 from dmri.simulators.sphereical_distributions import Watson, Bingham
 
 

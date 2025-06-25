@@ -11,6 +11,7 @@ from dmri.utils.dmriutils import (
     ssfp_signal_fn,
 )
 
+
 class Stick(SignalCompartment):
     """The Stick model represents a single fiber bundle with a fixed orientation i.e.
     a cylinder with zero radius.
@@ -19,7 +20,7 @@ class Stick(SignalCompartment):
     """
 
     theta_dim = 3
-    min_lam = 0.
+    min_lam = 0.0
     max_lam = 0.01
 
     def __init__(self, mu: ArrayLike, lam_par: float) -> None:
@@ -187,7 +188,7 @@ class MultiShellStick(Stick):
     theta_dim: int = 4
     lam_par: float
     lam_par_std: float
-    lam_par_std_min: float = 0.
+    lam_par_std_min: float = 0.0
     lam_par_std_max: float = 0.005
 
     def __init__(self, mu: ArrayLike, lam_par: float, lam_par_std: float) -> None:
@@ -351,9 +352,10 @@ class SSFPStick(Stick):
     The lam_par parameter is shared from a global parameter state as a class attribute,
     while the mu parameter remains learnable.
     """
+
     theta_dim: int = 3
     lam_par: float
-    lam_min: float = 0.
+    lam_min: float = 0.0
     lam_max: float = 0.01
 
     def __init__(self, mu: ArrayLike, lam_par: float) -> None:
@@ -362,19 +364,34 @@ class SSFPStick(Stick):
 
     @classmethod
     def signal_fn(
-        cls, aquisition_scheme: acquisition_scheme, mu: ArrayLike, lam_par: float, rng=None
+        cls,
+        aquisition_scheme: acquisition_scheme,
+        mu: ArrayLike,
+        lam_par: float,
+        rng=None,
     ) -> ArrayLike:
         """Compute the signal for given b-values and b-vectors."""
 
         mu_cart = unitsphere_to_cartesian(mu)
         adc_aniso = lam_par * (jnp.sum(aquisition_scheme.bvecs * mu_cart, axis=-1)) ** 2
 
-        signal = ssfp_signal_fn(aquisition_scheme, adc_aniso, aquisition_scheme.E1, aquisition_scheme.E2, aquisition_scheme.sa, aquisition_scheme.ca)
+        signal = ssfp_signal_fn(
+            aquisition_scheme,
+            adc_aniso,
+            aquisition_scheme.E1,
+            aquisition_scheme.E2,
+            aquisition_scheme.sa,
+            aquisition_scheme.ca,
+        )
         return signal
 
     @classmethod
     def log_signal_fn(
-        cls, aquisition_scheme: acquisition_scheme, mu: ArrayLike, lam_par: float, rng=None
+        cls,
+        aquisition_scheme: acquisition_scheme,
+        mu: ArrayLike,
+        lam_par: float,
+        rng=None,
     ) -> ArrayLike:
         """Compute the log signal for given b-values and b-vectors."""
         signal = cls.signal_fn(aquisition_scheme, mu, lam_par, rng)
@@ -386,6 +403,7 @@ class SSFPStaticStick(SSFPStick):
     The SSFPStaticStick model is a SSFPStick with a fixed lambda value.
     The lam_par parameter is shared from a global parameter state as a class attribute.
     """
+
     theta_dim: int = 2  # No learnable parameters, lam_par is fixed
     lam_par: float = None
 
@@ -397,7 +415,6 @@ class SSFPStaticStick(SSFPStick):
         """Create a SSFPStaticStick from a global theta value."""
         cls.lam_par = params[idx[0]]
         return cls
-
 
     @classmethod
     def to_theta(cls, mu: ArrayLike) -> ArrayLike:
@@ -439,7 +456,6 @@ class SSFPStaticStick(SSFPStick):
         return SSFPStick.log_signal_fn(aquisition_scheme, mu, cls.lam_par, rng)
 
 
-
 def multi_shell_stick_log_signal_fn(
     bvals: ArrayLike,
     bvecs: ArrayLike,
@@ -452,7 +468,7 @@ def multi_shell_stick_log_signal_fn(
     nugget = jnp.finfo(bvals.dtype).eps
 
     # Add small constant to prevent division by zero when mu -> 0
-    scaling = (lam_par/(lam_par_std + nugget))**2
+    scaling = (lam_par / (lam_par_std + nugget)) ** 2
 
     # Add small constant to dot product to prevent gradient explosion
     dot_product = (lam_par_std * jnp.sum(bvecs * mu_cart, axis=-1)) ** 2
@@ -472,20 +488,23 @@ def arccos_stable(x: ArrayLike) -> ArrayLike:
     """
     return jnp.arccos(x)
 
+
 def arccos_stable_fwd(x):
     return arccos_stable(x), x
+
 
 def arccos_stable_bwd(x, g):
     # Standard gradient for arccos is -1/sqrt(1-x²)
     # We stabilize by adding a small epsilon to avoid division by zero
     x = jnp.asarray(x)
-    eps = 1. -jnp.finfo(x.dtype).eps
+    eps = 1.0 - jnp.finfo(x.dtype).eps
     a = jnp.minimum(x, eps)
     # a = x
-    b =a ** 2
-    c = 1. - b
+    b = a**2
+    c = 1.0 - b
     d = jax.lax.rsqrt(c)
-    e = - d
+    e = -d
     return (g * e,)
+
 
 arccos_stable.defvjp(arccos_stable_fwd, arccos_stable_bwd)

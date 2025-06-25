@@ -193,7 +193,9 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
             rngs=rngs,
             num_embeddings=len(simulator.model_types) + len(simulator.noise_types),
             features=token_dim,
-            embedding_init=self._init_class_embeddings if init_component_embeddings is None else init_component_embeddings,
+            embedding_init=self._init_class_embeddings
+            if init_component_embeddings is None
+            else init_component_embeddings,
         )
         self.embed_fraction = nnx.Linear(
             len(simulator.model_types), token_dim, rngs=rngs
@@ -217,7 +219,9 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
             ]
         if theta_decode_nets is None:
             theta_decode_nets = [
-                nnx.Linear(token_dim, d, rngs=rngs, kernel_init=nnx.initializers.zeros) if d > 0 else None
+                nnx.Linear(token_dim, d, rngs=rngs, kernel_init=nnx.initializers.zeros)
+                if d > 0
+                else None
                 for d in self.params_dims
             ]
         self.theta_encode_nets = theta_encode_nets
@@ -365,15 +369,29 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
         # Next is the shared parameters which are always active
         if self.simulator.value.shared_parameter_type is not None:
             theta_dim = self.simulator.value.shared_parameter_type.theta_dim
-            active_thetas = jnp.concatenate([active_thetas, jnp.ones(model_mask.shape[:-1] + (theta_dim,), dtype=jnp.bool_)], axis=-1)
+            active_thetas = jnp.concatenate(
+                [
+                    active_thetas,
+                    jnp.ones(model_mask.shape[:-1] + (theta_dim,), dtype=jnp.bool_),
+                ],
+                axis=-1,
+            )
 
         # Next are the model parameters, if model_mask is true it should be multiplied by the dimension of the parameter
         for i in range(len(model_types)):
-            active_thetas = jnp.concatenate([active_thetas] + [model_mask[..., i, None]] * model_types[i].theta_dim, axis=-1)
+            active_thetas = jnp.concatenate(
+                [active_thetas] + [model_mask[..., i, None]] * model_types[i].theta_dim,
+                axis=-1,
+            )
 
         # Next are the noise parameters, if noise_mask is true it should be multiplied by the dimension of the parameter
         for i in range(len(noise_types)):
-            active_thetas = jnp.concatenate([active_thetas] + [model_mask[..., len(model_types) + i, None]] * noise_types[i].theta_dim, axis=-1)
+            active_thetas = jnp.concatenate(
+                [active_thetas]
+                + [model_mask[..., len(model_types) + i, None]]
+                * noise_types[i].theta_dim,
+                axis=-1,
+            )
 
         return active_thetas
 
@@ -575,12 +593,14 @@ class DMRITokenizer(Tokenizer, experimental_pytree=True):
         theta_split = jnp.split(theta, split_dims, axis=-1)
 
         # Get the val embeddings
-        nets_encode = [self.theta_encode_nets[0]] # First is for fractions
+        nets_encode = [self.theta_encode_nets[0]]  # First is for fractions
         offset = 1
         if self.simulator.value.shared_parameter_type is not None:
             nets_encode += [self.theta_encode_nets[1]]  # Global shared parameters
             offset += 1
-        nets_encode += [self.theta_encode_nets[i+offset]  for i in idx] # Component parameters
+        nets_encode += [
+            self.theta_encode_nets[i + offset] for i in idx
+        ]  # Component parameters
         val_embeddings = jax.tree_util.tree_map(
             lambda x, net: net(x)[..., None, :],
             theta_split,
@@ -707,7 +727,9 @@ class DMRITokenizerPP(DMRITokenizer):
         # Override the first linear layer for the fraction prior
         # Shared linear value embedding applied to all fractions
         self.theta_encode_nets[0] = nnx.Linear(1, token_dim, rngs=rngs)
-        self.theta_decode_nets[0] = nnx.Linear(token_dim, 1, rngs=rngs, kernel_init=nnx.initializers.zeros)
+        self.theta_decode_nets[0] = nnx.Linear(
+            token_dim, 1, rngs=rngs, kernel_init=nnx.initializers.zeros
+        )
         # Embedding to distinguish between model and noise components
         self.fraction_embed = nnx.Embed(
             len(self.simulator.value.model_types) - 1,
@@ -823,7 +845,7 @@ class DMRITokenizerPP(DMRITokenizer):
         # Handle shared parameters if they exist
         if self.simulator.value.shared_parameter_type is not None:
             theta_shared = theta_split[1]
-            shared_tokens = self.theta_encode_nets[1](theta_shared[..., None,:])
+            shared_tokens = self.theta_encode_nets[1](theta_shared[..., None, :])
             theta_models = theta_split[2:]
         else:
             theta_models = theta_split[1:]

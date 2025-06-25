@@ -60,8 +60,6 @@ def test_cartesian_spherical_conversion():
     assert jnp.allclose(cart, jnp.array([1.0, 0.0, 0.0]), atol=1e-6)
 
 
-
-
 def test_normalize_bvecs(sample_bvecs):
     """Test b-vector normalization."""
     # Test with already normalized vectors

@@ -49,7 +49,10 @@ from dmri.simulators.multi_compartment import (
         Zeppelin,
         Dti,
         Sphere,
-        pytest.param(Cylinder, marks=pytest.mark.xfail(reason="Cylinder model needs pulse duration")),
+        pytest.param(
+            Cylinder,
+            marks=pytest.mark.xfail(reason="Cylinder model needs pulse duration"),
+        ),
         WatsonStick,
         WatsonZeppelin,
         BinghamStick,
@@ -123,7 +126,6 @@ def test_jitable(compartment_model):
 
 
 def test_stabally_differentiable(compartment_model):
-
     bvals = np.random.uniform(size=(10,)) * 1000
     bvecs = np.random.randn(10, 3)
     bvecs = bvecs / np.linalg.norm(bvecs, axis=-1, keepdims=True)
@@ -134,7 +136,7 @@ def test_stabally_differentiable(compartment_model):
     def ll(theta):
         model = compartment_model.__class__.from_theta(theta)
         signal = model.signal(acq)
-        return jnp.mean((signal - 1)**2)
+        return jnp.mean((signal - 1) ** 2)
 
     grad_fn = jax.grad(ll)
     thetas = np.random.randn(100, compartment_model.theta_dim)
@@ -142,11 +144,10 @@ def test_stabally_differentiable(compartment_model):
     assert jnp.all(jnp.isfinite(grads)), "Gradient is not finite"
 
 
-
 def test_signal_properties(compartment_model):
     """Test fundamental properties of the signal."""
     # Create acquisition scheme with varying b-values
-    bvals = jnp.array([0., 100., 500., 1000., 2000.])
+    bvals = jnp.array([0.0, 100.0, 500.0, 1000.0, 2000.0])
     bvecs = jnp.array([[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 0], [1, 0, 1]])
     bvecs = bvecs / jnp.linalg.norm(bvecs, axis=-1, keepdims=True)
     acq = acquisition_scheme(bvals, bvecs)
@@ -172,7 +173,7 @@ def test_gradient_computation(compartment_model):
         # pytest.xfail("MultiCompartmentModel model needs currently not implemented")
         pass
 
-    bvals = jnp.array([0., 100., 1000.])
+    bvals = jnp.array([0.0, 100.0, 1000.0])
     bvecs = jnp.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
     bvecs = bvecs / jnp.linalg.norm(bvecs, axis=-1, keepdims=True)
     acq = acquisition_scheme(bvals, bvecs)
