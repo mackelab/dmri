@@ -231,11 +231,11 @@ bvecs_typ_large = bvecs_large[idx]
 diff_grad_amps_typical = np.loadtxt(
     os.path.join(os.path.dirname(__file__), "data/diffgrad_amps_ssfp")
 )
-print(diff_grad_amps_typical.shape)
+
 
 
 bvecs_ssfp = np.loadtxt(os.path.join(os.path.dirname(__file__), "data/bvecs_ssfp")).T
-print(bvecs_ssfp.shape)
+
 
 
 def random_typical_ssfp_acquisition(rng, num_acquisitions=120):
