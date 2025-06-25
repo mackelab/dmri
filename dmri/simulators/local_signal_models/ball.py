@@ -26,11 +26,9 @@ class Ball(SignalCompartment):
         self.lam = lam
 
     @classmethod
-    def log_signal_fn(
-        cls, aquisition_scheme: acquisition_scheme, lam: float, rng=None
-    ) -> ArrayLike:
-        """Compute the log signal for given b-values and b-vectors."""
-        logS = -aquisition_scheme.bvals * lam
+    def log_signal_fn(cls, acq: acquisition_scheme, lam: float, rng=None) -> ArrayLike:
+        """Computes the log-signal for the ball compartment."""
+        logS = -acq.bvals * lam
         return logS
 
     @classmethod
@@ -109,24 +107,10 @@ class StaticBall(Ball):
         return cls
 
     @classmethod
-    def log_signal_fn(
-        cls, aquisition_scheme: acquisition_scheme, rng=None
-    ) -> ArrayLike:
-        """Compute the log signal for given b-values and b-vectors.
-
-        Parameters
-        ----------
-        aquisition_scheme : acquisition_scheme
-            The acquisition scheme containing b-values and b-vectors
-        rng : jax.random.key, optional
-            Random number generator key, by default None
-
-        Returns
-        -------
-        ArrayLike
-            The log signal
-        """
-        logS = -aquisition_scheme.bvals * cls.lam
+    def log_signal_fn(cls, acq: acquisition_scheme, rng=None) -> ArrayLike:
+        """Computes the log-signal for the ball compartment."""
+        acq: acquisition_scheme
+        logS = -acq.bvals * cls.lam
         return logS
 
 
@@ -151,23 +135,11 @@ class MultiShellBall(Ball):
 
     @classmethod
     def log_signal_fn(
-        cls, aquisition_scheme: acquisition_scheme, lam: float, lam_std: float, rng=None
+        cls, acq: acquisition_scheme, lam: float, lam_std: float, rng=None
     ) -> ArrayLike:
-        """Compute the log signal for given b-values and b-vectors.
-
-        Parameters
-        ----------
-        aquisition_scheme : acquisition_scheme
-            The acquisition scheme containing b-values and b-vectors
-        rng : jax.random.key, optional
-            Random number generator key, by default None
-
-        Returns
-        -------
-        ArrayLike
-            The log signal
-        """
-        return multi_shell_ball_log_signal_fn(aquisition_scheme.bvals, lam, lam_std)
+        """Computes the log-signal for the ball compartment with uncertainty."""
+        acq: acquisition_scheme
+        return multi_shell_ball_log_signal_fn(acq.bvals, lam, lam_std)
 
     @classmethod
     def to_theta(cls, lam: float, lam_std: float) -> ArrayLike:
@@ -241,26 +213,10 @@ class MultiShellStaticBall(MultiShellBall):
         return ()
 
     @classmethod
-    def log_signal_fn(
-        cls, aquisition_scheme: acquisition_scheme, rng=None
-    ) -> ArrayLike:
-        """Compute the log signal for given b-values and b-vectors.
-
-        Parameters
-        ----------
-        aquisition_scheme : acquisition_scheme
-            The acquisition scheme containing b-values and b-vectors
-        rng : jax.random.key, optional
-            Random number generator key, by default None
-
-        Returns
-        -------
-        ArrayLike
-            The log signal
-        """
-        return multi_shell_ball_log_signal_fn(
-            aquisition_scheme.bvals, cls.lam, cls.lam_std
-        )
+    def log_signal_fn(cls, acq: acquisition_scheme, rng=None) -> ArrayLike:
+        """Computes the log-signal for the ball compartment."""
+        acq: acquisition_scheme
+        return multi_shell_ball_log_signal_fn(acq.bvals, cls.lam, cls.lam_std)
 
 
 class SSFPBall(SignalCompartment):
@@ -278,7 +234,7 @@ class SSFPBall(SignalCompartment):
 
     @classmethod
     def signal_fn(cls, acq: ssfp_acquisition_scheme, lam: float, rng=None) -> ArrayLike:
-        """Compute the log signal for given b-values and b-vectors."""
+        """Computes the signal for the ball compartment."""
         # Relaxation terms
         # E1 = jnp.exp(-acq.TRs / (1e-3 * acq.T1))  # T1
         # E2 = jnp.exp(-acq.TRs / (1e-3 * acq.T2))  # T2
@@ -288,20 +244,21 @@ class SSFPBall(SignalCompartment):
         # ca = jnp.cos(acq.flipAngles * acq.B1 * jnp.pi / 180.0)  # cos(flip * B1)
         qvals = acq.qvals
         E1 = acq.E1
-        E2 = acq.E2f
+        E2 = acq.E2
         sa = acq.sa
         ca = acq.ca
+        TR = acq.TRs
         grad_diff_dur = acq.diffGradDur
+        lam = lam
 
-        signal = ssfp_signal_fn(lam, qvals, E1, E2, sa, ca, grad_diff_dur)
+        signal = ssfp_signal_fn(lam, qvals, E1, E2, sa, ca, TR, grad_diff_dur)
         return signal
 
     @classmethod
     def log_signal_fn(
         cls, acq: ssfp_acquisition_scheme, lam: float, rng=None
     ) -> ArrayLike:
-        """Compute the log signal for given b-values and b-vectors."""
-
+        """Computes the log-signal for the ball compartment."""
         signal = cls.signal_fn(acq, lam, rng)
         return jnp.log(signal)
 
@@ -358,18 +315,14 @@ class SSFPStaticBall(SSFPBall):
         return ()
 
     @classmethod
-    def signal_fn(
-        cls, aquisition_scheme: ssfp_acquisition_scheme, rng=None
-    ) -> ArrayLike:
-        """Compute the signal for given b-values and b-vectors."""
-        return cls.signal_fn(aquisition_scheme, cls.lam, rng)
+    def signal_fn(cls, acq: ssfp_acquisition_scheme, rng=None) -> ArrayLike:
+        """Computes the signal for the ball compartment."""
+        return cls.signal_fn(acq, cls.lam, rng)
 
     @classmethod
-    def log_signal_fn(
-        cls, aquisition_scheme: ssfp_acquisition_scheme, rng=None
-    ) -> ArrayLike:
-        """Compute the log signal for given b-values and b-vectors."""
-        return cls.log_signal_fn(aquisition_scheme, cls.lam, rng)
+    def log_signal_fn(cls, acq: ssfp_acquisition_scheme, rng=None) -> ArrayLike:
+        """Computes the log-signal for the ball compartment."""
+        return cls.log_signal_fn(acq, cls.lam, rng)
 
 
 def multi_shell_ball_log_signal_fn(

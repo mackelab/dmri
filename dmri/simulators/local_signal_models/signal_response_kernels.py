@@ -20,15 +20,15 @@ class StickKernel(SignalKernel):
     @classmethod
     def kernel_fn(
         cls,
+        acq: acquisition_scheme,
         mu: ArrayLike,
-        aquisition_scheme: acquisition_scheme,
         lam_par: float,
         rng=None,
     ) -> ArrayLike:
         """Compute the log signal for given b-values and b-vectors."""
         signal_fn = jax.vmap(Stick.signal_fn, in_axes=(0, None, None))
         mu = cartesian_to_unitsphere(mu)
-        return signal_fn(aquisition_scheme, mu, lam_par)
+        return signal_fn(acq, mu, lam_par)
 
     @classmethod
     def to_params(cls, theta: ArrayLike) -> tuple:
@@ -58,8 +58,8 @@ class ZeppelinKernel(SignalKernel):
     @classmethod
     def kernel_fn(
         cls,
+        acq: acquisition_scheme,
         mu: ArrayLike,
-        aquisition_scheme: acquisition_scheme,
         lam_perp: float,
         lam_par: float,
         rng=None,
@@ -67,7 +67,7 @@ class ZeppelinKernel(SignalKernel):
         """Compute the log signal for given b-values and b-vectors."""
         signal_fn = jax.vmap(Zeppelin.signal_fn, in_axes=(0, None, None, None))
         mu = cartesian_to_unitsphere(mu)
-        return signal_fn(aquisition_scheme, mu, lam_perp, lam_par)
+        return signal_fn(acq, mu, lam_perp, lam_par)
 
     @classmethod
     def to_params(cls, theta: ArrayLike) -> tuple:
@@ -98,17 +98,17 @@ class NODDIKernel(SignalKernel):
     @classmethod
     def kernel_fn(
         cls,
+        acq: acquisition_scheme,
         mu: ArrayLike,
-        aquisition_scheme: acquisition_scheme,
         fraction,
         lam_perp,
         lam_par,
         rng=None,
     ) -> ArrayLike:
         """Compute the log signal for given b-values and b-vectors."""
-        stick_signal = StickKernel.kernel_fn(mu, aquisition_scheme, lam_par=lam_par)
+        stick_signal = StickKernel.kernel_fn(acq, mu, lam_par=lam_par)
         zeppelin_signal = ZeppelinKernel.kernel_fn(
-            mu, aquisition_scheme, lam_par=lam_par, lam_perp=lam_perp
+            acq, mu, lam_perp=lam_perp, lam_par=lam_par
         )
         return fraction * stick_signal + (1 - fraction) * zeppelin_signal
 
@@ -154,8 +154,8 @@ class SimpleSANDIKernel(SignalKernel):
     @classmethod
     def kernel_fn(
         cls,
+        acq: acquisition_scheme,
         mu: ArrayLike,
-        aquisition_scheme: acquisition_scheme,
         fraction_in,
         fraction_ec,
         lam_par_in,
@@ -164,13 +164,11 @@ class SimpleSANDIKernel(SignalKernel):
         rng=None,
     ) -> ArrayLike:
         """Compute the log signal for given b-values and b-vectors."""
-        axon_signal_in = StickKernel.kernel_fn(
-            mu, aquisition_scheme, lam_par=lam_par_in
-        )
+        axon_signal_in = StickKernel.kernel_fn(acq, mu, lam_par=lam_par_in)
         soma_signal = 1.0  # Dot
 
         zeppelin_signal_ex = ZeppelinKernel.kernel_fn(
-            mu, aquisition_scheme, lam_par=lam_par_ex, lam_perp=lam_perp_ex
+            acq, mu, lam_par=lam_par_ex, lam_perp=lam_perp_ex
         )
         signal_in = fraction_in * axon_signal_in + (1 - fraction_in) * soma_signal
         signal_ex = zeppelin_signal_ex

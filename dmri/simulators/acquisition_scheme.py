@@ -127,10 +127,10 @@ class ssfp_acquisition_scheme:
     """
 
     bvecs: ArrayLike  # unit vectors
-    T1: ArrayLike  # s
-    T2: ArrayLike  # s
+    T1: ArrayLike  # ms (converted to s)
+    T2: ArrayLike  # ms (converted to s)
     B1: ArrayLike  # unitless
-    diffGradAmps: ArrayLike  # G/mm
+    diffGradAmps: ArrayLike  # G/m (converted to G/mm)
     flipAngles: ArrayLike = field(default_factory=lambda: 14.0) # degrees
     TRs: ArrayLike = field(default_factory=lambda: 0.0210) # seconds
     diffGradDur: ArrayLike = field(default_factory=lambda: 0.01016) # seconds
@@ -198,7 +198,7 @@ register_dataclass(
 register_dataclass(
     ssfp_acquisition_scheme,
     data_fields=("bvecs", "TRs", "flipAngles", "diffGradAmps", "diffGradDur"),
-    meta_fields=("B1", "T1", "T2", "delta", "Delta"),
+    meta_fields=("B1", "T1", "T2", "delta", "Delta", "gyromag_ratio"),
 )
 
 

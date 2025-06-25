@@ -29,15 +29,15 @@ class Zeppelin(SignalCompartment):
     @classmethod
     def log_signal_fn(
         cls,
-        acquisition_scheme: acquisition_scheme,
+        acq: acquisition_scheme,
         mu: ArrayLike,
         lambda_par: float,
         lambda_perp: float,
         rng=None,
     ) -> ArrayLike:
         """Compute the log signal for given b-values and b-vectors."""
-        bvals = acquisition_scheme.bvals
-        bvecs = acquisition_scheme.bvecs
+        bvals = acq.bvals
+        bvecs = acq.bvecs
         mu_cartesian = unitsphere_to_cartesian(mu)
         mu_perpendicular_plane = jnp.eye(3) - jnp.outer(mu_cartesian, mu_cartesian)
         magnitued_parallel = jnp.dot(bvecs, mu_cartesian)
@@ -77,10 +77,10 @@ class Zeppelin(SignalCompartment):
         mu = jnp.array([mu1, mu2])
         return mu, lambda_par, lambda_perp
 
-    def fit(self, logS: ArrayLike, aquisition_scheme) -> tuple:
+    def fit(self, logS: ArrayLike, acq) -> tuple:
         """Fit the Zeppelin model to the log signal, b-values, and b-vectors."""
-        bvals = aquisition_scheme.bvals
-        bvecs = aquisition_scheme.bvecs
+        bvals = acq.bvals
+        bvecs = acq.bvecs
         D = fit_diffusion_tensor_linearized(logS, bvals, bvecs)
         eigvals, eigvecs = jnp.linalg.eigh(D)
         idx = jnp.argmax(eigvals)

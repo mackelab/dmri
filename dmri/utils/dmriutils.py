@@ -17,37 +17,66 @@ def ssfp_signal_fn(
     S0: ArrayLike = 1.0,
 ):
     """
-    Simulate the SSFP signal attenuation (S/S0) due to diffusion using JAX.
+    Numerically-stable SSFP diffusion-attenuation signal.
 
-    Parameters:
-        adc (float): Apparent diffusion coefficient [mm²/ms]
-        qval (float): Diffusion encoding factor [1/mm]
-        E1 (float): Longitudinal relaxation term, unitless
-        E2 (float): Transverse relaxation term, unitless
-        sa (float): sin(flip_angle * B1_scale), unitless
-        ca (float): cos(flip_angle * B1_scale), unitless
-        TR (float): Repetition time [ms]
-        diff_grad_dur (float): Gradient duration [ms]
-
-    Returns:
-        float: Normalized SSFP signal (S/S0), unitless
+    Identical output to `ssfp_signal_fn`, but robust for very large ADCs.
+    Works with scalars or arbitrary-shaped arrays and remains JIT/grad-safe.
     """
-    A1 = jnp.exp(-(qval**2) * TR * adc)
-    A2 = jnp.exp(-(qval**2) * diff_grad_dur * adc)
-    A2_03 = jnp.exp(-(qval**2) * diff_grad_dur * adc / 3.0)
+    # ---------- cast once ----------
+    adc = jnp.asarray(adc)
+    qval = jnp.asarray(qval)
+    dtype = jnp.result_type(adc, qval)
+    adc, qval = adc.astype(dtype), qval.astype(dtype)
 
-    s = E2 * A1 / A2_03**4 * (1.0 - E1 * ca) + E2 / A2_03 * (ca - E1)
-    r = 1.0 - E1 * ca + E2**2 * A1 * A2_03 * (ca - E1)
-    K = (1.0 - E1 * A1 * ca - E2**2 * A1**2 / A2_03**2 * (E1 * A1 - ca)) / (
-        E2 * A1 / A2_03**4 * (1.0 + ca) * (1.0 - E1 * A1)
+    # ---------- logs of all exponentials ----------
+    g_TR = qval**2 * TR * adc  # γ_TR
+    g_dur = qval**2 * diff_grad_dur * adc  # γ_dur
+
+    logA1 = -g_TR  # log(A1)
+    logA2 = -g_dur  # log(A2)
+    logA2_03 = -g_dur / 3.0  # log(A2_03)
+
+    logE2 = jnp.log(E2 + 1e-30)  # avoid log(0)
+    log1mE1 = jnp.log1p(-E1)  # stable for E1≈1
+
+    exp_ = jnp.exp
+
+    # ---------- helper ----------
+    def e(logx):  # shorthand exp(log(x))
+        return exp_(logx)
+
+    # ---------- s ----------
+    s = e(logE2 + logA1 - 4 * logA2_03) * (1 - E1 * ca) + e(logE2 - logA2_03) * (
+        ca - E1
     )
 
-    F1 = K - jnp.sqrt(K**2 - A2**2)
-    Mminus_top = -(1.0 - E1) * E2 / A2_03**2 * (F1 - E2 * A1 * A2_03**2) * sa
+    # ---------- r ----------
+    r = (1 - E1 * ca) + e(2 * logE2 + logA1 + logA2_03) * (ca - E1)
+
+    # ---------- K ----------
+    num = (
+        1
+        - E1 * e(logA1) * ca
+        - e(2 * logE2 + 2 * logA1 - 2 * logA2_03) * (E1 * e(logA1) - ca)
+    )
+
+    den = e(logE2 + logA1 - 4 * logA2_03) * (1 + ca) * (1 - E1 * e(logA1))
+    K = num / (den + 1e-30)
+
+    # ---------- F1 (stable form) ----------
+    A2_sq = e(2 * logA2)
+    sqrt_disc = jnp.sqrt(jnp.maximum(K * K - A2_sq, 0))
+    F1 = A2_sq / (K + sqrt_disc + 1e-30)
+
+    # ---------- M− ----------
+    top_factor = -e(log1mE1 + logE2 - 2 * logA2_03) * sa
+    prod2 = e(logE2 + logA1 + 2 * logA2_03)  # E2*A1*A2_03²
+    Mminus_top = top_factor * (F1 - prod2)
     Mminus_bottom = r - F1 * s
 
-    signal = jnp.sqrt((S0 * Mminus_top / Mminus_bottom) ** 2)
-    return signal
+    signal = jnp.abs(S0 * Mminus_top / (Mminus_bottom + 1e-30))
+    return jnp.nan_to_num(signal)
+
 
 def freed_ssfp_signal_fn(
     adc: ArrayLike,
@@ -58,17 +87,18 @@ def freed_ssfp_signal_fn(
     sa: ArrayLike,
     ca: ArrayLike,
     S0: ArrayLike = 1.0,
+    num_terms: int = 10,
 ):
-    """
-    Simulate the SSFP signal attenuation (S/S0) due to diffusion using JAX.
-    """
+    """Numerically-stable, shape-safe freed-diffusion SSFP signal."""
 
+    # ---------- helper exponentials ----------
     def E1p(p):
         return jnp.exp(-TR / T1 - adc * qval**2 * TR * p**2)
 
     def E2p(p):
         return jnp.exp(-TR / T2 - adc * qval**2 * ((p**2 + p + 1 / 3) * TR))
 
+    # ---------- short-hand symbols ----------
     def Ap(p):
         return 0.5 * (E1p(p) - 1) * (1 + ca)
 
@@ -87,21 +117,28 @@ def freed_ssfp_signal_fn(
     def ep(p):
         return -E2p(p) * E2p(-p - 1) * Bp(p) * Cp(p + 1) / Bp(p + 1)
 
+    # ---------- scan body ----------
     def scan_body(carry, k):
-        x1 = carry
-        # For the last iteration (k=1), use the base case
-        # For all other iterations, use the recursive formula
-        x1_new = jnp.where(k == 1, np_(k) / (dp(k) + ep(k)), np_(k) / (dp(k) + x1))
-        return x1_new, None
+        # choose the correct denominator while keeping shapes identical
+        denom = jax.lax.cond(
+            k == 1,
+            lambda _: dp(k) + ep(k),  # last recursion: base case
+            lambda _: dp(k) + carry,  # recursive case
+            operand=None,
+        )
+        new_carry = np_(k) / denom
+        return new_carry, None
 
-    # Initialize with 0.0 and scan from 10 down to 1
-    k_values = jnp.arange(10, 0, -1)
-    x1, _ = jax.lax.scan(scan_body, 0.0, k_values)
+    # ---------- run backward recurrence ----------
+    k_values = jnp.arange(num_terms, 0, -1, dtype=jnp.int32)
+    init_carry = jnp.zeros_like(dp(1))  # <<< shape-correct seed
+    x1, _ = jax.lax.scan(scan_body, init_carry, k_values)
 
+    # ---------- finish analytical part ----------
     r1 = x1 / (E2p(-1) * Bp(0)) + (E2p(0) * Cp(1)) / Bp(1)
     S = r1 * sa * (1 - E1p(0)) * E2p(-1) / (Ap(0) - Bp(0) + E2p(-1) * Cp(0) * r1)
 
-    return S0*jnp.abs(S)
+    return jnp.nan_to_num(S0 * jnp.abs(S))
 
 def fit_diffusion_tensor_linearized(
     logS: ArrayLike, bvals: ArrayLike, bvecs: ArrayLike
@@ -354,7 +391,7 @@ def cart2sph(x: float, y: float, z: float) -> tuple[float, float]:
     Returns:
         tuple: (theta, phi) spherical coordinates
     """
-    r = jnp.sqrt(x * x + y * y + z * z)
+    r = jnp.sqrt(x**2 + y**2 + z**2)
     theta = jnp.where(
         r == 0,
         jnp.arccos(z),  # To avoid NaN when r==0

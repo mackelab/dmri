@@ -31,14 +31,14 @@ class Stick(SignalCompartment):
     @classmethod
     def log_signal_fn(
         cls,
-        aquisition_scheme: acquisition_scheme,
+        acq: acquisition_scheme,
         mu: ArrayLike,
         lam_par: float,
         rng=None,
     ) -> ArrayLike:
         """Compute the log signal for given b-values and b-vectors."""
-        bvals = aquisition_scheme.bvals
-        bvecs = aquisition_scheme.bvecs
+        bvals = acq.bvals
+        bvecs = acq.bvecs
         mu_cart = unitsphere_to_cartesian(mu)
         logS = -bvals * lam_par * (jnp.sum(bvecs * mu_cart, axis=-1)) ** 2
         return logS
@@ -71,10 +71,10 @@ class Stick(SignalCompartment):
         mu_cart = unitsphere_to_cartesian(self.mu)
         return SymmetricDirac(mu_cart)
 
-    def fit(self, logS: ArrayLike, aquisition_scheme: acquisition_scheme) -> tuple:
+    def fit(self, logS: ArrayLike, acq: acquisition_scheme) -> tuple:
         """Fit the Stick model to the log signal, b-values, and b-vectors."""
-        bvals = aquisition_scheme.bvals
-        bvecs = aquisition_scheme.bvecs
+        bvals = acq.bvals
+        bvecs = acq.bvecs
         D = fit_diffusion_tensor_linearized(logS, bvals, bvecs)
         eigvals, eigvecs = jnp.linalg.eigh(D)
         idx = jnp.argmax(eigvals)
@@ -151,7 +151,7 @@ class StaticStick(Stick):
     @classmethod
     def log_signal_fn(
         cls,
-        aquisition_scheme: acquisition_scheme,
+        acq: acquisition_scheme,
         mu: ArrayLike,
         rng=None,
     ) -> ArrayLike:
@@ -159,7 +159,7 @@ class StaticStick(Stick):
 
         Parameters
         ----------
-        aquisition_scheme : acquisition_scheme
+        acq : acquisition_scheme
             The acquisition scheme containing b-values and b-vectors
         mu : ArrayLike
             The orientation of the stick in spherical coordinates
@@ -171,8 +171,8 @@ class StaticStick(Stick):
         ArrayLike
             The log signal
         """
-        bvals = aquisition_scheme.bvals
-        bvecs = aquisition_scheme.bvecs
+        bvals = acq.bvals
+        bvecs = acq.bvecs
         mu_cart = unitsphere_to_cartesian(mu)
         logS = -bvals * cls.lam_par * (jnp.sum(bvecs * mu_cart, axis=-1)) ** 2
         return logS
@@ -200,7 +200,7 @@ class MultiShellStick(Stick):
     @classmethod
     def log_signal_fn(
         cls,
-        aquisition_scheme: acquisition_scheme,
+        acq: acquisition_scheme,
         mu: ArrayLike,
         lam_par: float,
         lam_par_std: float,
@@ -210,11 +210,11 @@ class MultiShellStick(Stick):
 
         Parameters
         ----------
-        aquisition_scheme : acquisition_scheme
+        acq : acquisition_scheme
             The acquisition scheme containing b-values and b-vectors
         """
-        bvals = aquisition_scheme.bvals
-        bvecs = aquisition_scheme.bvecs
+        bvals = acq.bvals
+        bvecs = acq.bvecs
         mu_cart = unitsphere_to_cartesian(mu)
 
         return multi_shell_stick_log_signal_fn(bvals, bvecs, mu, lam_par, lam_par_std)
@@ -321,7 +321,7 @@ class MultiShellStaticStick(MultiShellStick):
     @classmethod
     def log_signal_fn(
         cls,
-        aquisition_scheme: acquisition_scheme,
+        acq: acquisition_scheme,
         mu: ArrayLike,
         rng=None,
     ) -> ArrayLike:
@@ -329,7 +329,7 @@ class MultiShellStaticStick(MultiShellStick):
 
         Parameters
         ----------
-        aquisition_scheme : acquisition_scheme
+        acq : acquisition_scheme
             The acquisition scheme containing b-values and b-vectors
         mu : ArrayLike
             The orientation of the stick in spherical coordinates
@@ -341,9 +341,7 @@ class MultiShellStaticStick(MultiShellStick):
         ArrayLike
             The log signal
         """
-        return MultiShellStick.log_signal_fn(
-            aquisition_scheme, mu, cls.lam_par, cls.lam_par_std
-        )
+        return MultiShellStick.log_signal_fn(acq, mu, cls.lam_par, cls.lam_par_std)
 
 
 class SSFPStick(Stick):
@@ -365,7 +363,7 @@ class SSFPStick(Stick):
     @classmethod
     def signal_fn(
         cls,
-        aquisition_scheme: acquisition_scheme,
+        acq: acquisition_scheme,
         mu: ArrayLike,
         lam_par: float,
         rng=None,
@@ -373,28 +371,28 @@ class SSFPStick(Stick):
         """Compute the signal for given b-values and b-vectors."""
 
         mu_cart = unitsphere_to_cartesian(mu)
-        adc_aniso = lam_par * (jnp.sum(aquisition_scheme.bvecs * mu_cart, axis=-1)) ** 2
+        adc_aniso = lam_par * (jnp.sum(acq.bvecs * mu_cart, axis=-1)) ** 2
 
         signal = ssfp_signal_fn(
-            aquisition_scheme,
+            acq,
             adc_aniso,
-            aquisition_scheme.E1,
-            aquisition_scheme.E2,
-            aquisition_scheme.sa,
-            aquisition_scheme.ca,
+            acq.E1,
+            acq.E2,
+            acq.sa,
+            acq.ca,
         )
         return signal
 
     @classmethod
     def log_signal_fn(
         cls,
-        aquisition_scheme: acquisition_scheme,
+        acq: acquisition_scheme,
         mu: ArrayLike,
         lam_par: float,
         rng=None,
     ) -> ArrayLike:
         """Compute the log signal for given b-values and b-vectors."""
-        signal = cls.signal_fn(aquisition_scheme, mu, lam_par, rng)
+        signal = cls.signal_fn(acq, mu, lam_par, rng)
         return jnp.log(signal)
 
 
@@ -442,18 +440,16 @@ class SSFPStaticStick(SSFPStick):
         return (mu,)
 
     @classmethod
-    def signal_fn(
-        cls, aquisition_scheme: acquisition_scheme, mu: ArrayLike, rng=None
-    ) -> ArrayLike:
+    def signal_fn(cls, acq: acquisition_scheme, mu: ArrayLike, rng=None) -> ArrayLike:
         """Compute the signal for given b-values and b-vectors."""
-        return SSFPStick.signal_fn(aquisition_scheme, mu, cls.lam_par, rng)
+        return SSFPStick.signal_fn(acq, mu, cls.lam_par, rng)
 
     @classmethod
     def log_signal_fn(
-        cls, aquisition_scheme: acquisition_scheme, mu: ArrayLike, rng=None
+        cls, acq: acquisition_scheme, mu: ArrayLike, rng=None
     ) -> ArrayLike:
         """Compute the log signal for given b-values and b-vectors."""
-        return SSFPStick.log_signal_fn(aquisition_scheme, mu, cls.lam_par, rng)
+        return SSFPStick.log_signal_fn(acq, mu, cls.lam_par, rng)
 
 
 def multi_shell_stick_log_signal_fn(

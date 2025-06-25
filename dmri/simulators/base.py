@@ -75,27 +75,23 @@ class SharedParameterState(Compartment):
 
 class SignalCompartment(Compartment):
     @classmethod
-    def signal_fn(
-        cls, acquisition_scheme: acquisition_scheme, *args, **kwargs
-    ) -> ArrayLike:
+    def signal_fn(cls, acq: acquisition_scheme, *args, **kwargs) -> ArrayLike:
         """Computes the signal for the compartment."""
-        return jnp.exp(cls.log_signal_fn(acquisition_scheme, *args, **kwargs))
+        return jnp.exp(cls.log_signal_fn(acq, *args, **kwargs))
 
     @classmethod
     @abstractmethod
-    def log_signal_fn(
-        cls, aquisition_scheme: acquisition_scheme, *args, **kwargs
-    ) -> ArrayLike:
+    def log_signal_fn(cls, acq: acquisition_scheme, *args, **kwargs) -> ArrayLike:
         """Computes the log-signal for the compartment."""
         pass
 
-    def signal(self, aquisition_scheme: acquisition_scheme, rng=None) -> ArrayLike:
+    def signal(self, acq: acquisition_scheme, rng=None) -> ArrayLike:
         """Simulates the signal for the compartment."""
-        return type(self).signal_fn(aquisition_scheme, rng=rng, **self.params)
+        return type(self).signal_fn(acq, rng=rng, **self.params)
 
-    def log_signal(self, aquisition_scheme: acquisition_scheme, rng=None) -> ArrayLike:
+    def log_signal(self, acq: acquisition_scheme, rng=None) -> ArrayLike:
         """Simulates the log-signal for the compartment."""
-        return type(self).log_signal_fn(aquisition_scheme, rng=rng, **self.params)
+        return type(self).log_signal_fn(acq, rng=rng, **self.params)
 
     def fit(self, logS: ArrayLike, bvals: ArrayLike, bvecs: ArrayLike) -> Any:
         """Fits the compartment to the signal deterministically."""
