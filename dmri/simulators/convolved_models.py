@@ -19,12 +19,10 @@ class SignalKernel(Compartment):
 
     @classmethod
     @abstractmethod
-    def kernel_fn(
-        cls, mu: ArrayLike, aquisition_scheme: acquisition_scheme, **kwargs
-    ) -> ArrayLike:
+    def kernel_fn(cls, mu: ArrayLike, acq: acquisition_scheme, **kwargs) -> ArrayLike:
         pass
 
-    def sh_coeff(self, aquisition_scheme, sh_order):
+    def sh_coeff(self, acq, sh_order):
         with jax.ensure_compile_time_eval():
             inverse_real_sh = inverse_sh_matrix(sh_order, sphere=hemisphere_default)
 
@@ -33,12 +31,12 @@ class SignalKernel(Compartment):
         # This her can be quite memory intensive so might be better to use a for loop
         if type(self).vmap_on_sphere:
             signal = jax.vmap(kernel, in_axes=(0, None))(
-                hemisphere_default.vertices, aquisition_scheme
+                hemisphere_default.vertices, acq
             )
             sh_coeff = inverse_real_sh @ signal.squeeze()
         else:
             signal = jax.lax.map(
-                partial(kernel, aquisition_scheme=aquisition_scheme),
+                partial(kernel, acq=acq),
                 hemisphere_default.vertices,
             )
             sh_coeff = inverse_real_sh @ signal.squeeze()
@@ -68,19 +66,19 @@ class ConvolvedSignalCompartment(SignalCompartment):
     @classmethod
     def signal_fn(
         cls,
-        aquisition_scheme: acquisition_scheme,
+        acq: acquisition_scheme,
         fod,
         signal_kernel,
         rng=None,
     ) -> ArrayLike:
         """Compute the log signal for given b-values and b-vectors."""
         sh_coeff_fod = fod.sh_coeff(sh_order=14)
-        sh_coeff_signal = signal_kernel.sh_coeff(aquisition_scheme, sh_order=14)
+        sh_coeff_signal = signal_kernel.sh_coeff(acq, sh_order=14)
         return jnp.dot(sh_coeff_fod, sh_coeff_signal)
 
     @classmethod
-    def log_signal_fn(cls, aquisition_scheme: acquisition_scheme, **kwargs):
-        return jnp.log(cls.signal_fn(aquisition_scheme, **kwargs))
+    def log_signal_fn(cls, acq: acquisition_scheme, **kwargs):
+        return jnp.log(cls.signal_fn(acq, **kwargs))
 
     @classmethod
     def to_theta(cls, fod, signal_kernel):

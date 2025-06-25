@@ -3,6 +3,8 @@ from dmri.simulators.local_signal_models.ball import (
     MultiShellBall,
     MultiShellStaticBall,
     StaticBall,
+    SSFPBall,
+    SSFPStaticBall,
 )
 from dmri.simulators.local_signal_models.convolved_stick import (
     BinghamStick,
@@ -29,6 +31,8 @@ from dmri.simulators.local_signal_models.stick import (
     MultiShellStaticStick,
     Stick,
     StaticStick,
+    SSFPStick,
+    SSFPStaticStick,
 )
 from dmri.simulators.local_signal_models.temporal_zeppelin import TemporalZeppelin
 from dmri.simulators.local_signal_models.zeppelin import Zeppelin
@@ -55,9 +59,13 @@ __all__ = [
     "NoddiB",
     "SandiW",
     "SandiB",
+    "SSFPBall",
+    "SSFPStaticBall",
     "Stick",
     "Zeppelin",
     "MultiShellStick",
     "MultiShellStaticStick",
     "StaticStick",
+    "SSFPStick",
+    "SSFPStaticStick",
 ]
