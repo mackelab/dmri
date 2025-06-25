@@ -118,7 +118,7 @@ class MultiCompartment(SignalCompartment):
     @classmethod
     def signal_fn(
         cls,
-        aquisition_scheme: acquisition_scheme,
+        acq: acquisition_scheme,
         model_compartments,
         noise_compartments,
         model_fractions,
@@ -128,9 +128,7 @@ class MultiCompartment(SignalCompartment):
     ):
         del shared_parameter
         # Compute the signal for each compartment
-        signals = jnp.stack(
-            [m.signal(aquisition_scheme) for m in model_compartments], axis=0
-        )
+        signals = jnp.stack([m.signal(acq) for m in model_compartments], axis=0)
         fractions = model_fractions[:, None]
         # Combine signals with sum
         signal = jnp.sum(signals * fractions, axis=0)
@@ -153,8 +151,8 @@ class MultiCompartment(SignalCompartment):
         return signal
 
     @classmethod
-    def log_signal_fn(cls, aquisition_scheme, **kwargs):
-        return jnp.log(cls.signal_fn(aquisition_scheme, **kwargs))
+    def log_signal_fn(cls, acq, **kwargs):
+        return jnp.log(cls.signal_fn(acq, **kwargs))
 
     @classmethod
     def split_idx(cls):
@@ -283,11 +281,9 @@ class MultiCompartment(SignalCompartment):
             fractions = fractions / jnp.sum(fractions)
             return MixtureOfFODs(fractions, fods)
 
-    def log_likelihood(self, aquisition_scheme, signal_observed):
+    def log_likelihood(self, acq, signal_observed):
         # Compute the signal for each compartment
-        signals = jnp.stack(
-            [m.signal(aquisition_scheme) for m in self.model_compartments], axis=0
-        )
+        signals = jnp.stack([m.signal(acq) for m in self.model_compartments], axis=0)
         fractions = self.model_fractions[:, None]
         # Combine signals with sum
         signal = jnp.sum(signals * fractions, axis=0)
