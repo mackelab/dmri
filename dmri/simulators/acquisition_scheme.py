@@ -229,6 +229,30 @@ bvals_typ_large = bvals_large[idx]
 bvecs_typ_large = bvecs_large[idx]
 
 
+def random_ssfp_acquisition(rng, num_acquisitions=100):
+    rng1, rng2, rng3, rng4, rng5, rng6, rng7, rng8 = jax.random.split(rng, 8)
+    bvecs = jax.random.normal(rng1, (num_acquisitions, 3))
+    bvecs = bvecs / jnp.linalg.norm(bvecs, axis=-1, keepdims=True)
+
+    diffGradAmps = jax.random.uniform(rng2, (num_acquisitions,)) * 100
+    flipAngles = jax.random.uniform(rng3, (num_acquisitions,)) * 49 + 1
+
+    T1 = jax.random.uniform(rng4, (num_acquisitions,)) * 1800 + 600
+
+    T2 = jax.random.uniform(rng5, (num_acquisitions,)) * 115 + 10
+
+    # In seconds
+    diffGradDur = (jax.random.uniform(rng6, (num_acquisitions,)) * 15 + 5) * 1e-3
+
+    TRs = (jax.random.uniform(rng7, (num_acquisitions,)) * 45 + 5) * 1e-3
+
+    B1 = jax.random.uniform(rng8, (num_acquisitions,)) * 2
+
+    return ssfp_acquisition_scheme(
+        bvecs, T1, T2, B1, diffGradAmps, flipAngles, TRs, diffGradDur
+    )
+
+
 def random_hcp_large_acquisition(
     rng, num_acquisitions=297, typical_prob=0.8, random_prob=0.2
 ) -> acquisition_scheme:
