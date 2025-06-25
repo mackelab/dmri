@@ -135,7 +135,7 @@ class ssfp_acquisition_scheme:
     TRs: ArrayLike = field(default_factory=lambda: 0.0210) # seconds
     diffGradDur: ArrayLike = field(default_factory=lambda: 0.01016) # seconds
     delta: ArrayLike = field(default_factory=lambda: 0.0106)
-    Delta: ArrayLike = field(default_factory=lambda: 0.0431)
+    Delta: ArrayLike = field(default_factory=lambda: 0.008)
     gyromag_ratio: ArrayLike = field(default_factory=lambda: 4258 * 2 * jnp.pi)  # Hz/G
 
     def __post_init__(self):
@@ -186,10 +186,11 @@ class ssfp_acquisition_scheme:
     @property
     def bvals(self) -> ArrayLike:
         """Effective b-values, b = - 1/D log(S_ssfp/S_ssfp)"""
-        diffusivity = 0.08 * 1e-3 # mm^2/ms
-        ssfp_signal_up = ssfp_signal_fn(diffusivity, self.qvals, self.E1, self.E2, self.sa, self.ca, self.TRs, self.diffGradDur)
-        ssfp_signal_down = ssfp_signal_fn(diffusivity, self.qvals, self.E1, self.E2, self.sa, self.ca, self.TRs, 0.)
-        return -1/diffusivity * jnp.log(ssfp_signal_up / ssfp_signal_down)
+        return self.qvals**2 * 4 * jnp.pi**2 * self.Delta
+        # diffusivity = 0.0001# mm^2/ms
+        # ssfp_signal_up = ssfp_signal_fn(diffusivity, self.qvals, self.E1, self.E2, self.sa, self.ca, self.TRs, self.diffGradDur)
+        # ssfp_signal_down = ssfp_signal_fn(diffusivity, self.qvals, self.E1, self.E2, self.sa, self.ca, self.TRs, 0.)
+        # return -1/diffusivity * jnp.log(ssfp_signal_up / ssfp_signal_down)
 
 register_dataclass(
     acquisition_scheme, data_fields=("bvals", "bvecs"), meta_fields=("delta", "Delta")
