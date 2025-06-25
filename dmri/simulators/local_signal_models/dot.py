@@ -18,11 +18,9 @@ class Dot(SignalCompartment):
         super().__init__()
 
     @classmethod
-    def log_signal_fn(
-        cls, aquisition_scheme: acquisition_scheme, rng=None
-    ) -> ArrayLike:
-        """Compute the log signal for given b-values and b-vectors."""
-        logS = jnp.zeros(aquisition_scheme.bvals.shape)
+    def log_signal_fn(cls, acq: acquisition_scheme, rng=None) -> ArrayLike:
+        """Computes the log-signal for the dot compartment."""
+        logS = jnp.zeros(acq.bvals.shape)
         return logS
 
     @classmethod

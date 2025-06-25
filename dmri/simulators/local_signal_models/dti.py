@@ -22,11 +22,11 @@ class Dti(SignalCompartment):
 
     @classmethod
     def log_signal_fn(
-        cls, aquisition_scheme: acquisition_scheme, D: ArrayLike, rng=None
+        cls, acq: acquisition_scheme, D: ArrayLike, rng=None
     ) -> ArrayLike:
         """Compute the log signal for given b-values and b-vectors."""
-        bvals = aquisition_scheme.bvals
-        bvecs = aquisition_scheme.bvecs
+        bvals = acq.bvals
+        bvecs = acq.bvecs
         logS = -bvals * jnp.einsum("bi,ij,bj->b", bvecs, D, bvecs)
         return logS
 
@@ -50,10 +50,10 @@ class Dti(SignalCompartment):
         D += cls.min_lam * jnp.eye(3)
         return (D,)
 
-    def fit(self, logS: ArrayLike, aquisition_scheme: acquisition_scheme) -> tuple:
+    def fit(self, logS: ArrayLike, acq: acquisition_scheme) -> tuple:
         """Fit the DTI model to the log signal, b-values, and b-vectors."""
-        bvals = aquisition_scheme.bvals
-        bvecs = aquisition_scheme.bvecs
+        bvals = acq.bvals
+        bvecs = acq.bvecs
         D = fit_diffusion_tensor_linearized(logS, bvals, bvecs)
         return (D,)
 

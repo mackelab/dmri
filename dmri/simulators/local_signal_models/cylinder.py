@@ -120,18 +120,18 @@ class Cylinder(SignalCompartment):
     @classmethod
     def log_signal_fn(
         cls,
-        aquisition_scheme,
+        acq,
         mu: ArrayLike,
         lam_par: float,
         radius: float,
         rng=None,
     ):
         """Compute the log signal attenuation."""
-        q = aquisition_scheme.q_values
-        bvecs = aquisition_scheme.bvecs
-        pulse_duration = aquisition_scheme.pulse_duration
-        diffusion_time = aquisition_scheme.diffusion_time
-        G = aquisition_scheme.G
+        q = acq.q_values
+        bvecs = acq.bvecs
+        pulse_duration = acq.pulse_duration
+        diffusion_time = acq.diffusion_time
+        G = acq.G
 
         # Convert units
         G_T_per_micron = G * 1e-3 * 1e-6  # [T] * [um]^-1
