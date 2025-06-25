@@ -291,7 +291,8 @@ class SSFPStaticBall(SSFPBall):
     lam: float = None
 
     def __init__(self) -> None:
-        pass
+        if type(self).lam is None:
+            raise ValueError("lam must be set before initializing SSFPStaticBall")
 
     @classmethod
     def from_global_params(cls, params: ArrayLike, idx: list[int]) -> "StaticBall":
@@ -317,12 +318,12 @@ class SSFPStaticBall(SSFPBall):
     @classmethod
     def signal_fn(cls, acq: ssfp_acquisition_scheme, rng=None) -> ArrayLike:
         """Computes the signal for the ball compartment."""
-        return cls.signal_fn(acq, cls.lam, rng)
+        return SSFPBall.signal_fn(acq, cls.lam, rng)
 
     @classmethod
     def log_signal_fn(cls, acq: ssfp_acquisition_scheme, rng=None) -> ArrayLike:
         """Computes the log-signal for the ball compartment."""
-        return cls.log_signal_fn(acq, cls.lam, rng)
+        return SSFPBall.log_signal_fn(acq, cls.lam, rng)
 
 
 def multi_shell_ball_log_signal_fn(

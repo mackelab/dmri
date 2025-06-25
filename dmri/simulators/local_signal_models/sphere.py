@@ -35,7 +35,7 @@ class Sphere(SignalCompartment):
 
     @classmethod
     def log_signal_fn(cls, acq, radius: float, rng=None):
-        q = acq.q_values  # 1/mm
+        q = acq.qvals  # 1/mm
         E_sphere = jnp.ones_like(q)
         factor = 2 * jnp.pi * q * radius
         E_sphere_attenuation = (

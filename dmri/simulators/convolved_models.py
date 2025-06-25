@@ -22,7 +22,7 @@ class SignalKernel(Compartment):
     def kernel_fn(cls, mu: ArrayLike, acq: acquisition_scheme, **kwargs) -> ArrayLike:
         pass
 
-    def sh_coeff(self, acq, sh_order):
+    def sh_coeff(self, acq: acquisition_scheme, sh_order: int) -> ArrayLike:
         with jax.ensure_compile_time_eval():
             inverse_real_sh = inverse_sh_matrix(sh_order, sphere=hemisphere_default)
 
@@ -36,7 +36,7 @@ class SignalKernel(Compartment):
             sh_coeff = inverse_real_sh @ signal.squeeze()
         else:
             signal = jax.lax.map(
-                partial(kernel, acq=acq),
+                partial(kernel, acq),
                 hemisphere_default.vertices,
             )
             sh_coeff = inverse_real_sh @ signal.squeeze()

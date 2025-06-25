@@ -127,7 +127,7 @@ class Cylinder(SignalCompartment):
         rng=None,
     ):
         """Compute the log signal attenuation."""
-        q = acq.q_values
+        q = acq.qvals
         bvecs = acq.bvecs
         pulse_duration = acq.pulse_duration
         diffusion_time = acq.diffusion_time
