@@ -228,6 +228,37 @@ idx = np.argsort(bvals_large)
 bvals_typ_large = bvals_large[idx]
 bvecs_typ_large = bvecs_large[idx]
 
+diff_grad_amps_typical = np.loadtxt(
+    os.path.join(os.path.dirname(__file__), "data/diffgrad_amps_ssfp")
+)
+print(diff_grad_amps_typical.shape)
+
+
+bvecs_ssfp = np.loadtxt(os.path.join(os.path.dirname(__file__), "data/bvecs_ssfp")).T
+print(bvecs_ssfp.shape)
+
+
+def random_typical_ssfp_acquisition(rng, num_acquisitions=120):
+    rng1, rng2, rng3 = jax.random.split(rng, 3)
+
+    assert num_acquisitions == 120, "num_acquisitions must be 120"
+
+    T1 = jax.random.gamma(rng1, 20, (num_acquisitions,)) * 50
+    T2 = jax.random.gamma(rng2, 8, (num_acquisitions,)) * 8
+    B1 = -jax.random.gamma(rng3, 2, (num_acquisitions,)) * 0.2 + 1.3
+
+    bvecs = jax.random.normal(rng1, (num_acquisitions, 3))
+    bvecs = bvecs / jnp.linalg.norm(bvecs, axis=-1, keepdims=True)
+    diffGradDur = jnp.ones((num_acquisitions,)) * 0.01016
+    flipAngles = jnp.ones((num_acquisitions,)) * 14.0
+    diffGradAmps = jnp.array(diff_grad_amps_typical)
+
+    bvecs = jnp.array(bvecs_ssfp)
+
+    return ssfp_acquisition_scheme(
+        bvecs, T1, T2, B1, diffGradAmps, flipAngles, diffGradDur
+    )
+
 
 def random_ssfp_acquisition(rng, num_acquisitions=100):
     rng1, rng2, rng3, rng4, rng5, rng6, rng7, rng8 = jax.random.split(rng, 8)
