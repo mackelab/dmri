@@ -288,7 +288,7 @@ class SSFPBall(SignalCompartment):
         # ca = jnp.cos(acq.flipAngles * acq.B1 * jnp.pi / 180.0)  # cos(flip * B1)
         qvals = acq.qvals
         E1 = acq.E1
-        E2 = acq.E2
+        E2 = acq.E2f
         sa = acq.sa
         ca = acq.ca
         grad_diff_dur = acq.diffGradDur
