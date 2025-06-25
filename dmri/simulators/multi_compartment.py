@@ -10,7 +10,7 @@ import numpy as np
 import jax
 from jax import tree_util as jtu
 from jax.typing import ArrayLike
-from probjax.utils.stats import gammaincinv
+from probjax.utils.special import gammaincinv
 from dmri.simulators import acquisition_scheme
 from dmri.simulators.base import SignalCompartment, Compartment, SharedParameterState
 from dmri.simulators.local_signal_models import (

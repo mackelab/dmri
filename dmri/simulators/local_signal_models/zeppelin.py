@@ -97,3 +97,23 @@ class Zeppelin(SignalCompartment):
         )
         eigvals, eigvecs = jnp.linalg.eigh(D)
         return TensorFOD(eigvecs, eigvals)
+
+
+class StaticZeppelin(Zeppelin):
+    """The StaticZeppelin model is a Zeppelin with a fixed lambda value."""
+
+    theta_dim: int = 3
+    lambda_par: float = None
+    lambda_perp: float = None
+
+    def __init__(self, mu: ArrayLike) -> None:
+        self.mu = mu
+
+    @classmethod
+    def to_theta(cls, mu: ArrayLike) -> ArrayLike:
+        """Convert the parameters to the parameter space theta."""
+        return mu
+
+    @classmethod
+    def to_params(cls, theta: ArrayLike) -> tuple:
+        pass
