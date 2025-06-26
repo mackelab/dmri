@@ -109,6 +109,17 @@ class BvalBvecSignalEmbeddingNet(nnx.Module, experimental_pytree=True):
         return out_tokens
 
 
+@dataclass
+class SSFPEmbeddingNetConfig:
+    num_layers: int = 3
+    num_heads: int = 4
+    widening_factor: int = 2
+    use_flash_attention: bool = False
+    attn_size: int = 16
+    dropout_rate: float | None = None
+    use_flash_attention: bool = False
+
+
 class SSFPEmbeddingNet(nnx.Module, experimental_pytree=True):
     model_dim: int = 64
     num_heads: int = 4
@@ -125,17 +136,13 @@ class SSFPEmbeddingNet(nnx.Module, experimental_pytree=True):
         widening_factor: int = 2,
         attn_size: int = 16,
         dropout_rate: int = None,
-        log_transform_signals: bool = False,
         use_flash_attention: bool = False,
-        bvec_repeats: int = 1,
     ):
         self.model_dim = model_dim
         self.num_heads = num_heads
         self.num_layers = num_layers
         self.widening_factor = widening_factor
         self.attn_size = attn_size
-        self.log_transform_signals = log_transform_signals
-        self.bvec_repeats = bvec_repeats
 
         scalar_embed_dim = self.model_dim // 3
         signal_embed_dim = self.model_dim // 3

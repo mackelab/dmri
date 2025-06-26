@@ -15,7 +15,12 @@ from .autoregressive import (
     DMRIModelSelectionConfig,
 )
 from dmri.simulators.acquisition_scheme import acquisition_scheme
-from .embedding_net import BvalBvecSignalEmbeddingNet, DMRIEmbeddingConfig
+from .embedding_net import (
+    BvalBvecSignalEmbeddingNet,
+    DMRIEmbeddingConfig,
+    SSFPEmbeddingNet,
+    SSFPEmbeddingNetConfig,
+)
 from .simformer import DMRIThetaInferenceConfig, EDMSimformer, GaussianFourierEmbedding
 from .tokenizer import DMRITokenizer, DMRITokenizerPP
 
@@ -67,12 +72,34 @@ class DMRIInferenceModelConfigMaskPriorAmortizedPP:
         default_factory=DMRIThetaInferenceConfig
     )
 
+@dataclass
+class SSFPInferenceModelConfig:
+    simulator: type[MultiCompartment]
+    model_dim: int = 64
+    use_attention_mask: bool = True
+    inference_loss_type: str = "v"
+    tokenizer = DMRITokenizerPP
+    embedding_cls: type = SSFPEmbeddingNet
+    embedding_cfg: SSFPEmbeddingNetConfig = field(
+        default_factory=SSFPEmbeddingNetConfig
+    )
+    model_selection_cfg: DMRIModelSelectionConfig = field(
+        default_factory=DMRIModelSelectionConfig
+    )
+    theta_inference_cfg: DMRIThetaInferenceConfig = field(
+        default_factory=DMRIThetaInferenceConfig
+    )
+
 
 class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
     def __init__(self, cfg: DMRIInferenceModelConfig, rngs):
         self.cfg = cfg
         # Setup embedding net observations
-        self.encoder = BvalBvecSignalEmbeddingNet(
+        if hasattr(cfg, "embedding_cls"):
+            embedding_cls = cfg.embedding_cls
+        else:
+            embedding_cls = BvalBvecSignalEmbeddingNet
+        self.encoder = embedding_cls(
             rngs,
             model_dim=cfg.model_dim,
             **cfg.embedding_cfg.__dict__,

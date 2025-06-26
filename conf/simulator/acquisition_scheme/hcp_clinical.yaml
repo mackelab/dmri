@@ -1,8 +1,0 @@
-name: hcp_clinical
-params:
-  hcp:
-    num_acquisitions: 105
-    typical_prob: 0.5
-    random_prob: 0.5
-  clinical:
-    num_acquisitions: 35
