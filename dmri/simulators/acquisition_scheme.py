@@ -127,23 +127,38 @@ class ssfp_acquisition_scheme:
     """
 
     bvecs: ArrayLike  # unit vectors
-    T1: ArrayLike  # ms (converted to s)
-    T2: ArrayLike  # ms (converted to s)
+    T1_raw: ArrayLike  # ms (will be converted to s in properties)
+    T2_raw: ArrayLike  # ms (will be converted to s in properties)
     B1: ArrayLike  # unitless
-    diffGradAmps: ArrayLike  # G/m (converted to G/mm)
-    flipAngles: ArrayLike = field(default_factory=lambda: 14.0) # degrees
+    diffGradAmps_raw: ArrayLike  # T/m (will be converted to G/mm in properties)
+    flipAngles_raw: ArrayLike = field(
+        default_factory=lambda: 14.0
+    )  # degrees (will be converted to radians in properties)
     TRs: ArrayLike = field(default_factory=lambda: 0.0210) # seconds
     diffGradDur: ArrayLike = field(default_factory=lambda: 0.01016) # seconds
     delta: ArrayLike = field(default_factory=lambda: 0.0106)
     Delta: ArrayLike = field(default_factory=lambda: 0.008)
     gyromag_ratio: ArrayLike = field(default_factory=lambda: 4258 * 2 * jnp.pi)  # Hz/G
 
-    def __post_init__(self):
-        # Make unit conversions
-        self.T1 = self.T1 * 1e-3  # ms -> s
-        self.T2 = self.T2 * 1e-3  # ms -> s
-        self.diffGradAmps = self.diffGradAmps * 1e-1  # Convert to G/mm
-        self.flipAngles = self.flipAngles * jnp.pi / 180.0  # Convert to radians
+    @property
+    def T1(self) -> ArrayLike:
+        """T1 converted to seconds."""
+        return self.T1_raw * 1e-3  # ms -> s
+
+    @property
+    def T2(self) -> ArrayLike:
+        """T2 converted to seconds."""
+        return self.T2_raw * 1e-3  # ms -> s
+
+    @property
+    def diffGradAmps(self) -> ArrayLike:
+        """Diffusion gradient amplitudes converted to G/mm."""
+        return self.diffGradAmps_raw * 1e-1  # Convert to G/mm
+
+    @property
+    def flipAngles(self) -> ArrayLike:
+        """Flip angles converted to radians."""
+        return self.flipAngles_raw * jnp.pi / 180.0  # Convert to radians
 
     @property
     def sa(self) -> ArrayLike:
@@ -198,8 +213,17 @@ register_dataclass(
 
 register_dataclass(
     ssfp_acquisition_scheme,
-    data_fields=("bvecs", "TRs", "flipAngles", "diffGradAmps", "diffGradDur"),
-    meta_fields=("B1", "T1", "T2", "delta", "Delta", "gyromag_ratio"),
+    data_fields=(
+        "bvecs",
+        "TRs",
+        "flipAngles_raw",
+        "diffGradAmps_raw",
+        "diffGradDur",
+        "B1",
+        "T1_raw",
+        "T2_raw",
+    ),
+    meta_fields=("delta", "Delta", "gyromag_ratio"),
 )
 
 
@@ -257,7 +281,13 @@ def random_typical_ssfp_acquisition(rng, num_acquisitions=120):
     bvecs = jnp.array(bvecs_ssfp)
 
     return ssfp_acquisition_scheme(
-        bvecs, T1, T2, B1, diffGradAmps, flipAngles, diffGradDur
+        bvecs=bvecs,
+        T1_raw=T1,
+        T2_raw=T2,
+        B1=B1,
+        diffGradAmps_raw=diffGradAmps,
+        flipAngles_raw=flipAngles,
+        diffGradDur=diffGradDur,
     )
 
 
@@ -281,7 +311,14 @@ def random_ssfp_acquisition(rng, num_acquisitions=100):
     B1 = jax.random.uniform(rng8, (num_acquisitions,)) * 2
 
     return ssfp_acquisition_scheme(
-        bvecs, T1, T2, B1, diffGradAmps, flipAngles, TRs, diffGradDur
+        bvecs=bvecs,
+        T1_raw=T1,
+        T2_raw=T2,
+        B1=B1,
+        diffGradAmps_raw=diffGradAmps,
+        flipAngles_raw=flipAngles,
+        TRs=TRs,
+        diffGradDur=diffGradDur,
     )
 
 

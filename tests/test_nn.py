@@ -138,11 +138,11 @@ def test_ssfp_embedding_net(use_flashattn, rng):
 
     acq = ssfp_acquisition_scheme(
         bvecs=bvecs,
-        T1=T1,
-        T2=T2,
+        T1_raw=T1,
+        T2_raw=T2,
         B1=B1,
-        diffGradAmps=diffGradAmps,
-        flipAngles=flipAngles,
+        diffGradAmps_raw=diffGradAmps,
+        flipAngles_raw=flipAngles,
         TRs=TRs,
         diffGradDur=diffGradDur,
     )

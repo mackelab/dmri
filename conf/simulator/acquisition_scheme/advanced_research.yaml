@@ -1,3 +1,5 @@
 name: advanced_research
-params:
-  num_acquisitions: 355
+schemes:
+  - name: advanced_research
+    params:
+      num_acquisitions: 355

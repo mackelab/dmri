@@ -11,6 +11,8 @@ from dmri.simulators.acquisition_scheme import (
     random_clinical_acquisition,
     random_hardi_acquisition,
     random_hcp_large_acquisition,
+    random_ssfp_acquisition,
+    random_typical_ssfp_acquisition,
 )
 
 
@@ -21,11 +23,12 @@ def build_simulator(cfg: DictConfig):
 
     acq_scheme_name = cfg.simulator.acquisition_scheme.name
     acq_params = cfg.simulator.acquisition_scheme.params
+    acq_schemes = acq_params.schemes
 
-    if acq_scheme_name == "multi":
-        acq_schemes = acq_params.schemes
-    else:
-        acq_schemes = [{"name": acq_scheme_name, "params": acq_params}]
+    # if acq_scheme_name == "multi":
+    #     acq_schemes = acq_params.schemes
+    # else:
+    #     acq_schemes = [{"name": acq_scheme_name, "params": acq_params}]
 
     simulators = []
 
@@ -42,6 +45,10 @@ def build_simulator(cfg: DictConfig):
             acq_fn = partial(random_hcp_acquisition, **acq_params)
         elif acq_scheme_name == "hcp_large":
             acq_fn = partial(random_hcp_large_acquisition, **acq_params)
+        elif acq_scheme_name == "ssfp_large":
+            acq_fn = partial(random_ssfp_acquisition, **acq_params)
+        elif acq_scheme_name == "ssfp":
+            acq_fn = partial(random_typical_ssfp_acquisition, **acq_params)
         else:
             raise ValueError(f"Unknown acquisition scheme {acq_scheme_name}")
 
