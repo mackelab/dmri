@@ -5,7 +5,10 @@ from flax import nnx
 from jax.typing import ArrayLike
 from probjax.nn import GaussianFourierEmbedding, Transformer
 from probjax.nn.attention import flex_attention
-from dmri.simulators.acquisition_scheme import ssfp_acquisition_scheme
+from dmri.simulators.acquisition_scheme import (
+    ssfp_acquisition_scheme,
+    acquisition_scheme,
+)
 
 
 @dataclass
@@ -85,12 +88,14 @@ class BvalBvecSignalEmbeddingNet(nnx.Module, experimental_pytree=True):
 
     def __call__(
         self,
-        bvals: ArrayLike,  # B, T
-        bvecs: ArrayLike,  # B, T, 3
-        signals: ArrayLike,  # B, T
+        acq: acquisition_scheme,
+        x: ArrayLike,
         deterministic: bool | None = None,
         decode: bool = False,
     ):
+        bvals = acq.bvals
+        bvecs = acq.bvecs
+        signals = x
         if self.log_transform_signals:
             signals = jnp.log(jnp.clip(signals, min=1e-8))
         bvals = self.embed_bvals(bvals[..., None])
@@ -122,6 +127,7 @@ class SSFPEmbeddingNet(nnx.Module, experimental_pytree=True):
         dropout_rate: int = None,
         log_transform_signals: bool = False,
         use_flash_attention: bool = False,
+        bvec_repeats: int = 1,
     ):
         self.model_dim = model_dim
         self.num_heads = num_heads
@@ -137,7 +143,9 @@ class SSFPEmbeddingNet(nnx.Module, experimental_pytree=True):
         self.embed_scalars = GaussianFourierEmbedding(7, scalar_embed_dim, rngs=rngs)
         self.embed_signals = GaussianFourierEmbedding(1, signal_embed_dim, rngs=rngs)
         # Repeat bvces
-        self.embed_bvecs = lambda x: jnp.repeat(x, bvec_embed_dim // 3, axis=-1)
+        self.embed_bvecs = lambda x: jnp.repeat(
+            x[..., None], bvec_embed_dim, axis=-1
+        ).reshape(*x.shape[:-1], -1)[..., :bvec_embed_dim]
 
         if use_flash_attention:
             attention_fn = flex_attention
@@ -170,11 +178,11 @@ class SSFPEmbeddingNet(nnx.Module, experimental_pytree=True):
         flipAngles = acq.flipAngles
         TRs = acq.TRs
         diffGradDur = acq.diffGradDur
-        scalar = jnp.concatenate(
+        scalar = jnp.stack(
             [T1, T2, B1, diffGradAmps, flipAngles, TRs, diffGradDur], axis=-1
         )
         scalar = self.embed_scalars(scalar)
-        signal = self.embed_signals(signals)
+        signal = self.embed_signals(signals[..., None])
         bvecs = self.embed_bvecs(acq.bvecs)
         tokens = jnp.concatenate([scalar, signal, bvecs], axis=-1)
         out_tokens = self.transformer(
