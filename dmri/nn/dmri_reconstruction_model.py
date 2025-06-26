@@ -14,6 +14,7 @@ from .autoregressive import (
     DMRIModelSelectionAmortizedPriorConfig,
     DMRIModelSelectionConfig,
 )
+from dmri.simulators.acquisition_scheme import acquisition_scheme
 from .embedding_net import BvalBvecSignalEmbeddingNet, DMRIEmbeddingConfig
 from .simformer import DMRIThetaInferenceConfig, EDMSimformer, GaussianFourierEmbedding
 from .tokenizer import DMRITokenizer, DMRITokenizerPP
@@ -24,7 +25,7 @@ class DMRIInferenceModelConfig:
     simulator: type[MultiCompartment]
     model_dim: int = 64
     use_attention_mask: bool = False
-    inference_loss_type: str = "x0"
+    inference_loss_type: str = "v"
     tokenizer = DMRITokenizer
     embedding_cfg: DMRIEmbeddingConfig = field(default_factory=DMRIEmbeddingConfig)
     model_selection_cfg: DMRIModelSelectionConfig = field(
@@ -40,7 +41,7 @@ class DMRIInferenceModelConfigMaskPriorAmortized:
     simulator: type[MultiCompartment]
     model_dim: int = 64
     use_attention_mask: bool = True
-    inference_loss_type: str = "x0"
+    inference_loss_type: str = "v"
     tokenizer = DMRITokenizer
     embedding_cfg: DMRIEmbeddingConfig = field(default_factory=DMRIEmbeddingConfig)
     model_selection_cfg: DMRIModelSelectionConfig = field(
@@ -56,7 +57,7 @@ class DMRIInferenceModelConfigMaskPriorAmortizedPP:
     simulator: type[MultiCompartment]
     model_dim: int = 64
     use_attention_mask: bool = True
-    inference_loss_type: str = "x0"
+    inference_loss_type: str = "v"
     tokenizer = DMRITokenizerPP
     embedding_cfg: DMRIEmbeddingConfig = field(default_factory=DMRIEmbeddingConfig)
     model_selection_cfg: DMRIModelSelectionConfig = field(
@@ -113,8 +114,7 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         model_mask: ArrayLike,
         theta: ArrayLike,
         x: ArrayLike,
-        bvals: ArrayLike,
-        bvecs: ArrayLike,
+        acq: acquisition_scheme,
         mask_prior: Optional[ArrayLike] = None,
         alpha_prior: Optional[ArrayLike] = None,
         model_types: Optional[List[type]] = None,
@@ -125,8 +125,7 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
         tokens_cfg, y, mask_prior = self.embed_inputs(
             model_mask,
             x,
-            bvals,
-            bvecs,
+            acq,
             mask_prior=mask_prior,
             alpha_prior=alpha_prior,
             model_types=model_types,
@@ -159,10 +158,9 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
 
     def embed_inputs(
         self,
-        model_mask,
-        x,
-        bvals,
-        bvecs,
+        model_mask: ArrayLike,
+        x: ArrayLike,
+        acq: acquisition_scheme,
         mask_prior=None,
         alpha_prior=None,
         model_types=None,
@@ -173,7 +171,7 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
             model_mask, alpha_prior, model_types=model_types, noise_types=noise_types
         )
         # Embed observations and acquisition parameters
-        y = self.encoder(bvals, bvecs, x)
+        y = self.encoder(acq, x)
         if y.ndim == 2:
             y = y[..., None, :]
 
@@ -185,7 +183,7 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
 
     def theta_mask(
         self,
-        model_mask,
+        model_mask: ArrayLike,
         model_types: Optional[list[type]] = None,
         noise_types: Optional[list[type]] = None,
     ):
@@ -196,7 +194,7 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
 
     def marginalization_mask(
         self,
-        model_mask,
+        model_mask: ArrayLike,
         model_types: Optional[list[type]] = None,
         noise_types: Optional[list[type]] = None,
     ):
@@ -214,11 +212,10 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
     def loss_fn(
         self,
         rng,
-        model_mask,
-        theta,
-        x,
-        bvals,
-        bvecs,
+        model_mask: ArrayLike,
+        theta: ArrayLike,
+        x: ArrayLike,
+        acq: acquisition_scheme,
         mask_prior=None,
         alpha_prior=None,
         target_score=None,
@@ -234,7 +231,7 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
             model_mask, alpha_prior, model_types=model_types, noise_types=noise_types
         )
         # Embed observatiosn
-        y = self.encoder(bvals, bvecs, x)
+        y = self.encoder(acq, x)
         if y.ndim == 2:
             y = y[..., None, :]
 
@@ -289,9 +286,9 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
 
         return jnp.concatenate([model_mask_loss[None], theta_loss[None]])
 
-    def sample_mask(self, rng, bvals, bvecs, signals, mask_prior=None):
+    def sample_mask(self, rng, acq: acquisition_scheme, x: ArrayLike, mask_prior=None):
         # Update for different model configs
-        y = self.encoder(bvals, bvecs, signals)
+        y = self.encoder(acq, x)
         if mask_prior is not None:
             mask_prior = self.mask_prior_embed(mask_prior)
         model_mask = self.model_decoder.sample(
@@ -305,13 +302,12 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
 
     def log_prob_mask(
         self,
-        model_mask,
-        bvals,
-        bvecs,
-        signals,
+        model_mask: ArrayLike,
+        acq: acquisition_scheme,
+        x: ArrayLike,
         mask_prior=None,
     ):
-        y = self.encoder(bvals, bvecs, signals)
+        y = self.encoder(acq, x)
         if mask_prior is not None:
             mask_prior = self.mask_prior_embed(mask_prior)
         log_prob = self.model_decoder.log_prob(
@@ -325,17 +321,16 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
     def sample_theta(
         self,
         rng,
-        bvals,
-        bvecs,
-        signals,
-        model_mask,
+        acq: acquisition_scheme,
+        x: ArrayLike,
+        model_mask: ArrayLike,
         num_steps=16,
         max_noise=None,
         rho=7,
         min_noise_nugget=0.0,
         sample_method="ode",
     ):
-        y = self.encoder(bvals, bvecs, signals)
+        y = self.encoder(acq, x)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
 
         attention_mask = self.marginalization_mask(model_mask)
@@ -361,16 +356,15 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
     def log_prob_theta(
         self,
         theta,
-        bvals,
-        bvecs,
-        signals,
+        acq: acquisition_scheme,
+        x: ArrayLike,
         model_mask,
         num_steps=16,
         max_noise=None,
         rho=7,
         min_noise_nugget=0.0,
     ):
-        y = self.encoder(bvals, bvecs, signals)
+        y = self.encoder(acq, x)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
 
         attention_mask = self.marginalization_mask(model_mask)
@@ -393,16 +387,15 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
     def sample_and_log_prob_theta(
         self,
         rng,
-        bvals,
-        bvecs,
-        signals,
+        acq: acquisition_scheme,
+        x: ArrayLike,
         model_mask,
         num_steps=16,
         max_noise=None,
         rho=7,
         min_noise_nugget=0.0,
     ):
-        y = self.encoder(bvals, bvecs, signals)
+        y = self.encoder(acq, x)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
 
         attention_mask = self.marginalization_mask(model_mask)
@@ -426,16 +419,15 @@ class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
     def score_theta(
         self,
         theta,
-        bvals,
-        bvecs,
-        signals,
+        acq: acquisition_scheme,
+        x: ArrayLike,
         model_mask,
         t=None,
     ):
         if t is None:
-            t = jnp.ones((1,)) * 0.001
+            t = jnp.ones((1,)) * 0.01
 
-        y = self.encoder(bvals, bvecs, signals)
+        y = self.encoder(acq, x)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
 
         attention_mask = self.marginalization_mask(model_mask)

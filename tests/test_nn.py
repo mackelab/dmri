@@ -13,7 +13,11 @@ from dmri.nn.dmri_reconstruction_model import (
     DMRIInferenceModelConfig,
     DMRIInferenceModelConfigMaskPriorAmortized,
 )
-from dmri.nn.embedding_net import BvalBvecSignalEmbeddingNet, DMRIEmbeddingConfig
+from dmri.nn.embedding_net import (
+    BvalBvecSignalEmbeddingNet,
+    DMRIEmbeddingConfig,
+    SSFPEmbeddingNet,
+)
 from dmri.nn.simformer import (
     DMRIThetaInferenceConfig,
     EDMSimformer,
@@ -62,7 +66,12 @@ def test_dmri_inference_model_amortized(rng, simulator, data):
     model = DMRIInferenceModel(cfg, rng)
     model_mask, theta, x, bvals, bvecs, p_mask = data
 
-    output = model(model_mask, theta, x, bvals, bvecs, p_mask)
+    # Create acquisition scheme
+    from dmri.simulators.acquisition_scheme import acquisition_scheme
+
+    acq = acquisition_scheme(bvals=bvals, bvecs=bvecs)
+
+    output = model(model_mask, theta, x, acq, mask_prior=p_mask)
     assert isinstance(output, tuple)  # Model returns multiple outputs
     assert output[0].shape == model_mask.shape
     assert output[1].shape == theta.shape
@@ -84,9 +93,66 @@ def test_bval_bvec_signal_embedding_net(use_flashattn, rng, data):
 
     # Get data from fixture
     _, _, signals, bvals, bvecs, _ = data
+
+    # Create acquisition scheme
+    from dmri.simulators.acquisition_scheme import acquisition_scheme
+
+    acq = acquisition_scheme(bvals=bvals, bvecs=bvecs)
+
     # Test with full batch
-    output_batch = embedding_net(bvals, bvecs, signals)
+    output_batch = embedding_net(acq, signals)
     assert output_batch.shape == (100, 64, 64)
+
+
+@pytest.mark.parametrize("use_flashattn", [False])
+def test_ssfp_embedding_net(use_flashattn, rng):
+    """Test instantiation and forward pass of SSFPEmbeddingNet."""
+
+    embedding_net = SSFPEmbeddingNet(
+        model_dim=64,
+        num_heads=4,
+        num_layers=6,
+        attn_size=16,
+        widening_factor=3,
+        use_flash_attention=use_flashattn,
+        rngs=rng,
+    )
+
+    # Create SSFP acquisition scheme
+    from dmri.simulators.acquisition_scheme import ssfp_acquisition_scheme
+
+    # Create test data for SSFP
+    batch_size = 100
+    num_acquisitions = 64
+
+    # Create SSFP acquisition parameters
+    T1 = jnp.ones((batch_size, num_acquisitions)) * 1000  # ms
+    T2 = jnp.ones((batch_size, num_acquisitions)) * 80  # ms
+    B1 = jnp.ones((batch_size, num_acquisitions)) * 1.0  # unitless
+    diffGradAmps = jnp.ones((batch_size, num_acquisitions)) * 50  # T/m
+    flipAngles = jnp.ones((batch_size, num_acquisitions)) * 14.0  # degrees
+    TRs = jnp.ones((batch_size, num_acquisitions)) * 0.021  # seconds
+    diffGradDur = jnp.ones((batch_size, num_acquisitions)) * 0.01016  # seconds
+    bvecs = jax.random.normal(rng.next(), (batch_size, num_acquisitions, 3))
+    bvecs = bvecs / jnp.linalg.norm(bvecs, axis=-1, keepdims=True)
+
+    acq = ssfp_acquisition_scheme(
+        bvecs=bvecs,
+        T1=T1,
+        T2=T2,
+        B1=B1,
+        diffGradAmps=diffGradAmps,
+        flipAngles=flipAngles,
+        TRs=TRs,
+        diffGradDur=diffGradDur,
+    )
+
+    # Create signal data
+    signals = jax.random.normal(rng.next(), (batch_size, num_acquisitions))
+
+    # Test with full batch
+    output_batch = embedding_net(acq, signals)
+    assert output_batch.shape == (batch_size, num_acquisitions, 64)
 
 
 def test_dmri_tokenizer(rng, simulator, data):
