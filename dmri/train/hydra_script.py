@@ -255,6 +255,7 @@ def _main(cfg: DictConfig):
     ema_decay = cfg.train.ema_decay if cfg.train.track_ema else None
 
     while True:
+        loss_sum = [0, 0]
         for _ in range(inner_steps):
             key, subkey = jax.random.split(key)
             data = next(datastream)
@@ -266,10 +267,12 @@ def _main(cfg: DictConfig):
                     lambda x, y: x * ema_decay + y * (1 - ema_decay), params_ema, params
                 )
             step += 1
-        total_loss = float(sum(loss))
+            loss_sum[0] += float(loss[0]) / inner_steps
+            loss_sum[1] += float(loss[1]) / inner_steps
+        total_loss = float(loss_sum[0] + loss_sum[1])
         queue_size = int(loader.queue.qsize())
         log.info(
-            f"Step {step}, Loss mask: {loss[0]}, Loss theta: {loss[1]}, data_queue_size: {queue_size}"
+            f"Step {step}, Loss mask: {loss_sum[0]}, Loss theta: {loss_sum[1]}, data_queue_size: {queue_size}"
         )
 
         if restart_every is not None and (step % restart_every == 0):

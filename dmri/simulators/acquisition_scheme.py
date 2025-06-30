@@ -109,6 +109,7 @@ class acquisition_scheme:  # noqa: N801
 
         return acquisition_scheme(bvals, gradient_directions, delta, Delta)
 
+
 @dataclass
 class ssfp_acquisition_scheme:
     """A class representing a Steady-State Free Precession (SSFP) acquisition scheme.
@@ -134,8 +135,8 @@ class ssfp_acquisition_scheme:
     flipAngles_raw: ArrayLike = field(
         default_factory=lambda: 14.0
     )  # degrees (will be converted to radians in properties)
-    TRs: ArrayLike = field(default_factory=lambda: 0.0210) # seconds
-    diffGradDur: ArrayLike = field(default_factory=lambda: 0.01016) # seconds
+    TRs: ArrayLike = field(default_factory=lambda: 0.0210)  # seconds
+    diffGradDur: ArrayLike = field(default_factory=lambda: 0.01016)  # seconds
     delta: ArrayLike = field(default_factory=lambda: 0.0106)
     Delta: ArrayLike = field(default_factory=lambda: 0.008)
     gyromag_ratio: ArrayLike = field(default_factory=lambda: 4258 * 2 * jnp.pi)  # Hz/G
@@ -207,6 +208,7 @@ class ssfp_acquisition_scheme:
         # ssfp_signal_down = ssfp_signal_fn(diffusivity, self.qvals, self.E1, self.E2, self.sa, self.ca, self.TRs, 0.)
         # return -1/diffusivity * jnp.log(ssfp_signal_up / ssfp_signal_down)
 
+
 register_dataclass(
     acquisition_scheme, data_fields=("bvals", "bvecs"), meta_fields=("delta", "Delta")
 )
@@ -258,57 +260,110 @@ diff_grad_amps_typical = np.loadtxt(
 )
 
 
-
 bvecs_ssfp = np.loadtxt(os.path.join(os.path.dirname(__file__), "data/bvecs_ssfp")).T
 
 
-
-def random_typical_ssfp_acquisition(rng, num_acquisitions=120):
-    rng1, rng2, rng3 = jax.random.split(rng, 3)
-
-    assert num_acquisitions == 120, "num_acquisitions must be 120"
-
-    T1 = jax.random.gamma(rng1, 20, (num_acquisitions,)) * 50
-    T2 = jax.random.gamma(rng2, 8, (num_acquisitions,)) * 8
-    B1 = -jax.random.gamma(rng3, 2, (num_acquisitions,)) * 0.2 + 1.3
-
-    bvecs = jax.random.normal(rng1, (num_acquisitions, 3))
-    bvecs = bvecs / jnp.linalg.norm(bvecs, axis=-1, keepdims=True)
-    diffGradDur = jnp.ones((num_acquisitions,)) * 0.01016
-    flipAngles = jnp.ones((num_acquisitions,)) * 14.0
-    diffGradAmps = jnp.array(diff_grad_amps_typical)
-
-    bvecs = jnp.array(bvecs_ssfp)
-
-    return ssfp_acquisition_scheme(
-        bvecs=bvecs,
-        T1_raw=T1,
-        T2_raw=T2,
-        B1=B1,
-        diffGradAmps_raw=diffGradAmps,
-        flipAngles_raw=flipAngles,
-        diffGradDur=diffGradDur,
+def random_ssfp_acquisition(
+    rng, num_acquisitions=120, typical_prob=0.5, random_prob=0.5
+):
+    rng1, rng2, rng3, rng4, rng5, rng6, rng7, rng8, rng9, rng10 = jax.random.split(
+        rng, 10
     )
 
+    # For typical SSFP acquisition, we use fixed values from data files
+    if num_acquisitions == 120:
+        bvecs_typical = jnp.array(bvecs_ssfp)
+        diffGradAmps_typical = jnp.array(diff_grad_amps_typical)
+    else:
+        bvecs_typical = jax.random.choice(
+            rng1,
+            jnp.array(bvecs_ssfp),
+            shape=(num_acquisitions,),
+            replace=True,
+            axis=0,
+        )
+        diffGradAmps_typical = jax.random.choice(
+            rng2,
+            jnp.array(diff_grad_amps_typical),
+            shape=(num_acquisitions,),
+            replace=True,
+            axis=0,
+        )
 
-def random_ssfp_acquisition(rng, num_acquisitions=100):
-    rng1, rng2, rng3, rng4, rng5, rng6, rng7, rng8 = jax.random.split(rng, 8)
-    bvecs = jax.random.normal(rng1, (num_acquisitions, 3))
-    bvecs = bvecs / jnp.linalg.norm(bvecs, axis=-1, keepdims=True)
+    # Generate random values for the random component
+    bvecs_random = jax.random.normal(rng1, (num_acquisitions, 3))
+    bvecs_random = bvecs_random / jnp.linalg.norm(bvecs_random, axis=-1, keepdims=True)
 
-    diffGradAmps = jax.random.uniform(rng2, (num_acquisitions,)) * 100
-    flipAngles = jax.random.uniform(rng3, (num_acquisitions,)) * 49 + 1
+    diffGradAmps_random = jax.random.uniform(rng2, (num_acquisitions,)) * 100
+    flipAngles_random = (jax.random.uniform(rng3, ()) * 49 + 1) * jnp.ones(
+        (num_acquisitions,)
+    )
+    T1_random = jax.random.uniform(rng4, (num_acquisitions,)) * 1800 + 600
+    T2_random = jax.random.uniform(rng5, (num_acquisitions,)) * 115 + 10
+    diffGradDur_random = (
+        (jax.random.uniform(rng6, ()) * 15 + 5) * 1e-3
+    ) * jnp.ones((num_acquisitions,))
+    TRs_random = ((jax.random.uniform(rng7, ()) * 45 + 5) * 1e-3) * jnp.ones(
+        (num_acquisitions,)
+    )
+    B1_random = jax.random.uniform(rng8, (num_acquisitions,)) * 2
 
-    T1 = jax.random.uniform(rng4, (num_acquisitions,)) * 1800 + 600
+    # For typical SSFP acquisition, use fixed values
+    T1_typical = jax.random.gamma(rng9, 20, (num_acquisitions,)) * 50
+    T2_typical = jax.random.gamma(rng10, 8, (num_acquisitions,)) * 8
+    B1_typical = -jax.random.gamma(rng9, 2, (num_acquisitions,)) * 0.2 + 1.3
+    diffGradDur_typical = jnp.ones((num_acquisitions,)) * 0.01016
+    flipAngles_typical = jnp.ones((num_acquisitions,)) * 14.0
+    TRs_typical = jnp.ones((num_acquisitions,)) * 0.0210
 
-    T2 = jax.random.uniform(rng5, (num_acquisitions,)) * 115 + 10
+    # Choose between typical and random values based on probabilities
+    bvecs = jax.random.choice(
+        rng1,
+        jnp.stack([bvecs_typical, bvecs_random]),
+        p=jnp.array([typical_prob, random_prob]),
+    )
 
-    # In seconds
-    diffGradDur = (jax.random.uniform(rng6, (num_acquisitions,)) * 15 + 5) * 1e-3
+    diffGradAmps = jax.random.choice(
+        rng2,
+        jnp.stack([diffGradAmps_typical, diffGradAmps_random]),
+        p=jnp.array([typical_prob, random_prob]),
+    )
 
-    TRs = (jax.random.uniform(rng7, (num_acquisitions,)) * 45 + 5) * 1e-3
+    flipAngles = jax.random.choice(
+        rng3,
+        jnp.stack([flipAngles_typical, flipAngles_random]),
+        p=jnp.array([typical_prob, random_prob]),
+    )
 
-    B1 = jax.random.uniform(rng8, (num_acquisitions,)) * 2
+    T1 = jax.random.choice(
+        rng4,
+        jnp.stack([T1_typical, T1_random]),
+        p=jnp.array([typical_prob, random_prob]),
+    )
+
+    T2 = jax.random.choice(
+        rng5,
+        jnp.stack([T2_typical, T2_random]),
+        p=jnp.array([typical_prob, random_prob]),
+    )
+
+    diffGradDur = jax.random.choice(
+        rng6,
+        jnp.stack([diffGradDur_typical, diffGradDur_random]),
+        p=jnp.array([typical_prob, random_prob]),
+    )
+
+    TRs = jax.random.choice(
+        rng7,
+        jnp.stack([TRs_typical, TRs_random]),
+        p=jnp.array([typical_prob, random_prob]),
+    )
+
+    B1 = jax.random.choice(
+        rng8,
+        jnp.stack([B1_typical, B1_random]),
+        p=jnp.array([typical_prob, random_prob]),
+    )
 
     return ssfp_acquisition_scheme(
         bvecs=bvecs,

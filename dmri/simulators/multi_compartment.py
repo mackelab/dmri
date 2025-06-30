@@ -54,6 +54,7 @@ from dmri.simulators.noise_compartments import (
 from dmri.simulators.sphereical_distributions import MixtureOfFODs
 from dmri.utils.transform import dirichlet_to_normal, normal_to_dirichlet
 from typing import Callable
+from dmri.utils.dmriutils import ssfp_signal_fn
 
 
 class MultiCompartment(SignalCompartment):
@@ -62,6 +63,7 @@ class MultiCompartment(SignalCompartment):
     fraction_prior: ArrayLike  # Dirichelt alpha values
     shared_parameter_type: type[SharedParameterState] | None = None
     normalizing_fn: Callable | None = None
+    pre_normalizing_fn: Callable | None = None
 
     def __init_subclass__(cls):
         assert hasattr(cls, "model_types"), "model_types not defined"
@@ -137,6 +139,9 @@ class MultiCompartment(SignalCompartment):
         # Combine signals with sum
         signal = jnp.sum(signals * fractions, axis=0)
 
+        if cls.pre_normalizing_fn is not None:
+            signal = cls.pre_normalizing_fn(acq, signal)
+
         # Add noise
         if rng is not None and len(noise_compartments) > 0:
             if model_mask is None:
@@ -151,8 +156,10 @@ class MultiCompartment(SignalCompartment):
                 for i in range(len(noise_compartments)):
                     noised_signal = noise_compartments[i].noise(signal, rng)
                     signal = jnp.where(noise_mask[i], noised_signal, signal)
+
         if cls.normalizing_fn is not None:
-            signal = cls.normalizing_fn(signal)
+            signal = cls.normalizing_fn(acq, signal)
+
         return signal
 
     @classmethod
@@ -429,10 +436,34 @@ class SSFPBall3StickSharedDiffusivity(MultiCompartment):
     model_types = [SSFPStaticBall, SSFPStaticStick, SSFPStaticStick, SSFPStaticStick]
     noise_types = [BoundedGaussianNoise]
     fraction_prior = jnp.array([3.5, 1.0, 0.3, 0.1])
-    shared_parameter_type = SharedSSFPDiffusivity   
+    shared_parameter_type = SharedSSFPDiffusivity
 
-    def normalizing_fn(x: ArrayLike) -> ArrayLike:
-        return x / jnp.max(x)
+    def normalizing_fn(acq, x: ArrayLike) -> ArrayLike:
+        return (x - jnp.min(x)) / (jnp.max(x) - jnp.min(x))
+
+
+class SSFPBall3StickSharedDiffusivityBetterNorm(MultiCompartment):
+    model_types = [SSFPStaticBall, SSFPStaticStick, SSFPStaticStick, SSFPStaticStick]
+    noise_types = [BoundedGaussianNoise]
+    fraction_prior = jnp.array([3.5, 1.0, 0.3, 0.1])
+    shared_parameter_type = SharedSSFPDiffusivity
+
+    def pre_normalizing_fn(acq, x: ArrayLike) -> ArrayLike:
+        ssfp_max = (
+            ssfp_signal_fn(
+                0.0,
+                acq.qvals * 0,
+                acq.E1,
+                acq.E2,
+                acq.sa,
+                acq.ca,
+                acq.TRs,
+                acq.diffGradDur,
+            )
+            + 1e-5
+        )
+
+        return x / ssfp_max
 
 
 class Ball3StickSharedDiffusivityUniformFraction(MultiCompartment):
