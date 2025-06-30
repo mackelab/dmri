@@ -20,7 +20,7 @@ def build_pure_eval_fns(graphdef, static, sim_type):
         acq = data[4]
         sample_fn = jax.vmap(model.sample_mask)
         rngs = jax.random.split(rng, len(thetas))
-        masks_sampled = sample_fn(rngs, acq.bvals, acq.bvecs, xs, p_mask)
+        masks_sampled = sample_fn(rngs, acq, xs, p_mask)
         return masks_sampled
 
     @jax.jit
@@ -33,7 +33,7 @@ def build_pure_eval_fns(graphdef, static, sim_type):
         xs = data[3]
         acq = data[4]
         return jax.vmap(model.log_prob_mask)(
-            model_mask, acq.bvals, acq.bvecs, xs, p_mask
+            model_mask, acq, xs, p_mask
         )
 
     @jax.jit
@@ -50,7 +50,7 @@ def build_pure_eval_fns(graphdef, static, sim_type):
         sample_fn = jax.vmap(
             partial(model.sample_theta, num_steps=num_steps, max_noise=max_noise)
         )
-        return sample_fn(rngs, acq.bvals, acq.bvecs, xs, model_mask)
+        return sample_fn(rngs, acq, xs, model_mask)
 
     @jax.jit
     def log_prob_thetas(params, state, data, num_steps=128, max_noise=40):
@@ -64,7 +64,7 @@ def build_pure_eval_fns(graphdef, static, sim_type):
         sample_fn = partial(
             model.log_prob_theta, num_steps=num_steps, max_noise=max_noise
         )
-        return jax.vmap(sample_fn)(thetas, acq.bvals, acq.bvecs, xs, model_mask)
+        return jax.vmap(sample_fn)(thetas, acq, xs, model_mask)
 
     @jax.jit
     def sample_and_log_prob_thetas(
@@ -84,7 +84,7 @@ def build_pure_eval_fns(graphdef, static, sim_type):
                 num_steps=num_steps,
                 max_noise=max_noise,
             )
-        )(rngs, acq.bvals, acq.bvecs, xs, model_mask)
+        )(rngs, acq, xs, model_mask)
         return thetas, log_probs
 
     @jax.jit
@@ -123,7 +123,7 @@ def build_pure_eval_fns(graphdef, static, sim_type):
         def sample_thetas(rng):
             keys = jax.random.split(rng, xs.shape[0])
             return jax.vmap(partial(model.sample_theta, num_steps=64, max_noise=80))(
-                keys, acq.bvals, acq.bvecs, xs, model_mask
+                keys, acq, xs, model_mask
             )
 
         thetas_post = jax.vmap(sample_thetas)(keys_K)

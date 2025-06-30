@@ -286,7 +286,7 @@ class StreamDataLoader:
         yield current_batch
         # Main loop - yield batches as soon as they're available
         while not self.event.is_set():
-            print(prefetch_queue.qsize())
+            # print(prefetch_queue.qsize())
             try:
                 # Get batch with minimal timeout to avoid blocking
                 current_batch = prefetch_queue.get(timeout=0.05)

@@ -4,6 +4,6 @@ params:
     - name: ssfp
       params:
         num_acquisitions: 120
-    - name: ssfp_large
+    - name: ssfp
       params:
-        num_acquisitions: 200
+        num_acquisitions: 60
