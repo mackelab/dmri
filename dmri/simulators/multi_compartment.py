@@ -295,10 +295,11 @@ class MultiCompartment(SignalCompartment):
 
     def log_likelihood(self, acq, signal_observed):
         # Compute the signal for each compartment
-        signals = jnp.stack([m.signal(acq) for m in self.model_compartments], axis=0)
-        fractions = self.model_fractions[:, None]
-        # Combine signals with sum
-        signal = jnp.sum(signals * fractions, axis=0)
+        # signals = jnp.stack([m.signal(acq) for m in self.model_compartments], axis=0)
+        # fractions = self.model_fractions[:, None]
+        # # Combine signals with sum
+        # signal = jnp.sum(signals * fractions, axis=0)
+        signal = self.signal_fn(acq, self.model_compartments, self.noise_compartments, self.model_fractions, self.model_mask, self.shared_parameter)
 
         # Compute the noise likelihood
 
