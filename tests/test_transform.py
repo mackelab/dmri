@@ -321,4 +321,4 @@ def test_eps_mask(d, seed):
     pi = mask.astype(jnp.float32) / jnp.sum(mask)
     eps = dirichlet_to_normal(alpha, pi, mask)
     mask_pred = eps_mask(mask)
-    assert (~mask_pred == (eps == 0.0)).all()
+    assert (~mask_pred == jnp.isclose(eps, 0.0)).all()
