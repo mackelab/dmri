@@ -78,4 +78,8 @@ fix = true
 testpaths = ["tests"]
 
 [tool.setuptools.packages.find]
-include = ["dmri*"]
+include = ["dmri*", "conf*", "conf_eval*"]
+
+[tool.setuptools.package-data]
+"conf" = ["*"]
+"conf_eval" = ["*"]

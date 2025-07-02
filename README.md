@@ -73,6 +73,14 @@ training and evaluation of models. For training API, you can use:
 dmri --help
 ```
 
+For evaluation/application of models to data, you can use:
+
+```bash
+dmri_eval --help
+```
+
+
+
 ## Configuration
 
 This project uses [Hydra](https://hydra.cc/) for configuration management. Configuration files are located in the `conf/` directory.
@@ -92,19 +100,6 @@ This project uses GitHub Actions for continuous integration. The following workf
 Status badges:
 ![CI](https://github.com/your-username/dmri/actions/workflows/ci.yml/badge.svg)
 
-## Citation
-
-If you use this code in your research, please cite:
-
-```
-@misc{dmri2023,
-  author = {Your Name},
-  title = {DMRI: A package for diffusion MRI model selection},
-  year = {2023},
-  publisher = {GitHub},
-  url = {https://github.com/your-username/dmri}
-}
-```
 
 ## License
 
