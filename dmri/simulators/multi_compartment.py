@@ -68,7 +68,9 @@ class MultiCompartment(SignalCompartment):
     def __init_subclass__(cls):
         assert hasattr(cls, "model_types"), "model_types not defined"
         assert hasattr(cls, "noise_types"), "noise_types not defined"
-        assert hasattr(cls, "fraction_prior"), "fraction_prior not defined"
+        if not hasattr(cls, "fraction_prior"):
+            cls.fraction_prior = jnp.ones(len(cls.model_types))
+
 
         assert len(cls.model_types) == len(cls.fraction_prior), (
             "Wrong number of fractions"
