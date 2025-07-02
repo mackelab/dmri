@@ -53,8 +53,8 @@ def build_mask_sample_fn(method, num_samples, model, acq, p_mask):
 
         def sample_mask_per_x(key, x):
             keys = jax.random.split(key, num_samples)
-            return jax.vmap(model.sample_mask, in_axes=(0, None, None, None, None))(
-                keys, acq.bvals, acq.bvecs, x, jnp.array([p_mask])
+            return jax.vmap(model.sample_mask, in_axes=(0, None, None, None))(
+                keys, acq, x, jnp.array([p_mask])
             )
 
         sample_mask_per_x = jax.jit(jax.vmap(sample_mask_per_x, in_axes=(0, 0)))
@@ -76,10 +76,10 @@ def build_theta_sample_fn(
         in_axes_model_mask = 0 if model_mask.ndim == 2 else None
         sample_fn = jax.vmap(
             partial(model.sample_theta, num_steps=num_steps, max_noise=max_noise),
-            in_axes=(0, None, None, None, in_axes_model_mask),
+            in_axes=(0, None, None, in_axes_model_mask),
         )
         keys = jax.random.split(key, K)
-        theta = sample_fn(keys, acq.bvals, acq.bvecs, x, model_mask)
+        theta = sample_fn(keys, acq, x, model_mask)
         return theta
 
     corrector = build_corrector(

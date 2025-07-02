@@ -9,6 +9,7 @@ weight_by_complexity: True
 track_ema: true
 ema_decay: 0.999
 cut_off_tsm: 0.1
+restart_optimizer: false
 
 eval:
   nnl_theta:

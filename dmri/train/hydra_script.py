@@ -232,10 +232,16 @@ def _main(cfg: DictConfig):
             )
             if checkpoint is not None:
                 params = checkpoint["params"]
-                opt_state = checkpoint["optimizer_state"]
                 # Restore EMA params if they exist in the checkpoint
                 if "params_ema" in checkpoint and cfg.train.track_ema:
                     params_ema = checkpoint["params_ema"]
+                if cfg.train.restart_optimizer:
+                    if "params_ema" in checkpoint:
+                        opt_state = optimizer.init(params_ema)
+                    else:
+                        opt_state = optimizer.init(params)
+                else:
+                    opt_state = checkpoint["optimizer_state"]
                 step = checkpoint["step"]  # Update current step
                 start_step = step  # Set start_step to the restored step
                 log.info(f"Resumed training from step {step}")
