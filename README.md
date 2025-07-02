@@ -64,11 +64,12 @@ import dmri
 ```
 
 ### Command-line Interface
+
 The package provides a command-line interface via Hydra. This mainly allows to configure
-training and evaluation of models.
+training and evaluation of models. For training API, you can use:
 
 ```bash
-# For a list of available commands
+# For a list of available configurations
 dmri --help
 ```
 
