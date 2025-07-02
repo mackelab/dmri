@@ -160,9 +160,9 @@ class StreamDataLoader:
 
                 # PyTree-friendly conversion to CPU
                 # This handles cases where data is a nested structure (PyTree)
-                data_cpu = data  # jax.tree_map(np.array, data)
+                data_cpu = data  # jax.tree_util.tree_map(np.array, data)
                 # TODO This is a hack to avoid NaNs and Infs in the data
-                data_cpu = jax.tree_map(
+                data_cpu = jax.tree_util.tree_map(
                     lambda x: jax.numpy.nan_to_num(x, nan=1.0, posinf=1.0, neginf=0.0),
                     data_cpu,
                 )
@@ -314,7 +314,7 @@ class StreamDataLoader:
         def copy_leaf(d, s):
             return jax.jit(lambda x, y: x.at[:].set(y), donate_argnums=(0,))(d, s)
 
-        return jax.tree_map(copy_leaf, dst, src)
+        return jax.tree_util.tree_map(copy_leaf, dst, src)
 
     def _init_ring_buffers(self, first_batch_cpu):
         """
@@ -331,7 +331,7 @@ class StreamDataLoader:
 
         for _ in range(self.ring_size):
             # Create a zero structure with the same PyTree structure
-            zero_pytree = jax.tree_map(create_zeros_like, first_batch_cpu)
+            zero_pytree = jax.tree_util.tree_map(create_zeros_like, first_batch_cpu)
             self.gpu_ring_buffers.append(zero_pytree)
 
         self._ring_initialized = True
