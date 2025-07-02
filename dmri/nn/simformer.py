@@ -180,9 +180,9 @@ class EDMSimformer(EDM):
             )
             loss += loss_score
 
-            print(
-                "Data loss: ", loss_denoised.mean(), "Score loss: ", loss_score.mean()
-            )
+            # print(
+            #     "Data loss: ", loss_denoised.mean(), "Score loss: ", loss_score.mean()
+            # )
 
         if weight_by_complexity:
             loss = loss * (model_mask.sum(axis=-1, keepdims=True) + 0.01)

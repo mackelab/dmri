@@ -1,5 +1,5 @@
 # Loading data
-path: "/home/macke/mgloeckler90/dmri/notebooks/data"
+path: "/home/macke/mgloeckler90/dmri/data/data"
 brain_mask: "nodif_brain_mask.nii.gz"
 mri_data: "data.nii.gz"
 bvals_data: "bvals"

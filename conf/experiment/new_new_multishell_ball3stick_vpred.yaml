@@ -8,6 +8,7 @@ hydra:
       wandb.project: new_multishell_ball3stick
       train.ema_decay: 0.9999
       train.continue_training: true
+      train.restart_optimizer: true
 
 
 defaults:

@@ -3,6 +3,7 @@ checkpoint_freq: 20_000
 eval_freq: 20_000
 continue_training: false
 max_train_hours: 24
+restart_optimizer: false
 
 defaults:
   - optimizer: default
