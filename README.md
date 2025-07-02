@@ -25,12 +25,7 @@ conda create -n dmri python=3.11
 conda activate dmri
 ```
 
-To install with CUDA support, run:
-```bash
-pip install --upgrade "jax[cuda12]"
-```
-
-### Setup
+### Install the package
 
 To install the package, first clone the repository:
 ```bash
@@ -41,28 +36,23 @@ cd dmri
 # Install the package and main dependencies
 pip install -e .
 
+# If you use a GPU, install the GPU dependencies
+pip install -e .[cuda]
+
 # For development dependencies (testing, linting, formatting, etc.)
 pip install -e .[dev]
-
-# For notebook dependencies (e.g., PyTorch, sbi)
-pip install -e .[notebook]
-
-# You can also install both sets of extras at once:
-pip install -e .[dev,notebook]
 ```
 
-## Standard installation (CPU only)
+If you installed with `[dev]`, you can check if the installation was successful by running:
 ```bash
-pip install -e .
+pytest
 ```
 
-## For CUDA-enabled JAX (GPU support)
-After installing the base dependencies, run:
-```bash
-pip install --upgrade "jax[cuda12]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
-```
+## Extra dependencies
+There might be some extra dependencies that are not included in the package and only
+used in e.g. the notebooks. These need to be installed manually.
 
-Replace `cuda12` with your CUDA version if needed. See the [JAX CUDA releases page](https://storage.googleapis.com/jax-releases/jax_cuda_releases.html) for more options.
+NOTE: If you want to use pytorch, you shoud install the CPU-only version of pytorch to avoid conflicts with the JAX version.
 
 ## Usage
 
