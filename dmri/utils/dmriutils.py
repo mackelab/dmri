@@ -199,7 +199,7 @@ def normalize_bvecs(bvecs: ArrayLike) -> ArrayLike:
     return bvecs / norms
 
 
-def compute_FA(D: ArrayLike) -> ArrayLike:
+def compute_fa(D: ArrayLike) -> ArrayLike:
     """Compute fractional anisotropy (FA) from a diffusion tensor."""
     evals = jnp.linalg.eigvalsh(D)
     mean_diffusivity = jnp.mean(evals)
@@ -207,19 +207,19 @@ def compute_FA(D: ArrayLike) -> ArrayLike:
     return fa
 
 
-def compute_MD(D: ArrayLike) -> ArrayLike:
+def compute_md(D: ArrayLike) -> ArrayLike:
     """Compute mean diffusivity (MD) from a diffusion tensor."""
     evals = jnp.linalg.eigvalsh(D)
     return jnp.mean(evals)
 
 
-def compute_RD(D: ArrayLike) -> ArrayLike:
+def compute_rd(D: ArrayLike) -> ArrayLike:
     """Compute radial diffusivity (RD) from a diffusion tensor."""
     evals = jnp.linalg.eigvalsh(D)
     return jnp.mean(evals[:2])
 
 
-def compute_AD(D: ArrayLike) -> ArrayLike:
+def compute_ad(D: ArrayLike) -> ArrayLike:
     """Compute axial diffusivity (AD) from a diffusion tensor."""
     evals = jnp.linalg.eigvalsh(D)
     return evals[2]
@@ -458,7 +458,7 @@ def reorder_angles_3fib(mu1, mu2, mu3, f1, f2, f3):
     # Use first sample as reference vectors
     v1_ref = sph2cart(mu1[0, 0], mu1[0, 1])
     v2_ref = sph2cart(mu2[0, 0], mu2[0, 1])
-    v3_ref = sph2cart(mu3[0, 0], mu3[0, 1])
+    # v3_ref = sph2cart(mu3[0, 0], mu3[0, 1])
 
     # Copy first sample directly
     new_mu1 = new_mu1.at[0].set(mu1[0])
@@ -554,7 +554,7 @@ def reorder_angles_3fib(mu1, mu2, mu3, f1, f2, f3):
     return new_mu1, new_mu2, new_mu3, new_f1, new_f2, new_f3
 
 
-def export_SBI_estimates(
+def export_sbi_estimates(
     samples: ArrayLike,
     mask: ArrayLike,
     data_brain_orig: ArrayLike,

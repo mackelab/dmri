@@ -2,15 +2,14 @@ import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
+import plotly.graph_objects as go
 from dipy.data import get_sphere
 from jax.typing import ArrayLike
+from plotly.subplots import make_subplots
 
 from dmri.utils.dmriutils import cartesian_to_unitsphere, unitsphere_to_cartesian
 
 sphere_default = get_sphere(name="symmetric724")
-
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 
 def orthoview_quiver_plotly(
@@ -439,7 +438,7 @@ def orthoview_quiver_ultracompact(
             result.append(indices[-1])  # Last
 
             # Deduplicate and sort
-            return sorted(list(set(result)))
+            return sorted(set(result))
 
         x_indices = limit_indices(x_indices, x_slice)
         y_indices = limit_indices(y_indices, y_slice)
@@ -1121,6 +1120,8 @@ def plot_spherical_distribution_polar(
     ax.set_xlabel("Azimuthal Angle (phi)")
     ax.set_ylabel("Polar Angle (theta)")
 
+    fig.tight_layout()
+
 
 def plot_spherical_distribution_cartesian(
     distribution,
@@ -1214,7 +1215,7 @@ def plot_spherical_distribution_fod(
     ax.plot_surface(x_surf, y_surf, z_surf, alpha=alpha)
 
     # Plot the maxima of the PDF as stick
-    dir_max = points[np.argmax(pdf_values)]
+    # dir_max = points[np.argmax(pdf_values)]
 
     ax.set_xlim([-1, 1])
     ax.set_ylim([-1, 1])
@@ -1436,7 +1437,7 @@ def orthoview_ultracompact(
             result.append(indices[-1])  # Last
 
             # Deduplicate and sort
-            return sorted(list(set(result)))
+            return sorted(set(result))
 
         x_indices = limit_indices(x_indices, x_slice)
         y_indices = limit_indices(y_indices, y_slice)

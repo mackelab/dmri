@@ -6,10 +6,10 @@ from dmri.utils.dmriutils import (
     cartesian_to_unitsphere,
     unitsphere_to_cartesian,
     normalize_bvecs,
-    compute_FA,
-    compute_MD,
-    compute_RD,
-    compute_AD,
+    compute_fa,
+    compute_md,
+    compute_rd,
+    compute_ad,
     make_dyads,
     cart2sph,
     sph2cart,
@@ -79,20 +79,20 @@ def test_diffusion_metrics():
     D = jnp.array([[1.0, 0.0, 0.0], [0.0, 0.5, 0.0], [0.0, 0.0, 0.3]])
 
     # Test FA
-    fa = compute_FA(D)
+    fa = compute_fa(D)
     assert 0 <= fa <= 1
 
     # Test MD
-    md = compute_MD(D)
+    md = compute_md(D)
     assert md > 0
 
     # Test RD
-    rd = compute_RD(D)
+    rd = compute_rd(D)
     assert rd > 0
     assert rd < md
 
     # Test AD
-    ad = compute_AD(D)
+    ad = compute_ad(D)
     assert ad > 0
     assert ad > rd
 
