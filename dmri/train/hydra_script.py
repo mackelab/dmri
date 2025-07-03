@@ -5,6 +5,9 @@ import random
 import socket
 import time
 
+memory_fraction = 0.98  # Use 98% of available memory
+os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = str(memory_fraction)
+
 import hydra
 import jax
 import numpy as np
