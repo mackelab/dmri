@@ -1,8 +1,7 @@
 import queue
+import random  # Add Python's random module
 import threading
 import time
-import random  # Add Python's random module
-from collections import deque
 from functools import partial
 
 import jax

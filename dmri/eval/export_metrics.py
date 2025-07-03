@@ -4,8 +4,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from dmri.eval.sampling_methods import eval_in_batches
 from dmri.eval.export_theta import embed_in_full_brain_array
+from dmri.eval.sampling_methods import eval_in_batches
 from dmri.utils.dmriutils import export_nifti
 
 

@@ -9,7 +9,6 @@ from dmri.utils.dmriutils import cartesian_to_unitsphere, unitsphere_to_cartesia
 
 sphere_default = get_sphere(name="symmetric724")
 
-import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 

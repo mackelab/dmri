@@ -6,10 +6,10 @@ import jax.numpy as jnp
 from omegaconf import DictConfig
 
 from dmri.simulators.acquisition_scheme import (
-    random_hcp_acquisition,
     random_advanced_reasearch_acquisition_scheme,
     random_clinical_acquisition,
     random_hardi_acquisition,
+    random_hcp_acquisition,
     random_hcp_large_acquisition,
     random_ssfp_acquisition,
 )

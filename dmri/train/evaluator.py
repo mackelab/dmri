@@ -3,10 +3,9 @@ from typing import Callable, NamedTuple
 
 import jax
 import jax.numpy as jnp
-from flax import nnx
-
 from blackjax import hmc, tempered_smc
 from blackjax.smc.resampling import systematic
+from flax import nnx
 
 
 def build_pure_eval_fns(graphdef, static, sim_type):
@@ -32,9 +31,7 @@ def build_pure_eval_fns(graphdef, static, sim_type):
         model_mask = data[1]
         xs = data[3]
         acq = data[4]
-        return jax.vmap(model.log_prob_mask)(
-            model_mask, acq, xs, p_mask
-        )
+        return jax.vmap(model.log_prob_mask)(model_mask, acq, xs, p_mask)
 
     @jax.jit
     def sample_thetas(params, state, rng, data, num_steps=128, max_noise=40):

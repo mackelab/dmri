@@ -8,13 +8,13 @@ from flax import nnx
 from jax.typing import ArrayLike
 
 from dmri.simulators import MultiCompartment
+from dmri.simulators.acquisition_scheme import acquisition_scheme
 
 from .autoregressive import (
     BinaryAutoregressiveDecoder,
     DMRIModelSelectionAmortizedPriorConfig,
     DMRIModelSelectionConfig,
 )
-from dmri.simulators.acquisition_scheme import acquisition_scheme
 from .embedding_net import (
     BvalBvecSignalEmbeddingNet,
     DMRIEmbeddingConfig,
@@ -71,6 +71,7 @@ class DMRIInferenceModelConfigMaskPriorAmortizedPP:
     theta_inference_cfg: DMRIThetaInferenceConfig = field(
         default_factory=DMRIThetaInferenceConfig
     )
+
 
 @dataclass
 class SSFPInferenceModelConfig:

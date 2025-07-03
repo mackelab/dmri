@@ -2,7 +2,7 @@ from abc import abstractmethod
 from collections import defaultdict
 from copy import deepcopy
 from functools import cache
-from typing import Any, List, Optional, Callable
+from typing import Any, Callable, List, Optional
 
 import jax
 import jax.numpy as jnp
@@ -11,7 +11,7 @@ from flax import nnx
 from jax.typing import ArrayLike
 
 from dmri.simulators import MultiCompartment
-from dmri.utils.transform import dirichlet_to_normal, eps_mask
+from dmri.utils.transform import eps_mask
 
 
 def map_classes_to_indices(class_list: list, start_idx: int = 0):
