@@ -7,8 +7,8 @@ from dmri.simulators.sphereical_distributions import SymmetricDirac
 from dmri.utils.dmriutils import (
     cartesian_to_unitsphere,
     fit_diffusion_tensor_linearized,
-    unitsphere_to_cartesian,
     ssfp_signal_fn,
+    unitsphere_to_cartesian,
 )
 
 

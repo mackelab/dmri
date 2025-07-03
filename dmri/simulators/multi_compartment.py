@@ -1,18 +1,14 @@
-from typing import Optional
+from typing import Callable, Optional
 
-from dmri.simulators.local_signal_models.ball import (
-    MultiShellBall,
-    MultiShellStaticBall,
-)
-from dmri.simulators.local_signal_models.stick import MultiShellStaticStick
+import jax
 import jax.numpy as jnp
 import numpy as np
-import jax
 from jax import tree_util as jtu
 from jax.typing import ArrayLike
 from probjax.utils.special import gammaincinv
+
 from dmri.simulators import acquisition_scheme
-from dmri.simulators.base import SignalCompartment, Compartment, SharedParameterState
+from dmri.simulators.base import SharedParameterState, SignalCompartment
 from dmri.simulators.local_signal_models import (
     Ball,
     BinghamStick,
@@ -22,39 +18,33 @@ from dmri.simulators.local_signal_models import (
     NoddiW,
     SandiB,
     SandiW,
+    SSFPStaticBall,
+    SSFPStaticStick,
+    StaticBall,
+    StaticStick,
     Stick,
     WatsonStick,
     WatsonZeppelin,
     Zeppelin,
-    StaticStick,
-    StaticBall,
-    SSFPStaticBall,
-    SSFPStaticStick,
 )
+from dmri.simulators.local_signal_models.ball import (
+    MultiShellStaticBall,
+)
+from dmri.simulators.local_signal_models.stick import MultiShellStaticStick
 from dmri.simulators.noise_compartments import (
-    GaussianNoiseSNR7080,
-    GaussianNoiseSNR6070,
-    GaussianNoiseSNR5060,
-    GaussianNoiseSNR4050,
-    GaussianNoiseSNR3040,
-    GaussianNoiseSNR2030,
-    GaussianNoiseSNR1020,
-    GaussianNoiseSNR310,
     BoundedGaussianNoise,
-    RicianNoiseSNR7080,
-    RicianNoiseSNR6070,
-    RicianNoiseSNR5060,
-    RicianNoiseSNR4050,
-    RicianNoiseSNR3040,
-    RicianNoiseSNR2030,
-    RicianNoiseSNR1020,
+    GaussianNoiseSNR310,
+    GaussianNoiseSNR1020,
+    GaussianNoiseSNR2030,
+    GaussianNoiseSNR3040,
     RicianNoiseSNR310,
-    BoundedRicianNoise,
+    RicianNoiseSNR1020,
+    RicianNoiseSNR2030,
+    RicianNoiseSNR3040,
 )
 from dmri.simulators.sphereical_distributions import MixtureOfFODs
-from dmri.utils.transform import dirichlet_to_normal, normal_to_dirichlet
-from typing import Callable
 from dmri.utils.dmriutils import ssfp_signal_fn
+from dmri.utils.transform import dirichlet_to_normal, normal_to_dirichlet
 
 
 class MultiCompartment(SignalCompartment):
@@ -70,7 +60,6 @@ class MultiCompartment(SignalCompartment):
         assert hasattr(cls, "noise_types"), "noise_types not defined"
         if not hasattr(cls, "fraction_prior"):
             cls.fraction_prior = jnp.ones(len(cls.model_types))
-
 
         assert len(cls.model_types) == len(cls.fraction_prior), (
             "Wrong number of fractions"
@@ -301,7 +290,14 @@ class MultiCompartment(SignalCompartment):
         # fractions = self.model_fractions[:, None]
         # # Combine signals with sum
         # signal = jnp.sum(signals * fractions, axis=0)
-        signal = self.signal_fn(acq, self.model_compartments, self.noise_compartments, self.model_fractions, self.model_mask, self.shared_parameter)
+        signal = self.signal_fn(
+            acq,
+            self.model_compartments,
+            self.noise_compartments,
+            self.model_fractions,
+            self.model_mask,
+            self.shared_parameter,
+        )
 
         # Compute the noise likelihood
 
@@ -406,6 +402,7 @@ class SharedMultiShellDiffusivityGammaPrior(SharedParameterState):
         us = jnp.array([u, u_std])
         return jax.scipy.stats.norm.ppf(us)
 
+
 class SharedSSFPDiffusivity(SharedDiffusivity):
     share_with_compartments = {
         SSFPStaticBall: [0],
@@ -414,6 +411,7 @@ class SharedSSFPDiffusivity(SharedDiffusivity):
     theta_dim = 1
     lam_min: float = 0.0
     lam_max: float = 0.01
+
 
 class BallStickSharedDiffusivity(MultiCompartment):
     model_types = [StaticBall, StaticStick]
@@ -434,6 +432,7 @@ class Ball3StickSharedDiffusivity(MultiCompartment):
     noise_types = [BoundedGaussianNoise]
     fraction_prior = jnp.array([3.5, 1.0, 0.3, 0.1])
     shared_parameter_type = SharedDiffusivity
+
 
 class SSFPBall3StickSharedDiffusivity(MultiCompartment):
     model_types = [SSFPStaticBall, SSFPStaticStick, SSFPStaticStick, SSFPStaticStick]

@@ -5,7 +5,6 @@ import jax.numpy as jnp
 import numpy as np
 from jax.tree_util import register_dataclass
 from jax.typing import ArrayLike
-from dmri.utils.dmriutils import ssfp_signal_fn
 
 WATER_DIFFUSION_CONSTANT = 2.299e-3  # mm^2/s
 WATER_IN_AXON_DIFFUSION_CONSTANT = 1.7e-3  # mm^2/s
@@ -229,9 +228,9 @@ register_dataclass(
 )
 
 
-from dipy.io.gradients import read_bvals_bvecs
-
 import os
+
+from dipy.io.gradients import read_bvals_bvecs
 
 _bvals_typ, bvecs_typ = read_bvals_bvecs(
     os.path.join(os.path.dirname(__file__), "data/bvals"),
@@ -300,9 +299,9 @@ def random_ssfp_acquisition(
     )
     T1_random = jax.random.uniform(rng4, (num_acquisitions,)) * 1800 + 600
     T2_random = jax.random.uniform(rng5, (num_acquisitions,)) * 115 + 10
-    diffGradDur_random = (
-        (jax.random.uniform(rng6, ()) * 15 + 5) * 1e-3
-    ) * jnp.ones((num_acquisitions,))
+    diffGradDur_random = ((jax.random.uniform(rng6, ()) * 15 + 5) * 1e-3) * jnp.ones(
+        (num_acquisitions,)
+    )
     TRs_random = ((jax.random.uniform(rng7, ()) * 45 + 5) * 1e-3) * jnp.ones(
         (num_acquisitions,)
     )

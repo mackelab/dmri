@@ -1,8 +1,9 @@
+import os
+
 import jax
 import jax.numpy as jnp
-from jax.typing import ArrayLike
 import nibabel as nb
-import os
+from jax.typing import ArrayLike
 
 
 def ssfp_signal_fn(
@@ -139,6 +140,7 @@ def freed_ssfp_signal_fn(
     S = r1 * sa * (1 - E1p(0)) * E2p(-1) / (Ap(0) - Bp(0) + E2p(-1) * Cp(0) * r1)
 
     return jnp.nan_to_num(S0 * jnp.abs(S))
+
 
 def fit_diffusion_tensor_linearized(
     logS: ArrayLike, bvals: ArrayLike, bvecs: ArrayLike

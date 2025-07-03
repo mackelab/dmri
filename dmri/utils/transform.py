@@ -1,10 +1,9 @@
 import jax
 import jax.numpy as jnp
 from jax import lax
+from jax.scipy.special import betainc
 from jax.typing import ArrayLike
 from probjax.utils.special import betaincinv
-from jax.scipy.special import betainc
-import math
 
 
 @jax.jit

@@ -4,7 +4,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from jax.typing import ArrayLike
-from scipy.special import j1 as j1_scipy
 
 from dmri.simulators.base import SignalCompartment
 from dmri.utils.dmriutils import unitsphere_to_cartesian

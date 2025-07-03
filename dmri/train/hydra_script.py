@@ -12,10 +12,10 @@ import hydra
 import jax
 import numpy as np
 import optax
-import wandb
 from flax import nnx
 from omegaconf import DictConfig, OmegaConf
 
+import wandb
 from dmri.train.build_model import build_model
 from dmri.train.build_simulator import build_simulator
 from dmri.train.checkpointing import CheckpointManager

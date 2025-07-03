@@ -2,9 +2,9 @@ from dmri.simulators.local_signal_models.ball import (
     Ball,
     MultiShellBall,
     MultiShellStaticBall,
-    StaticBall,
     SSFPBall,
     SSFPStaticBall,
+    StaticBall,
 )
 from dmri.simulators.local_signal_models.convolved_stick import (
     BinghamStick,
@@ -27,12 +27,12 @@ from dmri.simulators.local_signal_models.signal_response_kernels import (
 )
 from dmri.simulators.local_signal_models.sphere import Sphere
 from dmri.simulators.local_signal_models.stick import (
-    MultiShellStick,
     MultiShellStaticStick,
-    Stick,
-    StaticStick,
-    SSFPStick,
+    MultiShellStick,
     SSFPStaticStick,
+    SSFPStick,
+    StaticStick,
+    Stick,
 )
 from dmri.simulators.local_signal_models.temporal_zeppelin import TemporalZeppelin
 from dmri.simulators.local_signal_models.zeppelin import Zeppelin

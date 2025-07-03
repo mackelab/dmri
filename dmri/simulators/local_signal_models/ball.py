@@ -2,11 +2,11 @@ import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
-from dmri.simulators.base import SignalCompartment
 from dmri.simulators.acquisition_scheme import (
     acquisition_scheme,
     ssfp_acquisition_scheme,
 )
+from dmri.simulators.base import SignalCompartment
 from dmri.simulators.sphereical_distributions import Uniform
 from dmri.utils.dmriutils import ssfp_signal_fn
 

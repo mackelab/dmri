@@ -5,9 +5,10 @@ from flax import nnx
 from jax.typing import ArrayLike
 from probjax.nn import GaussianFourierEmbedding, Transformer
 from probjax.nn.attention import flex_attention
+
 from dmri.simulators.acquisition_scheme import (
-    ssfp_acquisition_scheme,
     acquisition_scheme,
+    ssfp_acquisition_scheme,
 )
 
 
