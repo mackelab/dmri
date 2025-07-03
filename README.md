@@ -158,6 +158,9 @@ dmri_eval --help
 
 Depending on coniguration, this will create additional folders in the results folder which will contain the evaluation results.
 
+NOTE: Currently, only exporting ball3stick models is implemented.
+NOTE: The evaluation needs to know where the data is located. This needs to be adapted in `conf_eval/config.yaml` accordingly.
+
 ```
 results/{name}            # Name of the run (default dmri)
 ├── 2025-06-30_15-19-06   # Date and time of the run containing config and logs
@@ -169,13 +172,22 @@ results/{name}            # Name of the run (default dmri)
 
 ## Configuration
 
-This project uses [Hydra](https://hydra.cc/) for configuration management. Configuration files are located in the `conf/` directory.
+This project uses [Hydra](https://hydra.cc/) for configuration management. Configuration files are located in the `conf/` directory for training and `conf_eval/` for evaluation.
 
 Key configuration components:
 - Model parameters
-- Dataset specifications
+- Simulator specifications
 - Training parameters
-- Evaluation parameters
+- Evaluation metrics
+
+Just using the command-line interface, you can use the following command to see the available configurations: `dmri` will run the training with the default configuration. But you can also use some other predefined configurations using `dmri +experiment=ball3stick` for example.
+
+
+
+
+
+
+
 
 ### Continuous Integration
 
