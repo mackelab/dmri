@@ -33,7 +33,7 @@ def load_cfg(path):
             continue
 
     if not timestamp_dirs:
-        raise ValueError(f"No valid timestamped directories found in {res_folder}")
+        raise ValueError(f"No valid timestamped directories found in {path}")
 
     # Sort by timestamp (newest first)
     timestamp_dirs.sort(reverse=True)

@@ -1,4 +1,4 @@
-from typing import Callable, Optional, Tuple
+from typing import Callable, Optional
 
 import jax
 import jax.numpy as jnp
@@ -13,7 +13,7 @@ def run_tarp(
     distance: Callable = jnp.linalg.norm,
     num_bins: Optional[int] = 30,
     z_score_theta: bool = True,
-) -> Tuple[jnp.ndarray, jnp.ndarray]:
+) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
     JAX implementation of the TARP method.
     """
@@ -34,7 +34,7 @@ def _run_tarp(
     distance: Callable = jnp.linalg.norm,
     num_bins: Optional[int] = 30,
     z_score_theta: bool = False,
-) -> Tuple[jnp.ndarray, jnp.ndarray]:
+) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
     JAX implementation of the TARP diagnostic.
     """
@@ -75,11 +75,11 @@ def get_tarp_references(thetas: jnp.ndarray) -> jnp.ndarray:
 def check_tarp(
     ecp: jnp.ndarray,
     alpha: jnp.ndarray,
-) -> Tuple[float, float]:
+) -> tuple[float, float]:
     """
     JAX implementation to check the TARP credibility levels.
     """
     midindex = alpha.shape[0] // 2
     atc = jnp.sum(ecp[midindex:] - alpha[midindex:])
-    ks_prob = ks_2samp(ecp, alpha).pvalue
-    return atc, ks_prob
+    # ks_prob = ks_2samp(ecp, alpha).pvalue
+    return atc  # , ks_prob
