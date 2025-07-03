@@ -257,13 +257,11 @@ bvecs_typ_large = bvecs_large[idx]
 diff_grad_amps_typical = np.loadtxt(
     os.path.join(os.path.dirname(__file__), "data/diffgrad_amps_ssfp")
 )
-
-
 bvecs_ssfp = np.loadtxt(os.path.join(os.path.dirname(__file__), "data/bvecs_ssfp")).T
 
 
 def random_ssfp_acquisition(
-    rng, num_acquisitions=120, typical_prob=0.5, random_prob=0.5
+    rng, num_acquisitions=120, typical_prob=0.8, random_prob=0.2
 ):
     rng1, rng2, rng3, rng4, rng5, rng6, rng7, rng8, rng9, rng10 = jax.random.split(
         rng, 10
@@ -297,23 +295,41 @@ def random_ssfp_acquisition(
     flipAngles_random = (jax.random.uniform(rng3, ()) * 49 + 1) * jnp.ones(
         (num_acquisitions,)
     )
-    T1_random = jax.random.uniform(rng4, (num_acquisitions,)) * 1800 + 600
-    T2_random = jax.random.uniform(rng5, (num_acquisitions,)) * 115 + 10
+    T1_random = (jax.random.uniform(rng4, (1,)) * 1800 + 600) * jnp.ones(
+        (num_acquisitions,)
+    )
+    T2_random = (jax.random.uniform(rng5, (1,)) * 115 + 10) * jnp.ones(
+        (num_acquisitions,)
+    )
+    B1_random = (jax.random.uniform(rng8, (1,)) * 2) * jnp.ones((num_acquisitions,))
+
     diffGradDur_random = ((jax.random.uniform(rng6, ()) * 15 + 5) * 1e-3) * jnp.ones(
         (num_acquisitions,)
     )
     TRs_random = ((jax.random.uniform(rng7, ()) * 45 + 5) * 1e-3) * jnp.ones(
         (num_acquisitions,)
     )
-    B1_random = jax.random.uniform(rng8, (num_acquisitions,)) * 2
+
+    idx = jnp.argsort(diffGradAmps_random * diffGradDur_random)
+    diffGradAmps_random = diffGradAmps_random[idx]
+    diffGradDur_random = diffGradDur_random[idx]
 
     # For typical SSFP acquisition, use fixed values
-    T1_typical = jax.random.gamma(rng9, 20, (num_acquisitions,)) * 50
-    T2_typical = jax.random.gamma(rng10, 8, (num_acquisitions,)) * 8
-    B1_typical = -jax.random.gamma(rng9, 2, (num_acquisitions,)) * 0.2 + 1.3
+    T1_typical = (jax.random.gamma(rng9, 20, (1,)) * 50) * jnp.ones((num_acquisitions,))
+    T2_typical = (jax.random.gamma(rng10, 8, (1,)) * 8) * jnp.ones((num_acquisitions,))
+    B1_typical = (-jax.random.gamma(rng9, 2, (1,)) * 0.2 + 1.3) * jnp.ones(
+        (num_acquisitions,)
+    )
     diffGradDur_typical = jnp.ones((num_acquisitions,)) * 0.01016
     flipAngles_typical = jnp.ones((num_acquisitions,)) * 14.0
     TRs_typical = jnp.ones((num_acquisitions,)) * 0.0210
+    idx = jnp.argsort(diffGradAmps_typical * diffGradDur_typical)
+    T1_typical = T1_typical[idx]
+    T2_typical = T2_typical[idx]
+    B1_typical = B1_typical[idx]
+    diffGradDur_typical = diffGradDur_typical[idx]
+    flipAngles_typical = flipAngles_typical[idx]
+    TRs_typical = TRs_typical[idx]
 
     # Choose between typical and random values based on probabilities
     bvecs = jax.random.choice(

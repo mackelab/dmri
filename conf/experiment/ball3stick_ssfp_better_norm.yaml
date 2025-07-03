@@ -1,5 +1,5 @@
 # @package _global_
-name: ball3stick_ssfp_fixed_better_norm
+name: ball3stick_ssfp_fixed_better_norm2
 use_wandb: true
 
 hydra:

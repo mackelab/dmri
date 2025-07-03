@@ -56,20 +56,17 @@ JAX is a library for high-performance numerical computing with automatic differe
 
 JAX is used for all numerical computations. It is installed as a dependency of the package.
 Some gotchas:
-- JAX will pre-allocate most of you GPU memory by default. If run e.g. multiple notebooks/scripts that one will likey raise some memory errors. You can check if some Job is running by running `nvidia-smi`.
-- JAX uses JIT compilation for all operations. This can make some operations appear slower than expected, **at the first run**. Once compiled, the operation will be much faster.
+- JAX will pre-allocate most of your GPU memory by default. If you run multiple notebooks/scripts in parallel, this will likely raise memory errors. You can check whether a job is running with `nvidia-smi`.
+- JAX uses JIT compilation for all operations. This can make some operations appear slower than expected **on the first run**. Once compiled, the operation will be much faster.
 
-Anyway for all praticaly purposes, its just like numpy/scipy and clones its API.
-
-
-
+For all practical purposes, it's just like NumPy/SciPy and closely mirrors their API.
 
 ### PyTorch conflicts
 
 There might be some extra dependencies that are not included in the package and only
 used in e.g. the notebooks. These need to be installed manually.
 
-NOTE: If you want to use pytorch, you shoud install the CPU-only version of pytorch to avoid conflicts with the JAX version.
+NOTE: If you want to use PyTorch, you should install the CPU-only version to avoid conflicts with the JAX version.
 
 For example, to install torch and sbi for the notebooks, you can run:
 ```bash
@@ -129,10 +126,16 @@ You can also have a look at the notebooks in the `notebooks/dmri_simulators.ipyn
 
 ### Command-line Interface
 
+Notably the command-line interface supports the following modes:
+- Local training and evaluation – runs jobs in your current environment
+- Slurm training and evaluation – submits jobs to a Slurm cluster
+- W&B runtime statistics – logs running statistics to Weights & Biases (wandb)
+
+However, these features need to be configured by the user; e.g. you must set up and log in to `wandb`.
+
 #### Training
 
-The package provides a command-line interface via Hydra. This mainly allows to configure
-training and evaluation of models. For training API, you can use:
+The package provides a command-line interface via Hydra, which allows you to configure training and evaluation of models. For the training API, run:
 
 ```bash
 # For a list of available configurations
@@ -156,7 +159,7 @@ For evaluation/application of models to data, you can use:
 dmri_eval --help
 ```
 
-Depending on coniguration, this will create additional folders in the results folder which will contain the evaluation results.
+Depending on configuration, this will create additional folders in the results folder containing the evaluation results.
 
 NOTE: Currently, only exporting ball3stick models is implemented.
 NOTE: The evaluation needs to know where the data is located. This needs to be adapted in `conf_eval/config.yaml` accordingly.
@@ -172,7 +175,7 @@ results/{name}            # Name of the run (default dmri)
 
 Notably you can modify the name of the e.g. folder in `conf_eval/export` to avoid overwriting existing results.
 
-Certain types of evaluation runs i.e. with/without certain types of model selection are pre-configured in the `conf_eval/experiments` folder.
+Certain evaluation runs—e.g. with or without specific model-selection steps—are pre-configured in the `conf_eval/experiments` folder.
 For example to just run inference with all model components, you can use:
 ```bash
 dmri_eval +experiment=eval_no_selection model_name=$NAME_OF_FOLDER_IN_RESULTS
@@ -190,13 +193,6 @@ Key configuration components:
 
 Just using the command-line interface, you can use the following command to see the available configurations: `dmri` will run the training with the default configuration. But you can also use some other predefined configurations using `dmri +experiment=ball3stick` for example.
 
-
-
-
-
-
-
-
 ### Continuous Integration
 
 This project uses GitHub Actions for continuous integration. The following workflows are available:
@@ -205,7 +201,6 @@ This project uses GitHub Actions for continuous integration. The following workf
 
 Status badges:
 ![CI](https://github.com/your-username/dmri/actions/workflows/ci.yml/badge.svg)
-
 
 ## License
 

@@ -18,7 +18,7 @@ eval:
     iters: 5
   ess:
     iters: 5
-    K: 100
+    K: 50
 
 defaults:
   - optimizer: radam

@@ -451,21 +451,11 @@ class SSFPBall3StickSharedDiffusivityBetterNorm(MultiCompartment):
     shared_parameter_type = SharedSSFPDiffusivity
 
     def pre_normalizing_fn(acq, x: ArrayLike) -> ArrayLike:
-        ssfp_max = (
-            ssfp_signal_fn(
-                0.0,
-                acq.qvals * 0,
-                acq.E1,
-                acq.E2,
-                acq.sa,
-                acq.ca,
-                acq.TRs,
-                acq.diffGradDur,
-            )
-            + 1e-5
-        )
+        b0_bound = jnp.maximum(acq.qvals.min() + 10, 30.0)
+        b0_mask = acq.qvals < b0_bound
+        S0 = jnp.sum(x * b0_mask) / jnp.sum(b0_mask)
+        return x / S0
 
-        return x / ssfp_max
 
 
 class Ball3StickSharedDiffusivityUniformFraction(MultiCompartment):
