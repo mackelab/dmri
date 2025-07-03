@@ -170,6 +170,14 @@ results/{name}            # Name of the run (default dmri)
 ├── ...                                           # Additional depending on configuration
 ```
 
+Notably you can modify the name of the e.g. folder in `conf_eval/export` to avoid overwriting existing results.
+
+Certain types of evaluation runs i.e. with/without certain types of model selection are pre-configured in the `conf_eval/experiments` folder.
+For example to just run inference with all model components, you can use:
+```bash
+dmri_eval +experiment=eval_no_selection model_name=$NAME_OF_FOLDER_IN_RESULTS
+```
+
 ## Configuration
 
 This project uses [Hydra](https://hydra.cc/) for configuration management. Configuration files are located in the `conf/` directory for training and `conf_eval/` for evaluation.
