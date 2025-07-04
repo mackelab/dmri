@@ -435,8 +435,10 @@ def random_hcp_acquisition(
     rng1, rng2, rng3, rng4, rng5 = jax.random.split(rng, 5)
     bvals_typical = jnp.array(bvals_typ)
     bvecs_typical = jnp.array(bvecs_typ)
+    if num_acquisitions != 105:
+        bvals_typical = jax.random.choice(rng1, jnp.array(bvals_typ), shape=(num_acquisitions,))
+        bvecs_typical = jax.random.choice(rng1, jnp.array(bvecs_typ), shape=(num_acquisitions,))
     bvals_float = jax.random.uniform(rng2, shape=(num_acquisitions,)) * 4000
-    # TODO remove restrictrictions
     bvals = jax.random.choice(
         rng3,
         jnp.stack([bvals_typical, bvals_float]),

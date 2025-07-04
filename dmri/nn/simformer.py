@@ -8,6 +8,8 @@ from probjax.nn import GaussianFourierEmbedding, Transformer
 from probjax.nn.nets.denoising_diffusion_model import EDM
 from probjax.utils.odeint import odeint
 from probjax.utils.sdeint import sdeint
+from functools import partial
+from probjax.nn.attention import flex_attention
 
 from dmri.nn.tokenizer import Tokenizer
 
@@ -20,6 +22,8 @@ class DMRIThetaInferenceConfig:
     attn_size: int = 16
     context_dim: int = 64
     dropout_rate: float | None = None
+    use_flash_attention: bool = False
+    use_cross_flash_attention: bool = False
 
 
 class DiffusionTransformer(nnx.Module, experimental_pytree=True):
@@ -34,8 +38,19 @@ class DiffusionTransformer(nnx.Module, experimental_pytree=True):
         widening_factor=3,
         dropout_rate=None,
         enable_cross_attention=True,
+        use_flash_attention=False,
+        use_cross_flash_attention=False,
     ) -> None:
         self.time_embedding = GaussianFourierEmbedding(1, context_dim, rngs=rngs)
+        if use_flash_attention:
+            attention_fn = partial(flex_attention, dtype=jnp.bfloat16)
+        else:
+            attention_fn = None
+        if use_cross_flash_attention:
+            cross_attention_fn = partial(flex_attention, dtype=jnp.bfloat16)
+        else:
+            cross_attention_fn = None
+
         self.transformer = Transformer(
             model_dim,
             num_heads=num_heads,
@@ -46,6 +61,8 @@ class DiffusionTransformer(nnx.Module, experimental_pytree=True):
             dropout_rate=dropout_rate,
             rngs=rngs,
             context_dim=context_dim,
+            attention_fn=attention_fn,
+            cross_attention_fn=cross_attention_fn,
         )
 
     def __call__(
@@ -92,6 +109,8 @@ class EDMSimformer(EDM):
         widening_factor=3,
         dropout_rate=None,
         enable_cross_attention=True,
+        use_flash_attention=False,
+        use_cross_flash_attention=False,
         loss_type="x0",
     ):
         transformer = DiffusionTransformer(
@@ -104,6 +123,8 @@ class EDMSimformer(EDM):
             widening_factor=widening_factor,
             dropout_rate=dropout_rate,
             enable_cross_attention=enable_cross_attention,
+            use_flash_attention=use_flash_attention,
+            use_cross_flash_attention=use_cross_flash_attention,
         )
         # Prevent automatic parameter updates
         super().__init__(transformer, loss_type=loss_type)

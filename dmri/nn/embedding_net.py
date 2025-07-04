@@ -5,6 +5,7 @@ from flax import nnx
 from jax.typing import ArrayLike
 from probjax.nn import GaussianFourierEmbedding, Transformer
 from probjax.nn.attention import flex_attention
+from functools import partial
 
 from dmri.simulators.acquisition_scheme import (
     acquisition_scheme,
@@ -72,7 +73,7 @@ class BvalBvecSignalEmbeddingNet(nnx.Module, experimental_pytree=True):
             raise ValueError(f"Invalid embed_signals: {embed_signals}")
 
         if use_flash_attention:
-            attention_fn = flex_attention
+            attention_fn = partial(flex_attention, dtype=jnp.bfloat16)
         else:
             attention_fn = None
 

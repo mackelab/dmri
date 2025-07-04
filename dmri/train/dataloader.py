@@ -20,7 +20,7 @@ class StreamDataLoader:
         self,
         simulator_fn,
         batch_size=256,
-        max_queue_size=10_000,
+        max_queue_size=1_000,
         seed=0,
         data_device="gpu",
         simulation_device="cpu",
@@ -395,19 +395,27 @@ class StreamDataLoader:
         """
         Returns a generator that yields GPU batches, prefetching them in parallel.
         """
+        # Create or recreate the stream if needed
         cpu_stream = self._cpu_data_stream()
 
         # `yield from` the prefetch generator
-        if self.use_inplace_updates:
-            device_stream = self._prefetch_data_stream_inplace(cpu_stream)
-        else:
-            device_stream = self._prefetch_data_stream(cpu_stream)
-
-        # Initialize the device stream
-        _ = next(device_stream)
+        if not hasattr(self, "_device_stream") or self._device_stream is None:
+            if self.use_inplace_updates:
+                self._device_stream = self._prefetch_data_stream_inplace(cpu_stream)
+            else:
+                self._device_stream = self._prefetch_data_stream(cpu_stream)
+            _ = next(self._device_stream)  # Initialize the stream
 
         while True:
-            yield next(device_stream)
+            try:
+                yield next(self._device_stream)
+            except StopIteration:
+                # Mark the stream as exhausted so it gets recreated next time
+                if self.use_inplace_updates:
+                    self._device_stream = self._prefetch_data_stream_inplace(cpu_stream)
+                else:
+                    self._device_stream = self._prefetch_data_stream(cpu_stream)
+                _ = next(self._device_stream)  # Initialize the stream
 
     def close(self):
         """
