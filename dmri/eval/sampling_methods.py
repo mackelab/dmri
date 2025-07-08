@@ -40,6 +40,8 @@ def eval_in_batches(fn, key, *data, batch_size=10_000, logger=None, min_batch_si
                 print_fn(
                     f"Out of memory error, reducing batch size from {current_batch_size} to {current_batch_size // 2}"
                 )
+                # Clear caches
+                jax.clear_caches()
                 current_batch_size = current_batch_size // 2
                 continue
             else:
