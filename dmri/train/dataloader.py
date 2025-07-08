@@ -106,6 +106,10 @@ class StreamDataLoader:
         # Split the RNG for each thread
         thread_rngs = jax.random.split(self.rng, self.num_producers)
 
+        # Prefetch queue for device prefetching (always create here)
+        self.prefetch_queue = queue.Queue(maxsize=self.prefetch_depth)
+        self.prefetch_thread = None
+
         for i in range(self.num_producers):
             thread_rng = thread_rngs[i]
             thread = threading.Thread(
@@ -258,16 +262,15 @@ class StreamDataLoader:
         occurs in the background while computation proceeds.
         """
         stream_iter = iter(cpu_stream)
-        prefetch_queue = queue.Queue(maxsize=self.prefetch_depth)
 
         def prefetch_worker():
             """Background thread that continuously tries to maintain prefetch depth"""
             while not self.event.is_set():
-                if prefetch_queue.qsize() < self.prefetch_depth:
+                if self.prefetch_queue.qsize() < self.prefetch_depth:
                     try:
                         cpu_batch = next(stream_iter)
                         batch_on_device = jax.device_put(cpu_batch, self.data_device)
-                        prefetch_queue.put(batch_on_device, timeout=0.1)
+                        self.prefetch_queue.put(batch_on_device, timeout=0.1)
                     except (StopIteration, queue.Full):
                         # Brief pause to avoid busy loop
                         time.sleep(0.001)
@@ -275,26 +278,26 @@ class StreamDataLoader:
                     # Brief pause if queue is full
                     time.sleep(0.001)
 
-        # Start prefetch worker thread
-        self.prefetch_thread = threading.Thread(target=prefetch_worker, daemon=True)
-        self.prefetch_thread.start()
+        # Start prefetch worker thread if not already running
+        if self.prefetch_thread is None or not self.prefetch_thread.is_alive():
+            self.prefetch_thread = threading.Thread(target=prefetch_worker, daemon=True)
+            self.prefetch_thread.start()
 
         # Block until the prefetch queue is filled
-        while prefetch_queue.qsize() < self.prefetch_depth:
+        while self.prefetch_queue.qsize() < self.prefetch_depth:
             time.sleep(0.1)
-        current_batch = prefetch_queue.get(timeout=0.05)
+        current_batch = self.prefetch_queue.get(timeout=0.05)
         yield current_batch
         # Main loop - yield batches as soon as they're available
         while not self.event.is_set():
-            # print(prefetch_queue.qsize())
             try:
                 # Get batch with minimal timeout to avoid blocking
-                current_batch = prefetch_queue.get(timeout=0.05)
+                current_batch = self.prefetch_queue.get(timeout=0.05)
                 if (
-                    prefetch_queue.qsize()
+                    self.prefetch_queue.qsize()
                     < self.prefetch_depth * self.recycle_threshold
                 ):
-                    prefetch_queue.put(current_batch)
+                    self.prefetch_queue.put(current_batch)
                 yield current_batch
             except queue.Empty:
                 # Just return whatever is available
@@ -433,12 +436,21 @@ class StreamDataLoader:
                     )
 
         # Clean up prefetch thread
-        if hasattr(self, "prefetch_thread") and self.prefetch_thread.is_alive():
+        if self.prefetch_thread is not None and self.prefetch_thread.is_alive():
             self.prefetch_thread.join(timeout=1.0)
             if self.prefetch_thread.is_alive():
                 print(
                     f"Warning: Prefetch thread {self.prefetch_thread.name} did not terminate within timeout"
                 )
+            self.prefetch_thread = None
+        # Clean up prefetch queue
+        if self.prefetch_queue is not None:
+            while not self.prefetch_queue.empty():
+                try:
+                    self.prefetch_queue.get_nowait()
+                except queue.Empty:
+                    break
+            self.prefetch_queue = None
 
         # Clear JAX caches to free memory
         try:
