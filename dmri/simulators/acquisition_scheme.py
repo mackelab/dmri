@@ -140,6 +140,21 @@ class ssfp_acquisition_scheme:
     Delta: ArrayLike = field(default_factory=lambda: 0.008)
     gyromag_ratio: ArrayLike = field(default_factory=lambda: 4258 * 2 * jnp.pi)  # Hz/G
 
+    def select(self, idx):
+        return ssfp_acquisition_scheme(
+            self.bvecs,
+            self.T1_raw[idx],
+            self.T2_raw[idx],
+            self.B1[idx],
+            self.diffGradAmps_raw,
+            self.flipAngles_raw,
+            self.TRs,
+            self.diffGradDur,
+            self.delta,
+            self.Delta,
+            self.gyromag_ratio,
+        )
+
     @property
     def T1(self) -> ArrayLike:
         """T1 converted to seconds."""
@@ -398,6 +413,13 @@ def random_hcp_large_acquisition(
     rng1, rng2, rng3, rng4, rng5 = jax.random.split(rng, 5)
     bvals_typical_large = jnp.array(bvals_typ_large)
     bvecs_typical_large = jnp.array(bvecs_typ_large)
+    if num_acquisitions != 297:
+        bvals_typical_large = jax.random.choice(
+            rng1, jnp.array(bvals_typ_large), shape=(num_acquisitions,)
+        )
+        bvecs_typical_large = jax.random.choice(
+            rng1, jnp.array(bvecs_typ_large), shape=(num_acquisitions,)
+        )
     bvals_float = jax.random.uniform(rng2, shape=(num_acquisitions,)) * 4000
     # TODO remove restrictrictions
     bvals = jax.random.choice(

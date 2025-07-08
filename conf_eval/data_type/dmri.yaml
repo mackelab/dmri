@@ -1,0 +1,7 @@
+data_type: "dmri"
+brain_mask: "nodif_brain_mask.nii.gz"
+mri_data: "data.nii.gz"
+bvals_data: "bvals"
+bvecs_data: "bvecs"
+round_bvals: true
+clip_outliers: true

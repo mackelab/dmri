@@ -1,0 +1,13 @@
+data_type: "ssfp"
+brain_mask: "nodif_brain_mask.nii.gz"
+mri_data: "data.nii.gz"
+bvals_data: "bvals"
+bvecs_data: "bvecs"
+diffGradAmps_data: "diffGradAmps"
+diffGradDurs_data: "diffGradDurs"
+flipAngles_data: "flipAngles"
+TRs_data: "TRs"
+T1_map_data: "T1map_.nii.gz"
+T2_map_data: "T2map_.nii.gz"
+B1_map_data: "B1map_.nii.gz"
+clip_outliers: true

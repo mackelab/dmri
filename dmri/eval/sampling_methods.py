@@ -1,5 +1,6 @@
 from functools import partial
 
+from dmri.simulators.acquisition_scheme import ssfp_acquisition_scheme
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -27,8 +28,9 @@ def eval_in_batches(fn, key, *data, batch_size=10_000, logger=None, min_batch_si
             batch_data = jax.tree_util.tree_map(
                 lambda x: x[batch_start:batch_end], data
             )
+            idx = jnp.arange(batch_start, batch_end)
             batch_keys = jax.random.split(subkey, batch_data[0].shape[0])
-            batch_res = fn(batch_keys, *batch_data)
+            batch_res = fn(batch_keys, *batch_data, idx)
             batch_res = np.array(batch_res)
             eval_results.append(batch_res)
             batch_start = batch_end
@@ -51,13 +53,19 @@ def eval_in_batches(fn, key, *data, batch_size=10_000, logger=None, min_batch_si
 def build_mask_sample_fn(method, num_samples, model, acq, p_mask):
     if method == "naive":
 
-        def sample_mask_per_x(key, x):
+        def sample_mask_per_x(key, x, idx):
+            if isinstance(acq, ssfp_acquisition_scheme):
+                new_acq = acq.select(idx)
+            else:
+                del idx
+                new_acq = acq
+
             keys = jax.random.split(key, num_samples)
             return jax.vmap(model.sample_mask, in_axes=(0, None, None, None))(
-                keys, acq, x, jnp.array([p_mask])
+                keys, new_acq, x, jnp.array([p_mask])
             )
 
-        sample_mask_per_x = jax.jit(jax.vmap(sample_mask_per_x, in_axes=(0, 0)))
+        sample_mask_per_x = jax.jit(jax.vmap(sample_mask_per_x, in_axes=(0, 0, 0)))
 
         return sample_mask_per_x
     else:
@@ -71,7 +79,13 @@ def build_theta_sample_fn(
     num_steps = params.get("num_steps", 25)
     max_noise = params.get("max_noise", 80)
 
-    def base_sample_fn(key, x, model_mask):
+    def base_sample_fn(key, x, model_mask, idx):
+        if isinstance(acq, ssfp_acquisition_scheme):
+            new_acq = acq.select(idx)
+        else:
+            del idx
+            new_acq = acq
+
         K = num_samples
         in_axes_model_mask = 0 if model_mask.ndim == 2 else None
         sample_fn = jax.vmap(
@@ -79,7 +93,7 @@ def build_theta_sample_fn(
             in_axes=(0, None, None, in_axes_model_mask),
         )
         keys = jax.random.split(key, K)
-        theta = sample_fn(keys, acq, x, model_mask)
+        theta = sample_fn(keys, new_acq, x, model_mask)
         return theta
 
     corrector = build_corrector(
@@ -87,17 +101,28 @@ def build_theta_sample_fn(
     )
 
     # Combine sampling and correction
-    def sample_theta_per_x(key, x, model_mask):
-        key1, key2 = jax.random.split(key)
-        theta = base_sample_fn(key1, x, model_mask)
-        theta_corrected = corrector(key2, theta, x, model_mask)
-        return theta_corrected
 
     if model_mask is None or model_mask.ndim > 1:
-        sample_theta_per_x = jax.jit(jax.vmap(sample_theta_per_x, in_axes=(0, 0, 0)))
+
+        def sample_theta_per_x(key, x, model_mask, idx):
+            key1, key2 = jax.random.split(key)
+            theta = base_sample_fn(key1, x, model_mask, idx)
+            theta_corrected = corrector(key2, theta, x, model_mask, idx)
+            return theta_corrected
+
+        sample_theta_per_x = jax.jit(jax.vmap(sample_theta_per_x, in_axes=(0, 0, 0, 0)))
     else:
+
+        def sample_theta_per_x(key, x, idx):
+            key1, key2 = jax.random.split(key)
+            theta = base_sample_fn(key1, x, model_mask, idx)
+            theta_corrected = corrector(key2, theta, x, model_mask, idx)
+            return theta_corrected
         sample_theta_per_x = jax.jit(
-            jax.vmap(partial(sample_theta_per_x, model_mask=model_mask), in_axes=(0, 0))
+            jax.vmap(
+                sample_theta_per_x,
+                in_axes=(0, 0, 0),
+            )
         )
 
     return sample_theta_per_x
@@ -137,20 +162,27 @@ def build_corrector(method, model, acq, model_mask, sim_type, params):
         method = "smc_corrected" if model_mask.ndim < 3 else "mcmc_corrected"
 
     if method == "uncorrected":
-
-        def corrector(key, theta, x, model_mask):
+        def corrector(key, theta, x, model_mask, idx):
             return theta
     elif method == "smc_corrected":
         lam_start = params.get("lam_start", 0.99)
         num_steps = params.get("num_steps", 5)
         num_inner_steps = params.get("num_inner_steps", 1)
 
-        def corrector(key, theta, x, model_mask):
+        def corrector(key, theta, x, model_mask, idx):
             assert model_mask is None or model_mask.ndim <= 1, (
                 "Model mask must be None or 1D"
             )
+            if isinstance(acq, ssfp_acquisition_scheme):
+                new_acq = acq.select(idx)
+            else:
+                del idx
+                new_acq = acq
+
             resampling_fn = systematic
-            _log_likelihood_fn = partial(likelihood_fn, mask=model_mask, acq=acq, x=x)
+            _log_likelihood_fn = partial(
+                likelihood_fn, mask=model_mask, acq=new_acq, x=x
+            )
             smc = tempered_smc(
                 prior_fn,
                 _log_likelihood_fn,
@@ -176,9 +208,15 @@ def build_corrector(method, model, acq, model_mask, sim_type, params):
     elif method == "mcmc_corrected":
         num_steps = params.get("num_steps", 5)
 
-        def corrector(key, theta, x, model_mask):
+        def corrector(key, theta, x, model_mask, idx):
+            if isinstance(acq, ssfp_acquisition_scheme):
+                new_acq = acq.select(idx)
+            else:
+                del idx
+                new_acq = acq
+
             alg = hmc(
-                partial(posterior_fn, mask=model_mask, acq=acq, x=x),
+                partial(posterior_fn, mask=model_mask, acq=new_acq, x=x),
                 step_size,
                 jnp.ones(d),
                 num_integration_steps,

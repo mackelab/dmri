@@ -1313,6 +1313,8 @@ def orthoview_ultracompact(
     y_pad = (max_dim - y_max) // 2
     z_pad = (max_dim - z_max) // 2
 
+    print(x_pad, y_pad, z_pad)
+
     data = np.pad(
         data, ((x_pad, x_pad), (y_pad, y_pad), (z_pad, z_pad), (0, 0)), mode="constant"
     )

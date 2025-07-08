@@ -7,7 +7,7 @@ hydra:
     params:
       wandb.project: ball3stick_ssfp
       train.continue_training: true
-      train.restart_optimizer: true
+      train.restart_optimizer: false
       train.ema_decay: 0.9999
 
 

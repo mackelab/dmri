@@ -1,3 +1,4 @@
+from dmri.simulators.acquisition_scheme import ssfp_acquisition_scheme
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -48,18 +49,25 @@ def select_models(
             )
             p_mask = cfg.mask_sample.p_mask
 
-            def eval_feasible_log_probs(x):
+            def eval_feasible_log_probs(x, idx):
+                if isinstance(acq, ssfp_acquisition_scheme):
+                    new_acq = acq.select(idx)
+                else:
+                    del idx
+                    new_acq = acq
+
                 model_logpmf = jax.vmap(
                     model.log_prob_mask, in_axes=(0, None, None, None)
-                )(feasible_models, acq, x, jnp.array([p_mask]))
+                )(feasible_models, new_acq, x, jnp.array([p_mask]))
                 return model_logpmf
 
             batch_size = 10_000
             models_selected = []
             for i in range(0, data.shape[0], batch_size):
                 batch_data = data[i : i + batch_size]
-                batch_logpmf = jax.vmap(eval_feasible_log_probs, in_axes=(0,))(
-                    batch_data
+                idx = jnp.arange(i, i + batch_size)
+                batch_logpmf = jax.vmap(eval_feasible_log_probs, in_axes=(0, 0))(
+                    batch_data, idx
                 )
                 batch_mask = batch_logpmf.argmax(axis=-1)
                 batch_mask = np.array(feasible_models[batch_mask], dtype=np.bool)

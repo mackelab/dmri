@@ -1,11 +1,5 @@
 # Loading data
 path: "/home/macke/mgloeckler90/dmri/data/data"
-brain_mask: "nodif_brain_mask.nii.gz"
-mri_data: "data.nii.gz"
-bvals_data: "bvals"
-bvecs_data: "bvecs"
-round_bvals: true
-clip_outliers: true
 
 # Loading model
 path_checkpoint: "/home/macke/mgloeckler90/dmri/results"
@@ -24,5 +18,8 @@ defaults:
   - mask_sample: default
   - theta_sample: default
   - model_selection: none
+  - data_type: dmri
   - export: ball3stick
   - export_model_selection: ball3stick
+  - launcher: slurm
+  - partition: none

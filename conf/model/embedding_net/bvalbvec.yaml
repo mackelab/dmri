@@ -9,4 +9,5 @@ params:
   signals_embed_dim: 12
   bvec_repeats: 4
   log_transform_signals: False
+  use_flash_attention: False
   embed_signals: "repeat"

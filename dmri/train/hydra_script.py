@@ -4,7 +4,7 @@ import os
 import random
 import socket
 import time
-
+import threading
 import hydra
 import jax
 import numpy as np
@@ -19,6 +19,8 @@ from dmri.train.checkpointing import CheckpointManager
 from dmri.train.evaluator import build_pure_eval_fns
 
 # Backends
+# memory_fraction = 0.98  # Use 98% of available memory
+# os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = str(memory_fraction)
 
 
 logo = r"""
@@ -33,6 +35,7 @@ logo = r"""
 |_______/ |__/     |__/|__/  |__/|______/
 """
 
+max_memory_usage = 0
 
 def main():
     """Main script function"""
@@ -202,9 +205,10 @@ def _main(cfg: DictConfig):
 
     # Create a separate loader for evaluation
     eval_loader = loader_type(
-        simulator,
+        simulator[:1],
         **loader_eval_params,
     )
+    eval_datastream = iter(eval_loader)
 
     key = rng_key
     inner_steps = cfg.train.inner_steps
@@ -250,7 +254,19 @@ def _main(cfg: DictConfig):
         else:
             log.warning("No valid checkpoint found. Starting from scratch.")
 
-    # loss_fn(params, state, next(iter(loader)), rng_key)
+    def print_gpu_memory():
+        global max_memory_usage
+        while True:
+            mem_gb = (
+                jax.device_get(jax.devices()[0].memory_stats()["bytes_in_use"]) / 1e9
+            )
+            if mem_gb > max_memory_usage:
+                max_memory_usage = mem_gb
+            time.sleep(1)
+
+    # Start monitoring in background thread
+    monitor_thread = threading.Thread(target=print_gpu_memory, daemon=True)
+    monitor_thread.start()
 
     # Get maximum training time in hours (default: run forever)
     max_train_hours = cfg.train.get("max_train_hours", float("inf"))
@@ -278,7 +294,7 @@ def _main(cfg: DictConfig):
         total_loss = float(loss_sum[0] + loss_sum[1])
         queue_size = int(loader.queue.qsize())
         log.info(
-            f"Step {step}, Loss mask: {loss_sum[0]}, Loss theta: {loss_sum[1]}, data_queue_size: {queue_size}"
+            f"Step {step}, Loss mask: {loss_sum[0]}, Loss theta: {loss_sum[1]}, data_queue_size: {queue_size}, max_memory_usage: {max_memory_usage}"
         )
 
         if restart_every is not None and (step % restart_every == 0):
@@ -293,6 +309,7 @@ def _main(cfg: DictConfig):
                     "loss mask": float(loss[0]),
                     "loss theta": float(loss[1]),
                     "queue_size": queue_size,
+                    "max_memory_usage": max_memory_usage,
                 }
             )
 
@@ -324,19 +341,22 @@ def _main(cfg: DictConfig):
             # Evaluate negative log-likelihood for masks
             key, eval_key = jax.random.split(key)
             mask_nnl = evaluator.eval_nnl_mask(
-                params_eval, state, eval_loader, iters=cfg.train.eval.nnl_mask.iters
+                params_eval, state, eval_datastream, iters=cfg.train.eval.nnl_mask.iters
             )
 
             # Evaluate negative log-likelihood for thetas
             theta_nnl = evaluator.eval_nnl_theta(
-                params_eval, state, eval_loader, iters=cfg.train.eval.nnl_theta.iters
+                params_eval,
+                state,
+                eval_datastream,
+                iters=cfg.train.eval.nnl_theta.iters,
             )
 
             # Evaluate ess
             ess = evaluator.eval_effective_sample_size(
                 params_eval,
                 state,
-                eval_loader,
+                eval_datastream,
                 eval_key,
                 K=cfg.train.eval.ess.K,
                 iters=cfg.train.eval.ess.iters,

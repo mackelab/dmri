@@ -276,8 +276,9 @@ class StreamDataLoader:
                     time.sleep(0.001)
 
         # Start prefetch worker thread
-        prefetch_thread = threading.Thread(target=prefetch_worker, daemon=True)
-        prefetch_thread.start()
+        self.prefetch_thread = threading.Thread(target=prefetch_worker, daemon=True)
+        self.prefetch_thread.start()
+
         # Block until the prefetch queue is filled
         while prefetch_queue.qsize() < self.prefetch_depth:
             time.sleep(0.1)
@@ -430,6 +431,20 @@ class StreamDataLoader:
                     print(
                         f"Warning: Thread {thread.name} did not terminate within timeout"
                     )
+
+        # Clean up prefetch thread
+        if hasattr(self, "prefetch_thread") and self.prefetch_thread.is_alive():
+            self.prefetch_thread.join(timeout=1.0)
+            if self.prefetch_thread.is_alive():
+                print(
+                    f"Warning: Prefetch thread {self.prefetch_thread.name} did not terminate within timeout"
+                )
+
+        # Clear JAX caches to free memory
+        try:
+            jax.clear_caches()
+        except Exception:
+            pass  # Ignore errors during cleanup
 
     def __del__(self):
         """

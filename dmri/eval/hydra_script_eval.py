@@ -22,6 +22,7 @@ import numpy as np
 from flax import nnx
 from omegaconf import DictConfig, OmegaConf
 
+
 from dmri.eval.export_metrics import compute_reconstruction_error
 from dmri.eval.export_models import export_model_selection_to_files
 from dmri.eval.export_theta import export_thetas_to_files_ball3stick
@@ -32,7 +33,7 @@ from dmri.eval.sampling_methods import (
     eval_in_batches,
 )
 from dmri.eval.selection import select_models
-from dmri.simulators import acquisition_scheme
+from dmri.simulators.acquisition_scheme import ssfp_acquisition_scheme
 from dmri.train.utils import load_checkpoint
 
 logo = r"""
@@ -73,29 +74,30 @@ def _main(cfg: DictConfig):
     log.info(f"Loading data from {cfg.path}")
 
     # Load data
-    data, data_norm, brain_mask, bvals, bvecs = load_and_process_data(
-        cfg.path,
-        cfg.brain_mask,
-        cfg.mri_data,
-        cfg.bvals_data,
-        cfg.bvecs_data,
-        cfg.round_bvals,
+    data_type_params = dict(cfg.data_type)
+    data, data_norm, brain_mask, acq = load_and_process_data(
+        cfg.path, **data_type_params
     )
 
     # Only infer within the brain mask
     full_data_flat = data_norm.reshape(-1, data_norm.shape[-1])
     brain_mask_flat = brain_mask.reshape(-1)
-    acq = acquisition_scheme(bvals, bvecs)
     full_data_flat_in_brain = full_data_flat[brain_mask_flat, :]
     full_data_flat_in_brain = np.nan_to_num(
         full_data_flat_in_brain, nan=0.0, posinf=0.0, neginf=0.0
     )
+    # Flatten acq if necessary
+    if isinstance(acq, ssfp_acquisition_scheme):
+        acq.T1_raw = jnp.array(acq.T1_raw[brain_mask])
+        acq.T2_raw = jnp.array(acq.T2_raw[brain_mask])
+        acq.B1 = jnp.array(acq.B1[brain_mask])
     log.info(
         f"Full data flat in brain quantiles 1%, 10%, 50%, 90%, 99%: {np.quantile(full_data_flat_in_brain, [0.01, 0.1, 0.5, 0.9, 0.99])}"
     )
+    log.info(f"Acquisition scheme: {jax.tree_util.tree_map(lambda x: x.shape, acq)}")
 
     # Clip outliers
-    if cfg.clip_outliers:
+    if cfg.data_type.clip_outliers:
         exclude_outliers = np.quantile(full_data_flat_in_brain, 0.999)
         full_data_flat_in_brain = np.clip(full_data_flat_in_brain, 0, exclude_outliers)
 
@@ -278,6 +280,7 @@ def sample_theta(cfg, key, model, acq, data, logger, model_mask=None):
             logger=logger,
         )
     else:
+        print("this case")
         thetas_full = eval_in_batches(
             sample_theta_fn,
             key,

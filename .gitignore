@@ -2,6 +2,7 @@
 *.nii.gz
 *.pkl
 outputs/
+multirun/
 data/
 tmp/
 # Byte-compiled / optimized / DLL files
