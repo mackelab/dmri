@@ -14,38 +14,133 @@ def eval_in_batches(fn, key, *data, batch_size=10_000, logger=None, min_batch_si
     else:
         print_fn = print
 
-    current_batch_size = batch_size
-    batch_start = 0
+    # Check number of available devices
+    devices = jax.devices()
+    num_devices = len(devices)
 
-    while batch_start < data[0].shape[0]:
-        try:
-            key, subkey = jax.random.split(key)
+    if num_devices > 1:
+        # Use pmap when multiple devices are available
+        print_fn(f"Using pmap with {num_devices} devices")
+
+        # Split batch size across devices
+        device_batch_size = batch_size // num_devices
+        if device_batch_size < min_batch_size:
             print_fn(
-                f"Evaluating batch {batch_start} with batch size {current_batch_size}"
+                f"Warning: device batch size {device_batch_size} is below minimum {min_batch_size}"
             )
-            batch_end = min(batch_start + current_batch_size, data[0].shape[0])
-            batch_data = jax.tree_util.tree_map(
-                lambda x: x[batch_start:batch_end], data
-            )
-            batch_keys = jax.random.split(subkey, batch_data[0].shape[0])
-            batch_res = fn(batch_keys, *batch_data)
-            batch_res = np.array(batch_res)
-            eval_results.append(batch_res)
-            batch_start = batch_end
-        except Exception as e:
-            if (
-                "out of memory" in str(e).lower()
-                and current_batch_size > min_batch_size
-            ):
+            device_batch_size = min_batch_size
+
+        # Create pmap function
+        @jax.pmap
+        def pmap_fn(device_key, *device_data):
+            # Split the device key for the batch
+            batch_keys = jax.random.split(device_key, device_data[0].shape[0])
+            return fn(batch_keys, *device_data)
+
+        # Use device_batch_size * num_devices as the effective batch size
+        current_batch_size = device_batch_size * num_devices
+        batch_start = 0
+
+        while batch_start < data[0].shape[0]:
+            try:
+                key, subkey = jax.random.split(key)
                 print_fn(
-                    f"Out of memory error, reducing batch size from {current_batch_size} to {current_batch_size // 2}"
+                    f"Evaluating batch {batch_start} with batch size {current_batch_size} ({device_batch_size} per device across {num_devices} devices)"
                 )
-                # Clear caches
-                jax.clear_caches()
-                current_batch_size = current_batch_size // 2
-                continue
-            else:
-                raise e
+                batch_end = min(batch_start + current_batch_size, data[0].shape[0])
+                batch_data = jax.tree_util.tree_map(
+                    lambda x: x[batch_start:batch_end], data
+                )
+
+                # Split batch data across devices
+                original_batch_size = batch_data[0].shape[0]
+                device_batch_size_actual = original_batch_size // num_devices
+
+                # Pad if necessary to make it divisible by num_devices
+                if original_batch_size % num_devices != 0:
+                    padding_size = num_devices - (original_batch_size % num_devices)
+                    batch_data = jax.tree_util.tree_map(
+                        lambda x: jnp.pad(
+                            x, ((0, padding_size),) + ((0, 0),) * (x.ndim - 1)
+                        ),
+                        batch_data,
+                    )
+                    device_batch_size_actual = batch_data[0].shape[0] // num_devices
+
+                # Reshape data for pmap (num_devices, device_batch_size, ...)
+                pmap_data = jax.tree_util.tree_map(
+                    lambda x: x.reshape(
+                        num_devices, device_batch_size_actual, *x.shape[1:]
+                    ),
+                    batch_data,
+                )
+
+                # Split keys for each device
+                device_keys = jax.random.split(subkey, num_devices)
+
+                # Run pmap
+                pmap_results = pmap_fn(device_keys, *pmap_data)
+
+                # Reshape results back and remove padding
+                original_batch_size = batch_data[0].shape[0]
+                batch_res = jax.tree_util.tree_map(
+                    lambda x: x.reshape(-1, *x.shape[2:])[:original_batch_size],
+                    pmap_results,
+                )
+
+                batch_res = np.array(batch_res)
+                eval_results.append(batch_res)
+                batch_start = batch_end
+            except Exception as e:
+                if (
+                    "out of memory" in str(e).lower()
+                    and current_batch_size > min_batch_size * num_devices
+                ):
+                    print_fn(
+                        f"Out of memory error, reducing batch size from {current_batch_size} to {current_batch_size // 2}"
+                    )
+                    # Clear caches
+                    jax.clear_caches()
+                    current_batch_size = current_batch_size // 2
+                    device_batch_size = current_batch_size // num_devices
+                    continue
+                else:
+                    raise e
+    else:
+        # Fallback to original single-device implementation
+        print_fn("Using single device implementation")
+        current_batch_size = batch_size
+        batch_start = 0
+
+        while batch_start < data[0].shape[0]:
+            try:
+                key, subkey = jax.random.split(key)
+                print_fn(
+                    f"Evaluating batch {batch_start} with batch size {current_batch_size}"
+                )
+                batch_end = min(batch_start + current_batch_size, data[0].shape[0])
+                batch_data = jax.tree_util.tree_map(
+                    lambda x: x[batch_start:batch_end], data
+                )
+                batch_keys = jax.random.split(subkey, batch_data[0].shape[0])
+                batch_res = fn(batch_keys, *batch_data)
+                batch_res = np.array(batch_res)
+                eval_results.append(batch_res)
+                batch_start = batch_end
+            except Exception as e:
+                if (
+                    "out of memory" in str(e).lower()
+                    and current_batch_size > min_batch_size
+                ):
+                    print_fn(
+                        f"Out of memory error, reducing batch size from {current_batch_size} to {current_batch_size // 2}"
+                    )
+                    # Clear caches
+                    jax.clear_caches()
+                    current_batch_size = current_batch_size // 2
+                    continue
+                else:
+                    raise e
 
     return np.concatenate(eval_results, axis=0)
 

@@ -4,8 +4,8 @@ import socket
 
 import jax
 
-memory_fraction = 0.98  # Use 98% of available memory
-os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = str(memory_fraction)
+# memory_fraction = 0.98  # Use 98% of available memory
+# os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = str(memory_fraction)
 
 # Compilation cache!
 jax.config.update("jax_compilation_cache_dir", ".jax_cache")
