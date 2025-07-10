@@ -14,6 +14,9 @@ def eval_in_batches(fn, key, *data, batch_size=10_000, logger=None, min_batch_si
     else:
         print_fn = print
 
+    # Capture expected total size for safety check
+    expected_total_size = data[0].shape[0]
+
     # Check number of available devices
     devices = jax.devices()
     num_devices = len(devices)
@@ -82,7 +85,6 @@ def eval_in_batches(fn, key, *data, batch_size=10_000, logger=None, min_batch_si
                 pmap_results = pmap_fn(device_keys, *pmap_data)
 
                 # Reshape results back and remove padding
-                original_batch_size = batch_data[0].shape[0]
                 batch_res = jax.tree_util.tree_map(
                     lambda x: x.reshape(-1, *x.shape[2:])[:original_batch_size],
                     pmap_results,
@@ -142,7 +144,16 @@ def eval_in_batches(fn, key, *data, batch_size=10_000, logger=None, min_batch_si
                 else:
                     raise e
 
-    return np.concatenate(eval_results, axis=0)
+    result = np.concatenate(eval_results, axis=0)
+
+    # Safety check: ensure the result has the correct total dimensions
+    if result.shape[0] != expected_total_size:
+        raise ValueError(
+            f"Result shape mismatch: expected first dimension to be {expected_total_size}, "
+            f"but got {result.shape[0]}. This indicates a bug in the batching logic."
+        )
+
+    return result
 
 
 def build_mask_sample_fn(method, num_samples, model, acq, p_mask):
