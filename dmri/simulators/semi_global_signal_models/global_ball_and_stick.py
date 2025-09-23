@@ -49,6 +49,11 @@ class GlobalBall(Ball):
     """Samples Ball compartment parameters conditioned on fiber representation."""
 
     @classmethod
+    def log_signal_fn(cls, acq: acquisition_scheme, lam: ArrayLike, rng=None) -> ArrayLike:
+        in_axes = (None, 0, None if rng is None else 0)
+        return vmap3d(super().log_signal_fn, in_axes=in_axes)(acq, lam, rng)
+
+    @classmethod
     def to_theta(cls, lam: ArrayLike, fiber_field: FiberRepresentation | None = None) -> jnp.ndarray:
         del fiber_field
         return vmap3d(super().to_theta)(lam)
@@ -63,11 +68,8 @@ class GlobalStick(Stick):
 
     @classmethod
     def log_signal_fn(cls, acq: acquisition_scheme, mu: ArrayLike, lam_par: float, rng=None) -> ArrayLike:
-        return vmap3d(partial(super().log_signal_fn, acq))(mu, lam_par, rng)
-
-    @classmethod
-    def signal_fn(cls, acq: acquisition_scheme, *args, **kwargs) -> ArrayLike:
-        return vmap3d(partial(super().signal_fn, acq))(*args, **kwargs)
+        in_axes = (None, 0, 0, None if rng is None else 0)
+        return vmap3d(super().log_signal_fn, in_axes=in_axes)(acq, mu, lam_par, rng)
 
     @classmethod
     def to_theta(cls, mu: ArrayLike, lam_par: ArrayLike, fiber_field: FiberRepresentation | None = None) -> jnp.ndarray:
@@ -85,16 +87,17 @@ class GlobalStick(Stick):
             mu1_normalized = (mu_override[1] + jnp.pi) / (2 * jnp.pi)
             return jnp.array([theta_lam, mu0_normalized, mu1_normalized], dtype=jnp.float32)
         else:
-            return super().to_theta(mu, lam_par)
+            return vmap3d(super().to_theta)(mu, lam_par)
     @classmethod
     def to_params(cls, theta: ArrayLike, fiber_field: FiberRepresentation | None = None) -> tuple[jnp.ndarray, float]:
         if fiber_field is not None:
             # If we get a fiber representation we have to replace the theta responsible for the directions
             # with the fiber tangent
-            theta = jax.scipy.stats.norm.cdf(theta)
-            lam_par = theta[0] * (cls.max_lam - cls.min_lam) + cls.min_lam
+            mu_uncond, lam_par = vmap3d(super().to_params)(theta)
+            no_fiber_mask = jnp.all(fiber_field == 0, axis=-1)
             mu_cart_override = fiber_field
             mu_override = vmap3d(cartesian_to_unitsphere)(mu_cart_override)
+            mu_override = jnp.where(no_fiber_mask[..., None], mu_uncond, mu_override)
             return mu_override, lam_par
         else:
-            return super().from_theta(theta)
+            return vmap3d(super().to_params)(theta)
