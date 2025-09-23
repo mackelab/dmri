@@ -35,7 +35,7 @@ class Ball(SignalCompartment):
     def to_params(cls, theta: ArrayLike) -> tuple:
         """Convert the parameter space theta to the lambda value."""
         theta = jax.scipy.stats.norm.cdf(theta)
-        lam = theta[0] * (cls.lam_max - cls.lam_min) + cls.lam_min
+        lam = theta[...,0] * (cls.lam_max - cls.lam_min) + cls.lam_min
         return (lam,)
 
     @classmethod

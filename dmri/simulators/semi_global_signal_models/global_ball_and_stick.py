@@ -1,112 +1,100 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
 from functools import partial
-from typing import Any
+from typing import Any, Sequence
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 from jax.typing import ArrayLike
 
 from dmri.simulators import Ball, BallStick, Stick
+from dmri.simulators.acquisition_scheme import (
+    acquisition_scheme,
+    random_hcp_acquisition,
+)
 from dmri.simulators.base import SignalCompartment
+from dmri.utils.dmriutils import cartesian_to_unitsphere, unitsphere_to_cartesian
 
+from .curves3d import VoxelizedCurve
 from .fiber_prior import FiberPrior
 
+def vmap3d(f, in_axes=0):
+    return jax.vmap(jax.vmap(jax.vmap(f, in_axes=in_axes), in_axes=in_axes), in_axes=in_axes)
 
-class GlobalBallStick(SignalCompartment):
-    def __init__(self, n_voxels: int = 4):
-        self.fiber_prior = FiberPrior(n_voxels, 2)
-        # Not any fiber vs. 1 fiber
-        self.num_fiber_probs = jnp.array([0.2, 0.8])
+class FiberConditionedFractionPrior():
+    """Deterministic Ball/Stick fractions conditioned on fiber presence."""
 
-    def log_signal(self, bvals: ArrayLike, bvecs: ArrayLike, rng=None) -> ArrayLike:
-        """Compute the log signal for given b-values and b-vectors."""
-        rng1, rng2, rng3, rng4 = jax.random.split(rng, 4)
-        volumes_fibers, tangent_fibers = self._sample_n_fibers(rng1)
-        fiber_fraction = self._fiber_conditional_fraction_prior(rng2, volumes_fibers)
-        fiber_direction = self._fiber_conditional_direction_prior(tangent_fibers, rng3)
+    def __init__(
+        self,
+        alpha: ArrayLike,
+        beta: float = 8.0,
+    ) -> None:
+        self.alpha = jnp.asarray(alpha, dtype=jnp.float32)
+        self.beta = float(beta)
 
-        fiber_direction = fiber_direction[0]
-        fiber_fraction = fiber_fraction.T
-
-        @partial(jax.vmap, in_axes=(0, 0, None, None, None))
-        @partial(jax.vmap, in_axes=(0, 0, None, None, None))
-        @partial(jax.vmap, in_axes=(0, 0, None, None, None))
-        def _single_voxel_log_signal(
-            fiber_fraction, fiber_direction, bvals, bvecs, rng
-        ):
-            # print(fiber_fraction.shape, fiber_direction.shape)
-            # jax.debug.print("{fiber_fraction}", fiber_fraction=fiber_fraction)
-            ball = Ball(0.01)
-            stick = Stick(0.001, fiber_direction)
-            ball_stick = BallStick(fiber_fraction, [ball, stick], [])
-            return ball_stick.log_signal(bvals, bvecs)
-
-        # Compute the signal for the ball
-        return _single_voxel_log_signal(
-            fiber_fraction, fiber_direction, bvals, bvecs, rng4
-        )
-
-    def fit(self, logS, bvals, bvecs):
-        raise NotImplementedError("Fitting not implemented for GlobalBallStick")
-
-    @classmethod
-    def to_params(cls, theta):
-        return ()
-
-    @classmethod
-    def to_theta(cls, *kwargs, **params):
-        return jnp.array([])
-
-    def _sample_n_fibers(self, rng: Any) -> int:
-        """Sample the number of fibers."""
-
-        max_fibers = len(self.num_fiber_probs) - 1
-        key_num, *key_fibers = jax.random.split(rng, 1 + max_fibers)
-        key_fibers = jnp.array(key_fibers)
-        # key_fibers = key_fibers.reshape(-1, key_fibers.shape[-1])
-        volumes_fibers, tangent_fibers = jax.vmap(self.fiber_prior.sample)(key_fibers)
-
-        num_active_fibers = jax.random.choice(
-            key_num, jnp.arange(max_fibers + 1), p=self.num_fiber_probs
-        )
-        # Zero out the inactive fibers
-        volumes_fibers = jnp.where(
-            jnp.arange(max_fibers) < num_active_fibers, volumes_fibers, 0
-        )
-        tangent_fibers = jnp.where(
-            jnp.arange(max_fibers) < num_active_fibers, tangent_fibers, 0
-        )
-        return volumes_fibers, tangent_fibers
-
-    def _fiber_conditional_fraction_prior(self, rng, volumes_fibers):
-        """Compute the conditional prior of the fiber."""
-        # Per fiber volumes fractions (Fs, *voxels)
-        is_fiber = jnp.where(volumes_fibers > 0, True, False)
-
-        # If there is no fiber -> is a ball alphas[0] = 1, alphas[1] = 0.1
-        # If there is a fiber -> alphas[0] = 0.1, alphas[1] = 1
-        alpha1 = is_fiber.astype(jnp.float32) + 0.01
-        alpha2 = (~is_fiber) + 0.01
-        alpha1 = 10 * alpha1
-        alpha2 = 10 * alpha2
-
-        alphas = jnp.concatenate([alpha2, alpha1], axis=0)
-
-        fractions = jax.random.dirichlet(rng, alpha=alphas.T).T
-
+    def sample(self, fiber_field: VoxelizedCurve, rng: jax.Array) -> jnp.ndarray:
+        volumes = fiber_field.volume_fraction
+        voxel_size = (volumes.shape[-3], volumes.shape[-2], volumes.shape[-1])
+        volumes = volumes.reshape((-1,) + voxel_size)
+        ball_volume = 1-volumes.mean(axis=0)
+        all_volumes = jnp.concatenate([ball_volume[None, ...], volumes], axis=0)
+        alpha_updated = self.alpha[:, None, None, None] + self.beta * all_volumes
+        fractions = jax.random.dirichlet(rng, alpha_updated.T, shape=voxel_size).T
         return fractions
 
-    def _fiber_conditional_direction_prior(self, tangent_fibers, rng):
-        zero_tangent = jnp.array([0.0, 0.0, 0.0])
-        random_tangents = jax.random.normal(rng, tangent_fibers.shape)
-        random_tangents = random_tangents / jnp.linalg.norm(
-            random_tangents, axis=-1, keepdims=True
-        )
-        tangent_fibers_normed = tangent_fibers / jnp.linalg.norm(
-            tangent_fibers, axis=-1, keepdims=True
-        )
-        tangent_fibers_normed = jnp.nan_to_num(tangent_fibers_normed)
-        return jnp.where(
-            jnp.all(tangent_fibers == zero_tangent, axis=-1, keepdims=True),
-            random_tangents,
-            tangent_fibers_normed,
-        )
+
+class GlobalBall(Ball):
+    """Samples Ball compartment parameters conditioned on fiber representation."""
+
+    @classmethod
+    def to_theta(cls, lam: ArrayLike, fiber_field: FiberRepresentation | None = None) -> jnp.ndarray:
+        del fiber_field
+        return vmap3d(super().to_theta)(lam)
+
+    @classmethod
+    def to_params(cls, theta: ArrayLike, fiber_field: FiberRepresentation | None = None) -> float:
+        del fiber_field
+        return vmap3d(super().to_params)(theta)
+
+
+class GlobalStick(Stick):
+
+    @classmethod
+    def log_signal_fn(cls, acq: acquisition_scheme, mu: ArrayLike, lam_par: float, rng=None) -> ArrayLike:
+        return vmap3d(partial(super().log_signal_fn, acq))(mu, lam_par, rng)
+
+    @classmethod
+    def signal_fn(cls, acq: acquisition_scheme, *args, **kwargs) -> ArrayLike:
+        return vmap3d(partial(super().signal_fn, acq))(*args, **kwargs)
+
+    @classmethod
+    def to_theta(cls, mu: ArrayLike, lam_par: ArrayLike, fiber_field: FiberRepresentation | None = None) -> jnp.ndarray:
+        if fiber_field is not None:
+            lam_par = (lam_par - cls.min_lam) / (cls.max_lam - cls.min_lam)
+            theta_lam = jax.scipy.stats.norm.ppf(lam_par)
+            mu_cart_override = fiber_field
+            # Project to upper hemisphere
+            need_to_flip = mu_cart_override[...,2] < 0
+            mu_cart_override = jnp.where(need_to_flip[..., None], -mu_cart_override, mu_cart_override)
+            mu_override = vmap3d(cartesian_to_unitsphere)(mu_cart_override)
+            mu0_normalized = 1 - jnp.cos(
+                mu_override[0]
+            )  # Ensures uniform distribution on upper hemisphere
+            mu1_normalized = (mu_override[1] + jnp.pi) / (2 * jnp.pi)
+            return jnp.array([theta_lam, mu0_normalized, mu1_normalized], dtype=jnp.float32)
+        else:
+            return super().to_theta(mu, lam_par)
+    @classmethod
+    def to_params(cls, theta: ArrayLike, fiber_field: FiberRepresentation | None = None) -> tuple[jnp.ndarray, float]:
+        if fiber_field is not None:
+            # If we get a fiber representation we have to replace the theta responsible for the directions
+            # with the fiber tangent
+            theta = jax.scipy.stats.norm.cdf(theta)
+            lam_par = theta[0] * (cls.max_lam - cls.min_lam) + cls.min_lam
+            mu_cart_override = fiber_field
+            mu_override = vmap3d(cartesian_to_unitsphere)(mu_cart_override)
+            return mu_override, lam_par
+        else:
+            return super().from_theta(theta)
