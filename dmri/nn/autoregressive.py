@@ -17,7 +17,7 @@ class DMRIModelSelectionConfig:
     num_heads: int = 4
     widening_factor: int = 3
     attn_size: int = 16
-    dropout_rate: float | None = None
+    dropout_rate: float = 0.0
     context_dim = None
 
 
@@ -27,7 +27,7 @@ class DMRIModelSelectionAmortizedPriorConfig:
     num_heads: int = 4
     widening_factor: int = 3
     attn_size: int = 16
-    dropout_rate: float | None = None
+    dropout_rate: float = 0.0
     context_dim: int = 64  # Context dimension embedding
     mask_prior_dim: int = 1  # Scalar mask probability
 
@@ -47,7 +47,7 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         num_layers: int = 4,
         widening_factor: int = 4,
         attn_size: int = 16,
-        dropout_rate: int = None,
+        dropout_rate: float = 0.0,
         context_dim: Optional[int] = None,
         enable_cross_attention: bool = True,
     ):

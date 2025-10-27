@@ -192,14 +192,26 @@ ROUNDTRIP_TEST_CONFIGS = [
     pytest.param(
         jnp.array([1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5]),  # alpha
         np.random.dirichlet(np.array([1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5])),
-        jnp.array(np.random.uniform(size=7) > 0.5),
+        jnp.array(np.random.uniform(size=7) > 0.5).at[2].set(True),
         id="random_7d_masked_bernoulli",
     ),
     pytest.param(
         jnp.array([1.0, 2.0, 1.0, 1.0, 2.0, 0.5, 0.5, 1.0, 1.0]),  # alpha
         np.random.dirichlet(np.array([1.0, 2.0, 1.0, 1.0, 2.0, 0.5, 0.5, 1.0, 1.0])),
-        jnp.array(np.random.uniform(size=9) > 0.5),
+        jnp.array(np.random.uniform(size=9) > 0.5).at[1].set(True),
         id="random_9d_masked_bernoulli",
+    ),
+    pytest.param(
+        jax.random.uniform(jax.random.key(0), shape=(15,)) + 0.5,  # alpha
+        np.random.dirichlet(jax.random.uniform(jax.random.key(0), shape=(15,)) + 0.5),
+        jnp.array(np.random.uniform(size=15) > 0.3).at[3].set(True),
+        id="random_15d_masked_bernoulli",
+    ),
+    pytest.param(
+        jax.random.uniform(jax.random.key(0), shape=(32,))*2 + 0.1,  # alpha
+        np.random.dirichlet(jax.random.uniform(jax.random.key(0), shape=(32,))*2 + 0.1),
+        jnp.array(np.random.uniform(size=32) > 0.5).at[0].set(True),
+        id="random_32d_masked_bernoulli",
     ),
 ]
 
@@ -273,11 +285,9 @@ def test_normal_dirichlet_invertibility(
     eps = dirichlet_to_normal(alpha, pi, mask)
     pi_recovered = normal_to_dirichlet(alpha, eps, mask)
 
-    print(eps)
-    print(pi_recovered)
     # The recovered pi should match the original pi
     assert jnp.allclose(pi, pi_recovered, rtol=1e-4, atol=1e-4), (
-        "normal_to_dirichlet should be the inverse of dirichlet_to_normal"
+        "normal_to_dirichlet should be the inverse of dirichlet_to_normal, error is {}, with mask {}".format(jnp.abs(pi - pi_recovered), mask)
     )
 
     # Test direction 2: eps -> pi -> eps_recovered
@@ -285,7 +295,7 @@ def test_normal_dirichlet_invertibility(
 
     # The recovered eps should match the original eps
     assert jnp.allclose(eps, eps_recovered, rtol=1e-4, atol=1e-4), (
-        "dirichlet_to_normal should be the inverse of normal_to_dirichlet"
+        "dirichlet_to_normal should be the inverse of normal_to_dirichlet, error is {}, with mask {}".format(jnp.abs(eps - eps_recovered), mask)
     )
 
     # Additional checks for numerical stability
@@ -321,4 +331,4 @@ def test_eps_mask(d, seed):
     pi = mask.astype(jnp.float32) / jnp.sum(mask)
     eps = dirichlet_to_normal(alpha, pi, mask)
     mask_pred = eps_mask(mask)
-    assert (~mask_pred == jnp.isclose(eps, 0.0)).all()
+    assert (~mask_pred == jnp.isclose(eps, 0.0)).all(), 'eps_mask did not identify zero eps correctly'
