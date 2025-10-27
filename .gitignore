@@ -121,6 +121,10 @@ ENV/
 env.bak/
 venv.bak/
 
+# uv (Astral) project files
+# Ignore the uv lockfile for libraries; commit it for apps if desired
+uv.lock
+
 # Spyder project settings
 .spyderproject
 .spyderworkspace

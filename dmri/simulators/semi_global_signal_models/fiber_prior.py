@@ -13,6 +13,46 @@ from .curves3d import (
 )
 
 
+@jax.tree_util.register_pytree_node_class
+class FiberField(VoxelizedCurve):
+    rng: jax.random.PRNGKey
+
+    def __init__(
+        self,
+        *,
+        curve: Curve3D,
+        diameter: Any,
+        grid: VoxelGrid,
+        rng: jax.random.PRNGKey,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(
+            curve=curve,
+            diameter=diameter,
+            grid=grid,
+            metadata=metadata,
+        )
+        self.rng = rng
+
+    def tree_flatten(self):
+        curve_flat, curve_tree = jax.tree_util.tree_flatten(self.curve)
+        children = (curve_flat, self.diameter, self.rng)
+        aux_data = (curve_tree, self.metadata, self.grid)
+        return children, aux_data
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        curve_flat, diameter, rng = children
+        curve_tree, metadata, grid = aux_data
+        curve = jax.tree_util.tree_unflatten(curve_tree, curve_flat)
+        return cls(
+            curve=curve,
+            diameter=diameter,
+            grid=grid,
+            metadata=metadata,
+            rng=rng,
+        )
+
 class FiberPrior:
     r"""
     A class for generating fiber prior distributions in 3D space.
@@ -51,15 +91,16 @@ class FiberPrior:
         self, rng: Any,
     ) -> VoxelizedCurve | tuple[VoxelizedCurve, Any]:
         """Sample from the fiber prior distribution and voxelize the result."""
-        rng1, rng2 = jax.random.split(rng)
+        rng1, rng2, rng3 = jax.random.split(rng, 3)
         degree = jax.random.choice(rng1, self.degree_values, p=self.degree_probs)
         spline = sample_splines(rng2, degree=degree, max_degree=self.max_degree)
-        voxelized = VoxelizedCurve(
-            spline,
+        fiber_rep = FiberField(
+            curve=spline,
             diameter=self.diameter,
             grid=self.grid,
+            rng=rng3,
         )
-        return voxelized
+        return fiber_rep
 
 
 def plot_voxelized_fiber_field(

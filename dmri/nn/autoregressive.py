@@ -32,7 +32,7 @@ class DMRIModelSelectionAmortizedPriorConfig:
     mask_prior_dim: int = 1  # Scalar mask probability
 
 
-class BinaryAutoregressiveDecoder(nnx.Module, experimental_pytree=True):
+class BinaryAutoregressiveDecoder(nnx.Module):
     model_dim: int = 64
     num_heads: int = 4
     num_layers: int = 4

@@ -29,7 +29,7 @@ def map_classes_to_indices(class_list: list, start_idx: int = 0):
     return dict(mapping)  # convert defaultdict back to a normal dict
 
 
-class Tokenizer(nnx.Module, experimental_pytree=True):
+class Tokenizer(nnx.Module):
     def __call__(self, *args, **kwds):
         return self.encode(*args, **kwds)
 
@@ -149,7 +149,7 @@ class StructuredTokenizer(Tokenizer):
         return out
 
 
-class DMRITokenizer(Tokenizer, experimental_pytree=True):
+class DMRITokenizer(Tokenizer):
     """
     A tokenizer for dMRI multi-compartment model configurations. It handles embedding
     and decoding of model types, noise types, and associated parameters.

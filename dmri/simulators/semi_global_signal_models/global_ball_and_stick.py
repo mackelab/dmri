@@ -18,13 +18,14 @@ from dmri.simulators.acquisition_scheme import (
 from dmri.simulators.base import SharedParameterState, SignalCompartment
 from dmri.utils.dmriutils import cartesian_to_unitsphere, unitsphere_to_cartesian
 
-from .curves3d import VoxelizedCurve
-from .fiber_prior import FiberPrior
+from dmri.simulators.semi_global_signal_models.fiber_prior import (
+    FiberField,
+)
 
 def vmap3d(f, in_axes=0):
     return jax.vmap(jax.vmap(jax.vmap(f, in_axes=in_axes), in_axes=in_axes), in_axes=in_axes)
 
-class FiberConditionedFractionPrior():
+class FiberConditionedFractionPrior:
     """Deterministic Ball/Stick fractions conditioned on fiber presence."""
 
     def __init__(
@@ -36,20 +37,117 @@ class FiberConditionedFractionPrior():
         self.beta = float(beta)
 
     @classmethod
-    def fiber_to_alpha(
-        cls, alpha, beta, fiber_field: VoxelizedCurve
-    ):
-        volumes = fiber_field.volume_fraction
-        voxel_size = (volumes.shape[-3], volumes.shape[-2], volumes.shape[-1])
-        volumes = volumes.reshape((-1,) + voxel_size)
-        ball_volume = 1-volumes.mean(axis=0)
-        all_volumes = jnp.concatenate([ball_volume[None, ...], volumes], axis=0)
-        alpha_updated = alpha[:, None, None, None] + beta * all_volumes
-        return alpha_updated
+    def _normalize_fiber_sequence(
+        cls, fiber_field: FiberField | Sequence[FiberField | None], num_components: int
+    ) -> tuple[FiberField | None, ...]:
+        if isinstance(fiber_field, Sequence):
+            fiber_seq = list(fiber_field)
+        else:
+            fiber_seq = [fiber_field]
 
-    def sample(self, fiber_field: VoxelizedCurve, rng: jax.Array) -> jnp.ndarray:
-        alpha_updated = self.fiber_to_alpha(self.alpha, self.beta, fiber_field)
-        fractions = jax.random.dirichlet(rng, alpha_updated.T, shape=voxel_size).T
+        if num_components > 1 and len(fiber_seq) == num_components - 1:
+            fiber_seq = [None] + fiber_seq
+
+        if len(fiber_seq) != num_components:
+            raise ValueError(
+                f"Expected {num_components} fiber fields (including None for isotropic components), "
+                f"got {len(fiber_seq)}"
+            )
+
+        return tuple(fiber_seq)
+
+    @staticmethod
+    def _resolve_rng(fiber_fields: Sequence[FiberField | None]) -> jax.random.KeyArray:
+        for field in fiber_fields:
+            if isinstance(field, FiberField):
+                return field.rng
+        raise ValueError("At least one FiberField with an RNG key must be provided")
+
+    @classmethod
+    def fiber_to_alpha(
+        cls,
+        alpha: ArrayLike,
+        beta: float,
+        fiber_fields: Sequence[FiberField | None],
+        component_mask: ArrayLike | None = None,
+    ) -> tuple[jnp.ndarray, jnp.ndarray, tuple[int, int, int]]:
+        alpha_arr = jnp.asarray(alpha, dtype=jnp.float32)
+        mask_bool = None
+        if component_mask is not None:
+            mask_arr = jnp.asarray(component_mask, dtype=jnp.bool_).reshape(-1)
+            if mask_arr.shape[0] != alpha_arr.shape[0]:
+                raise ValueError(
+                    "component_mask must have the same length as alpha"
+                )
+            mask_bool = np.asarray(mask_arr, dtype=bool)
+        else:
+            mask_bool = np.ones(alpha_arr.shape[0], dtype=bool)
+            mask_arr = jnp.asarray(mask_bool, dtype=jnp.bool_)
+
+        voxel_shape: tuple[int, int, int] | None = None
+        volume_fields: list[jnp.ndarray | None] = []
+        for field in fiber_fields:
+            if isinstance(field, FiberField):
+                vf = jnp.asarray(field.volume_fraction, dtype=jnp.float32)
+                if voxel_shape is None:
+                    voxel_shape = vf.shape
+                elif vf.shape != voxel_shape:
+                    raise ValueError("All fiber fields must share the same voxel shape")
+                volume_fields.append(vf)
+            else:
+                volume_fields.append(None)
+
+        if voxel_shape is None:
+            raise ValueError("At least one FiberField is required to infer the voxel grid")
+
+        zero_volume = jnp.zeros(voxel_shape, dtype=jnp.float32)
+        resolved_volumes = [
+            zero_volume if vf is None else vf for vf in volume_fields
+        ]
+
+        active_fiber_volumes = [
+            resolved_volumes[idx]
+            for idx in range(1, len(resolved_volumes))
+            if mask_bool[idx]
+        ]
+        if active_fiber_volumes:
+            stacked = jnp.stack(active_fiber_volumes, axis=0)
+            fiber_total = jnp.clip(stacked.sum(axis=0), 0.0, 1.0)
+        else:
+            fiber_total = jnp.zeros(voxel_shape, dtype=jnp.float32)
+
+        resolved_volumes[0] = jnp.clip(1.0 - fiber_total, 0.0, 1.0)
+
+        for idx, active in enumerate(mask_bool):
+            if not active:
+                resolved_volumes[idx] = jnp.zeros_like(resolved_volumes[idx])
+
+        all_volumes = jnp.stack(resolved_volumes, axis=0)
+        alpha_updated = alpha_arr[:, None, None, None] + float(beta) * all_volumes
+        return alpha_updated, mask_arr, voxel_shape
+
+    def sample(
+        self,
+        fiber_field: FiberField | Sequence[FiberField | None],
+        component_mask: ArrayLike | None = None,
+    ) -> jnp.ndarray:
+        fiber_fields = self._normalize_fiber_sequence(
+            fiber_field, int(self.alpha.shape[0])
+        )
+        alpha_updated, mask_arr, _voxel_shape = self.fiber_to_alpha(
+            self.alpha, self.beta, fiber_fields, component_mask
+        )
+        rng = self._resolve_rng(fiber_fields)
+
+        concentrations = jnp.moveaxis(alpha_updated, 0, -1)
+        fractions = jax.random.dirichlet(rng, concentrations)
+
+        mask_broadcast = mask_arr.reshape((1,) * (fractions.ndim - 1) + (mask_arr.shape[0],))
+        fractions = jnp.where(mask_broadcast, fractions, 0.0)
+        denom = fractions.sum(axis=-1, keepdims=True)
+        denom_safe = jnp.where(denom > 0, denom, jnp.ones_like(denom))
+        fractions = fractions / denom_safe
+        fractions = jnp.where(denom > 0, fractions, 0.0)
         return fractions
 
 
@@ -62,12 +160,12 @@ class GlobalBall(Ball):
         return vmap3d(super().log_signal_fn, in_axes=in_axes)(acq, lam, rng)
 
     @classmethod
-    def to_theta(cls, lam: ArrayLike, fiber_field: FiberRepresentation | None = None) -> jnp.ndarray:
+    def to_theta(cls, lam: ArrayLike, fiber_field: FiberField | None = None) -> jnp.ndarray:
         del fiber_field
         return vmap3d(super().to_theta)(lam)
 
     @classmethod
-    def to_params(cls, theta: ArrayLike, fiber_field: FiberRepresentation | None = None) -> float:
+    def to_params(cls, theta: ArrayLike, fiber_field: FiberField | None = None) -> float:
         del fiber_field
         return vmap3d(super().to_params)(theta)
 
@@ -80,7 +178,7 @@ class GlobalStick(Stick):
         return vmap3d(super().log_signal_fn, in_axes=in_axes)(acq, mu, lam_par, rng)
 
     @classmethod
-    def to_theta(cls, mu: ArrayLike, lam_par: ArrayLike, fiber_field: FiberRepresentation | None = None) -> jnp.ndarray:
+    def to_theta(cls, mu: ArrayLike, lam_par: ArrayLike, fiber_field: FiberField | None = None) -> jnp.ndarray:
         if fiber_field is not None:
             theta = vmap3d(super().to_theta)(mu, lam_par)
             theta_lam, theta_mu = theta[..., :1], theta[..., 1:]
@@ -101,7 +199,7 @@ class GlobalStick(Stick):
         else:
             return vmap3d(super().to_theta)(mu, lam_par)
     @classmethod
-    def to_params(cls, theta: ArrayLike, fiber_field: FiberRepresentation | None = None) -> tuple[jnp.ndarray, float]:
+    def to_params(cls, theta: ArrayLike, fiber_field: FiberField | None = None) -> tuple[jnp.ndarray, float]:
         if fiber_field is not None:
             # If we get a fiber representation we have to replace the theta responsible for the directions
             # with the fiber tangent
@@ -125,6 +223,7 @@ class GlobalMultiCompartment(SignalCompartment):
     model_types: list
     noise_types: list
     fraction_prior: ArrayLike  # Dirichelt alpha values
+    fiber_conditioned_fraction: type[FiberConditionedFractionPrior] = FiberConditionedFractionPrior
     shared_parameter_type: type[SharedParameterState] | None = None
     normalizing_fn: Callable | None = None
     pre_normalizing_fn: Callable | None = None
@@ -246,26 +345,11 @@ class GlobalMultiCompartment(SignalCompartment):
         return thetas_split
 
     @classmethod
-    def fraction_conditioned_on_fiber(
-        cls,
-        fiber_field: Sequence[FiberRepresentation],
-    ):
-        # NOTE: This is specific for Ball and Stick models
-        volumes = [f.volume_fraction[..., None] for f in fiber_field if f is not None]
-        avg_volumes = sum(volumes)/len(volumes)
-        ball_volume = 1-avg_volumes
-        all_volumes = jnp.concatenate([ball_volume, avg_volumes], axis=-1)
-        updated_alpha = cls.fraction_prior[None, None, None,:] + 8.0 * all_volumes
-        return updated_alpha
-
-
-
-    @classmethod
     def to_params(
         cls,
         theta: ArrayLike,
         model_mask: ArrayLike | None = None,
-        fiber_field: Sequence[FiberRepresentation] | None = None,
+        fiber_field: Sequence[FiberField] | None = None,
     ):
         thetas_split = cls.split_theta(theta)
         fractions = thetas_split[0]
@@ -286,8 +370,11 @@ class GlobalMultiCompartment(SignalCompartment):
         else:
             component_mask = None
         # Conditional fractions
-        cond_alpha  = cls.fraction_conditioned_on_fiber(fiber_field) if fiber_field is not None else cls.fraction_prior[None, None, None,:]
-        fractions = vmap3d(normal_to_dirichlet,in_axes=(0,0,None))(cond_alpha, fractions, component_mask)
+        fiber_cond_prior = cls.fiber_conditioned_fraction(cls.fraction_prior)
+        if fiber_field is not None:
+            fractions = fiber_cond_prior.sample(fiber_field, component_mask)
+        else:
+            fractions = vmap3d(normal_to_dirichlet,in_axes=(None,0,None))(cls.fraction_prior, fractions, component_mask)
 
         # Apply shared parameter
         if shared_parameter is not None:
@@ -322,17 +409,16 @@ class GlobalMultiCompartment(SignalCompartment):
         model_compartments: list,
         noise_compartments: list,
         model_mask: ArrayLike | None = None,
-        fiber_field: Sequence[FiberRepresentation] | None = None,
+        fiber_field: Sequence[FiberField] | None = None,
         shared_parameter: SharedParameterState | None = None,
     ):
-        theta_fraction = model_fractions
         if model_mask is not None:
             component_mask = model_mask[: len(model_compartments)]
         else:
             component_mask = None
-        cond_alpha  = cls.fraction_conditioned_on_fiber(fiber_field) if fiber_field is not None else cls.fraction_prior[None, None, None,:]
-        theta_fraction = vmap3d(dirichlet_to_normal, in_axes=(0, 0, None))(
-            cond_alpha, theta_fraction, component_mask
+
+        theta_fraction = vmap3d(dirichlet_to_normal, in_axes=(None, 0, None))(
+            cls.fraction_prior, model_fractions, component_mask
         )
         theta_parts = [theta_fraction]
         if shared_parameter is not None:

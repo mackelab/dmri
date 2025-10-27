@@ -25,6 +25,14 @@ conda create -n dmri python=3.11
 conda activate dmri
 ```
 
+Alternatively, using uv for virtual environments:
+```bash
+# Create and activate a local venv in .venv
+uv venv -p 3.11
+source .venv/bin/activate  # macOS/Linux
+# On Windows (PowerShell): .\.venv\Scripts\Activate.ps1
+```
+
 ### Install the package
 
 To install the package, first clone the repository:
@@ -47,6 +55,62 @@ If you installed with `[dev]`, you can check if the installation was successful 
 ```bash
 pytest
 ```
+
+For linting and formatting, this project uses `ruff` exclusively:
+```bash
+# Lint and auto-fix
+ruff check --fix
+# Format code
+ruff format
+```
+
+### Install with uv (alternative)
+
+[uv](https://docs.astral.sh/uv/) is a fast Python package manager that can manage virtual environments and install from `pyproject.toml`.
+
+Install uv (one option):
+```bash
+# macOS/Linux (install script)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# or with Homebrew
+# brew install uv
+```
+
+Create and activate a virtual environment, then install dependencies from `pyproject.toml`:
+```bash
+# In the repository root
+uv venv -p 3.11           # or omit -p to use your current Python
+source .venv/bin/activate  # macOS/Linux
+# On Windows (PowerShell):
+# .\.venv\Scripts\Activate.ps1
+
+# Install the project (editable) and its dependencies
+uv sync
+```
+
+Extras and common variants:
+```bash
+# With GPU (CUDA 12) dependencies
+uv sync --extra cuda
+
+# With development dependencies (tests, lint, formatters)
+uv sync --dev
+
+# Combine as needed
+uv sync --dev --extra cuda
+```
+
+You can also run commands via uv without manual activation:
+```bash
+uv run dmri --help
+uv run pytest
+```
+
+Troubleshooting (zsh extras quoting):
+- If your shell is zsh, extras like `[dev]` are treated as a glob unless quoted. Use:
+  - `uv pip install -e '.[dev]'`
+  - or escape brackets: `uv pip install -e .\[dev]`
+- Alternatively, avoid `uv pip` for extras and prefer: `uv sync --dev` (and `--extra cuda`).
 
 ## Extra dependencies/gotchas
 

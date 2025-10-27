@@ -27,7 +27,7 @@ class DMRIEmbeddingConfig:
     embed_signals: str = "repeat"
 
 
-class BvalBvecSignalEmbeddingNet(nnx.Module, experimental_pytree=True):
+class BvalBvecSignalEmbeddingNet(nnx.Module):
     model_dim: int = 64
     num_heads: int = 4
     num_layers: int = 2
@@ -121,7 +121,7 @@ class SSFPEmbeddingNetConfig:
     use_flash_attention: bool = False
 
 
-class SSFPEmbeddingNet(nnx.Module, experimental_pytree=True):
+class SSFPEmbeddingNet(nnx.Module):
     model_dim: int = 64
     num_heads: int = 4
     num_layers: int = 2

@@ -22,7 +22,7 @@ class DMRIThetaInferenceConfig:
     dropout_rate: float | None = None
 
 
-class DiffusionTransformer(nnx.Module, experimental_pytree=True):
+class DiffusionTransformer(nnx.Module):
     def __init__(
         self,
         rngs,
