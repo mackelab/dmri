@@ -231,7 +231,7 @@ def _main(cfg: DictConfig):
                 optimizer_state=opt_state,
                 params_ema=None
                 if not cfg.train.track_ema
-                else jax.tree_map(lambda x: x, params),
+                else jax.tree_util.tree_map(lambda x: x, params),
             )
             if checkpoint is not None:
                 params = checkpoint["params"]
@@ -260,7 +260,7 @@ def _main(cfg: DictConfig):
     log.info(f"Maximum training time: {max_train_hours} hours")
     start_time = time.time()
 
-    params_ema = jax.tree_map(lambda x: x, params) if cfg.train.track_ema else None
+    params_ema = jax.tree_util.tree_map(lambda x: x, params) if cfg.train.track_ema else None
     ema_decay = cfg.train.ema_decay if cfg.train.track_ema else None
 
     while True:
@@ -272,7 +272,7 @@ def _main(cfg: DictConfig):
                 params, state, opt_state, data, subkey
             )
             if params_ema is not None:
-                params_ema = jax.tree_map(
+                params_ema = jax.tree_util.tree_map(
                     lambda x, y: x * ema_decay + y * (1 - ema_decay), params_ema, params
                 )
             step += 1

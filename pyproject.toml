@@ -19,7 +19,7 @@ dependencies = [
     "nibabel>=5.1.0",
     "pandas>=2.0.0",
     "probjax @ git+https://github.com/mackelab/probjax.git",
-    "orbax-checkpoint==0.11.2",
+    "orbax-checkpoint",
     "plotly",
     "optax",
     "absl-py"
