@@ -92,7 +92,7 @@ class SSFPInferenceModelConfig:
     )
 
 
-class DMRIInferenceModel(nnx.Module, experimental_pytree=True):
+class DMRIInferenceModel(nnx.Module):
     def __init__(self, cfg: DMRIInferenceModelConfig, rngs):
         self.cfg = cfg
         # Setup embedding net observations

@@ -13,9 +13,6 @@ dependencies = [
     "hydra-optuna-sweeper",
     "jupyter",
     "wandb",
-    "jax == 0.5.3",
-    "flax == 0.10.2",
-    "scipy",
     "matplotlib>=3.7.0",
     "tqdm>=4.65.0",
     "dipy>=1.7.0",
@@ -23,7 +20,6 @@ dependencies = [
     "pandas>=2.0.0",
     "probjax @ git+https://github.com/mackelab/probjax.git",
     "orbax-checkpoint==0.11.2",
-    "blackjax",
     "plotly",
     "optax",
     "absl-py"
@@ -34,8 +30,6 @@ dev = [
     "pytest>=7.3.1,<8.0.0",
     "pytest-cov>=4.1.0,<5.0.0",
     "ruff>=0.0.280,<1.0.0",
-    "black>=23.7.0,<24.0.0",
-    "isort>=5.12.0,<6.0.0",
     "mypy>=1.4.1,<2.0.0",
     "pre-commit>=3.3.3,<4.0.0"
 ]
@@ -52,21 +46,19 @@ dmri_eval = "dmri.eval.hydra_script_eval:main"
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
-[tool.black]
-line-length = 88
-target-version = ["py39"]
-include = '\\.pyi?$'
-
-[tool.isort]
-profile = "black"
-line_length = 88
-
 [tool.ruff]
 line-length = 88
 lint.select = ["E", "F", "B", "I", "W", "C4", "N", "UP"]
 lint.ignore = ["E501", "N806", "C408", "N803","N802"]
 target-version = "py39"
 fix = true
+
+[tool.ruff.format]
+docstring-code-format = true
+preview = true
+
+[tool.ruff.lint.isort]
+known-first-party = ["dmri"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401", "F403"]
