@@ -19,7 +19,7 @@ class DMRIThetaInferenceConfig:
     widening_factor: int = 3
     attn_size: int = 16
     context_dim: int = 64
-    dropout_rate: float | None = None
+    dropout_rate: float = 0.0
 
 
 class DiffusionTransformer(nnx.Module):
@@ -32,7 +32,7 @@ class DiffusionTransformer(nnx.Module):
         num_layers=6,
         attn_size=16,
         widening_factor=3,
-        dropout_rate=None,
+        dropout_rate=0.0,
         enable_cross_attention=True,
     ) -> None:
         self.time_embedding = GaussianFourierEmbedding(1, context_dim, rngs=rngs)
@@ -90,7 +90,7 @@ class EDMSimformer(EDM):
         num_layers=4,
         attn_size=16,
         widening_factor=3,
-        dropout_rate=None,
+        dropout_rate=0.0,
         enable_cross_attention=True,
         loss_type="x0",
     ):

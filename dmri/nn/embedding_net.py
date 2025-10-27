@@ -4,7 +4,7 @@ import jax.numpy as jnp
 from flax import nnx
 from jax.typing import ArrayLike
 from probjax.nn import GaussianFourierEmbedding, Transformer
-from probjax.nn.attention import flex_attention
+from probjax.nn.layers.attention import flex_attention
 
 from dmri.simulators.acquisition_scheme import (
     acquisition_scheme,
@@ -19,7 +19,7 @@ class DMRIEmbeddingConfig:
     widening_factor: int = 2
     use_flash_attention: bool = False
     attn_size: int = 16
-    dropout_rate: float | None = None
+    dropout_rate: float = 0.0
     bvals_embed_dim: int = 3
     signals_embed_dim: int = 3
     bvec_repeats: int = 1
@@ -42,7 +42,7 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
         num_layers: int = 3,
         widening_factor: int = 2,
         attn_size: int = 16,
-        dropout_rate: int = None,
+        dropout_rate: float = 0.0,
         bvals_embed_dim: int = 3,
         signals_embed_dim: int = 3,
         bvec_repeats: int = 1,
@@ -117,7 +117,7 @@ class SSFPEmbeddingNetConfig:
     widening_factor: int = 2
     use_flash_attention: bool = False
     attn_size: int = 16
-    dropout_rate: float | None = None
+    dropout_rate: float = 0.0
     use_flash_attention: bool = False
 
 
@@ -136,7 +136,7 @@ class SSFPEmbeddingNet(nnx.Module):
         num_layers: int = 3,
         widening_factor: int = 2,
         attn_size: int = 16,
-        dropout_rate: int = None,
+        dropout_rate: float = 0.0,
         use_flash_attention: bool = False,
     ):
         self.model_dim = model_dim

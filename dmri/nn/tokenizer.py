@@ -100,10 +100,10 @@ class StructuredTokenizer(Tokenizer):
         self.dims_by_id = dims_by_id
         self.num_nodes = len(dims_by_id)
         if encode_nets is None:
-            encode_nets = [nnx.Linear(d, value_dim, rngs=rngs) for d in dims_by_id]
+            encode_nets = nnx.List([nnx.Linear(d, value_dim, rngs=rngs) for d in dims_by_id])
         if decode_nets is None:
             dim_token = id_dim + value_dim + cond_dim
-            decode_nets = [nnx.Linear(dim_token, d, rngs=rngs) for d in dims_by_id]
+            decode_nets = nnx.List([nnx.Linear(dim_token, d, rngs=rngs) for d in dims_by_id])
 
         self.encode_nets = encode_nets
         self.decode_nets = decode_nets
@@ -213,17 +213,17 @@ class DMRITokenizer(Tokenizer):
 
         # Default to linear layers
         if theta_encode_nets is None:
-            theta_encode_nets = [
+            theta_encode_nets = nnx.List([
                 nnx.Linear(d, token_dim, rngs=rngs) if d > 0 else None
                 for d in self.params_dims
-            ]
+            ])
         if theta_decode_nets is None:
-            theta_decode_nets = [
+            theta_decode_nets = nnx.List([
                 nnx.Linear(token_dim, d, rngs=rngs, kernel_init=nnx.initializers.zeros)
                 if d > 0
                 else None
                 for d in self.params_dims
-            ]
+            ])
         self.theta_encode_nets = theta_encode_nets
         self.theta_decode_nets = theta_decode_nets
 
