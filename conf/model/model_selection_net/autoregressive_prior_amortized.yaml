@@ -4,6 +4,6 @@ params:
   num_heads: 4
   widening_factor: 4
   attn_size: 8
-  dropout_rate: null
+  dropout_rate: 0.0
   context_dim: 64  # Context dimension embedding
   mask_prior_dim: 1  # Model prior input dim

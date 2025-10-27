@@ -5,4 +5,4 @@ params:
   num_heads: 4
   widening_factor: 4
   attn_size: 8
-  dropout_rate: null
+  dropout_rate: 0.0
