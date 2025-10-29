@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 import optax
 from flax import nnx
-from probjax.nn import Transformer
+from probjax.nn import CausalMask, Transformer
 from probjax.nn.layers.attention import flex_attention
 from probjax.utils.typing import Array, ArrayLike, DTypeLike, PrecisionLike, RngKey
 
@@ -66,6 +66,7 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         self.widening_factor = widening_factor
         self.attn_size = attn_size
         self.context_dim = context_dim
+        self.use_flash_attention = use_flash_attention
 
         precision_kwargs: dict[str, Any] = {
             name: value
@@ -104,11 +105,11 @@ class BinaryAutoregressiveDecoder(nnx.Module):
 
     def __call__(
         self,
-        model_mask: ArrayLike,
+        model_mask: Array,
         tokenizer: Tokenizer,
-        context: Optional[ArrayLike] = None,
-        y: Optional[ArrayLike] = None,
-        mask: Optional[ArrayLike] = None,
+        context: Optional[Array] = None,
+        y: Optional[Array] = None,
+        mask: Optional[Array] = None,
         decode: bool = False,
         deterministic: bool = False,
         **kwargs: Any,
@@ -142,18 +143,23 @@ class BinaryAutoregressiveDecoder(nnx.Module):
     def _forward_tokens(
         self,
         input_tokens: Array,
-        y: Optional[ArrayLike],
-        context: Optional[ArrayLike] = None,
-        attention_mask: Optional[ArrayLike] = None,
+        y: Optional[Array],
+        context: Optional[Array] = None,
+        attention_mask: Optional[Array] = None,
         decode: bool = False,
         deterministic: bool = False,
     ) -> Array:
         *_, seq_len, _ = input_tokens.shape
 
         # Autoregressive mask constrained
-        base_mask = jnp.tril(jnp.ones((seq_len, seq_len)))
-        if attention_mask is not None:
-            base_mask = base_mask & attention_mask
+        if not self.use_flash_attention:
+            base_mask = jnp.tril(jnp.ones((seq_len, seq_len)))
+            if attention_mask is not None:
+                base_mask = base_mask & attention_mask
+        else:
+            base_mask = CausalMask()
+            if attention_mask is not None:
+                raise NotImplementedError("Not supported with flash attention")
 
         if context is not None:
             context = context[..., None, :]
@@ -176,7 +182,7 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         y: Array,
         rng: Optional[RngKey] = None,
         permute_order: bool = False,
-        context: Optional[ArrayLike] = None,
+        context: Optional[Array] = None,
         tokens_cfg: Optional[Array] = None,
         **kwargs: Any,
     ) -> Array:
@@ -191,6 +197,7 @@ class BinaryAutoregressiveDecoder(nnx.Module):
             *batch_shape, seq_len, _ = input_tokens.shape
 
         if permute_order:
+            assert rng is not None, "rng must be provided if permute_order is True"
             elements = jnp.arange(seq_len - 1)  # First element is padding token
             batch_orders = jax.vmap(lambda k: jax.random.permutation(k, elements))(
                 jax.random.split(rng, int(jnp.prod(jnp.array(batch_shape))))
@@ -232,7 +239,7 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         )
 
     def log_prob(
-        self, model_mask: ArrayLike, tokenizer: Tokenizer, y: Array, **kwargs: Any
+        self, model_mask: Array, tokenizer: Tokenizer, y: Array, **kwargs: Any
     ) -> Array:
         model_mask_logits = self(model_mask, tokenizer, y=y, **kwargs)
         # Correct Bernoulli log probability is negative binary cross entropy
@@ -249,7 +256,7 @@ def naive_autoregressive_decoding(
     tokenizer: Tokenizer,
     y: Array,
     dim: int,
-    context: Optional[ArrayLike] = None,
+    context: Optional[Array] = None,
 ) -> Array:
     x = jnp.zeros((dim,), dtype=jnp.bool_)
 

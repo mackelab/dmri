@@ -106,14 +106,19 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
             rngs=rngs,
             **precision_kwargs,
         )
+        # Bval Embedding
         if embed_bvals == "fourier":
-            self.embed_bvals = GaussianFourierEmbedding(1, bvals_embed_dim, rngs=rngs)
+            self.embed_bvals = GaussianFourierEmbedding(
+                1, bvals_embed_dim, rngs=rngs, **precision_kwargs
+            )  # type: ignore[assignment]
         elif embed_bvals == "linear":
             self.embed_bvals = nnx.Linear(
                 1, bvals_embed_dim, rngs=rngs, **precision_kwargs
             )
         else:
             raise ValueError(f"Invalid embed_bvals: {embed_bvals}")
+
+        # Signal embedding
         if embed_signals == "repeat":
             self.embed_signals = lambda x: jnp.repeat(x, signals_embed_dim, axis=-1)
         elif embed_signals == "fourier":
