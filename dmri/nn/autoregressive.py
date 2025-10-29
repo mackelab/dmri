@@ -1,12 +1,13 @@
 from dataclasses import dataclass
 from functools import partial
-from typing import Optional
+from typing import Any, Optional
 
 import jax
 import jax.numpy as jnp
 import optax
 from flax import nnx
 from probjax.nn import Transformer
+from probjax.utils.typing import Array, ArrayLike, DTypeLike, PrecisionLike, RngKey
 
 from dmri.nn.tokenizer import Tokenizer
 
@@ -18,18 +19,30 @@ class DMRIModelSelectionConfig:
     widening_factor: int = 3
     attn_size: int = 16
     dropout_rate: float = 0.0
-    context_dim = None
+    context_dim: Optional[int] = None
+    dtype: DTypeLike | None = None
+    param_dtype: DTypeLike | None = None
+    precision: PrecisionLike | None = None
+    preferred_element_type: DTypeLike | None = None
 
 
 @dataclass
-class DMRIModelSelectionAmortizedPriorConfig:
+class DMRIModelSelectionAmortizedPriorConfig(DMRIModelSelectionConfig):
     num_layers: int = 4
     num_heads: int = 4
     widening_factor: int = 3
     attn_size: int = 16
     dropout_rate: float = 0.0
-    context_dim: int = 64  # Context dimension embedding
+    context_dim: Optional[int] = 64  # Context dimension embedding
     mask_prior_dim: int = 1  # Scalar mask probability
+    attention: Optional[str] = None
+    cross_attention: Optional[str] = None
+    attn_fuse: Optional[str] = None
+    mlp_fuse: Optional[str] = None
+    dtype: DTypeLike | None = None
+    param_dtype: DTypeLike | None = None
+    precision: PrecisionLike | None = None
+    preferred_element_type: DTypeLike | None = None
 
 
 class BinaryAutoregressiveDecoder(nnx.Module):
@@ -41,7 +54,7 @@ class BinaryAutoregressiveDecoder(nnx.Module):
 
     def __init__(
         self,
-        rngs,
+        rngs: RngKey,
         model_dim: int = 64,
         num_heads: int = 4,
         num_layers: int = 4,
@@ -50,6 +63,10 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         dropout_rate: float = 0.0,
         context_dim: Optional[int] = None,
         enable_cross_attention: bool = True,
+        dtype: DTypeLike | None = None,
+        param_dtype: DTypeLike | None = None,
+        precision: PrecisionLike | None = None,
+        preferred_element_type: DTypeLike | None = None,
     ):
         self.model_dim = model_dim
         self.num_heads = num_heads
@@ -58,7 +75,6 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         self.attn_size = attn_size
         self.context_dim = context_dim
 
-        # Why not use a shared tokenizer with the model mask?
         self.transformer = Transformer(
             model_dim,
             self.num_heads,
@@ -69,20 +85,32 @@ class BinaryAutoregressiveDecoder(nnx.Module):
             rngs=rngs,
             dropout_rate=dropout_rate,
             enable_cross_attention=enable_cross_attention,
+            dtype=dtype,
+            param_dtype=param_dtype,
+            precision=precision,
+            preferred_element_type=preferred_element_type,
         )
-        self.output = nnx.Linear(model_dim, 1, rngs=rngs)
+        self.output = nnx.Linear(
+            model_dim,
+            1,
+            rngs=rngs,
+            dtype=dtype,
+            param_dtype=param_dtype,
+            precision=precision,
+            preferred_element_type=preferred_element_type,
+        )
 
     def __call__(
         self,
-        model_mask,
+        model_mask: ArrayLike,
         tokenizer: Tokenizer,
-        context=None,
-        y=None,
-        mask=None,
-        decode=False,
-        deterministic=False,
-        **kwargs,
-    ):
+        context: Optional[ArrayLike] = None,
+        y: Optional[ArrayLike] = None,
+        mask: Optional[ArrayLike] = None,
+        decode: bool = False,
+        deterministic: bool = False,
+        **kwargs: Any,
+    ) -> Array:
         input_tokens = self._encode_model_mask(model_mask, tokenizer, **kwargs)
         # Autoregressive mask constrained
         output_tokens = self._forward_tokens(
@@ -98,7 +126,9 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         # Remove the first "padding" token output
         return logits[..., :-1, 0]
 
-    def _encode_model_mask(self, model_mask, tokenizer, **kwargs):
+    def _encode_model_mask(
+        self, model_mask: ArrayLike, tokenizer: Tokenizer, **kwargs: Any
+    ) -> Array:
         input_tokens = tokenizer.encode(model_mask=model_mask, **kwargs)
         *_, _, model_dim = input_tokens.shape
 
@@ -109,13 +139,13 @@ class BinaryAutoregressiveDecoder(nnx.Module):
 
     def _forward_tokens(
         self,
-        input_tokens,
-        y,
-        context=None,
-        attention_mask=None,
-        decode=False,
-        deterministic=False,
-    ):
+        input_tokens: Array,
+        y: Optional[ArrayLike],
+        context: Optional[ArrayLike] = None,
+        attention_mask: Optional[ArrayLike] = None,
+        decode: bool = False,
+        deterministic: bool = False,
+    ) -> Array:
         *_, seq_len, _ = input_tokens.shape
 
         # Autoregressive mask constrained
@@ -139,15 +169,15 @@ class BinaryAutoregressiveDecoder(nnx.Module):
 
     def loss_fn(
         self,
-        model_mask,
-        tokenizer,
-        y,
-        rng=None,
-        permute_order=False,
-        context=None,
-        tokens_cfg=None,
-        **kwargs,
-    ):
+        model_mask: ArrayLike,
+        tokenizer: Tokenizer,
+        y: Array,
+        rng: Optional[RngKey] = None,
+        permute_order: bool = False,
+        context: Optional[ArrayLike] = None,
+        tokens_cfg: Optional[Array] = None,
+        **kwargs: Any,
+    ) -> Array:
         if permute_order:
             assert rng is not None, "rng must be provided if permute_order is True"
 
@@ -199,7 +229,9 @@ class BinaryAutoregressiveDecoder(nnx.Module):
             self, key, tokenizer, y, dim, context=context
         )
 
-    def log_prob(self, model_mask, tokenizer, y, **kwargs):
+    def log_prob(
+        self, model_mask: ArrayLike, tokenizer: Tokenizer, y: Array, **kwargs: Any
+    ) -> Array:
         model_mask_logits = self(model_mask, tokenizer, y=y, **kwargs)
         # Correct Bernoulli log probability is negative binary cross entropy
         bernoulli_log_prob = -optax.sigmoid_binary_cross_entropy(
@@ -208,17 +240,18 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         return jnp.sum(bernoulli_log_prob, axis=-1)
 
 
-@partial(
-    jax.jit,
-    static_argnums=(
-        2,
-        4,
-    ),
-)
-def naive_autoregressive_decoding(model, key, tokenizer, y, dim, context=None):
+@partial(jax.jit, static_argnums=(2, 4))
+def naive_autoregressive_decoding(
+    model: BinaryAutoregressiveDecoder,
+    key: RngKey,
+    tokenizer: Tokenizer,
+    y: Array,
+    dim: int,
+    context: Optional[ArrayLike] = None,
+) -> Array:
     x = jnp.zeros((dim,), dtype=jnp.bool_)
 
-    def scan_fn(carry, k):
+    def scan_fn(carry: tuple[Array, int], k: RngKey) -> tuple[tuple[Array, int], None]:
         x, i = carry
         logits = model(x.astype(jnp.int32), tokenizer, y=y, context=context)
         p_i = jax.nn.sigmoid(logits[i])

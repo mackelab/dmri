@@ -1,10 +1,11 @@
 from dataclasses import dataclass
+from typing import Any, Callable
 
 import jax.numpy as jnp
 from flax import nnx
-from jax.typing import ArrayLike
 from probjax.nn import GaussianFourierEmbedding, Transformer
 from probjax.nn.layers.attention import flex_attention
+from probjax.utils.typing import Array, ArrayLike, DTypeLike, PrecisionLike, RngKey
 
 from dmri.simulators.acquisition_scheme import (
     acquisition_scheme,
@@ -25,6 +26,10 @@ class DMRIEmbeddingConfig:
     bvec_repeats: int = 1
     log_transform_signals: bool = False
     embed_signals: str = "repeat"
+    dtype: DTypeLike | None = None
+    param_dtype: DTypeLike | None = None
+    precision: PrecisionLike | None = None
+    preferred_element_type: DTypeLike | None = None
 
 
 class BvalBvecSignalEmbeddingNet(nnx.Module):
@@ -36,7 +41,7 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
 
     def __init__(
         self,
-        rngs,
+        rngs: RngKey,
         model_dim: int = 64,
         num_heads: int = 4,
         num_layers: int = 3,
@@ -48,8 +53,12 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
         bvec_repeats: int = 1,
         log_transform_signals: bool = False,
         use_flash_attention: bool = False,
-        embed_signals="repeat",
-    ):
+        embed_signals: str = "repeat",
+        dtype: DTypeLike | None = None,
+        param_dtype: DTypeLike | None = None,
+        precision: PrecisionLike | None = None,
+        preferred_element_type: DTypeLike | None = None,
+    ) -> None:
         self.model_dim = model_dim
         self.num_heads = num_heads
         self.num_layers = num_layers
@@ -58,14 +67,31 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
         self.log_transform_signals = log_transform_signals
         self.bvec_repeats = bvec_repeats
 
+        linear_kwargs: dict[str, Any] = {}
+        transformer_kwargs: dict[str, Any] = {}
+        for name, value in (
+            ("dtype", dtype),
+            ("param_dtype", param_dtype),
+            ("precision", precision),
+            ("preferred_element_type", preferred_element_type),
+        ):
+            if value is not None:
+                linear_kwargs[name] = value
+                transformer_kwargs[name] = value
+
         self.initial_layer = nnx.Linear(
-            bvals_embed_dim + signals_embed_dim + 3 * bvec_repeats, model_dim, rngs=rngs
+            bvals_embed_dim + signals_embed_dim + 3 * bvec_repeats,
+            model_dim,
+            rngs=rngs,
+            **linear_kwargs,
         )
         self.embed_bvals = GaussianFourierEmbedding(1, bvals_embed_dim, rngs=rngs)
         if embed_signals == "repeat":
-            self.embed_signals = lambda x: jnp.repeat(x, signals_embed_dim, axis=-1)
+            self.embed_signals: Callable[[ArrayLike], Array] = lambda x: jnp.repeat(
+                x, signals_embed_dim, axis=-1
+            )
         elif embed_signals == "fourier":
-            self.embed_signals = GaussianFourierEmbedding(
+            self.embed_signals = GaussianFourierEmbedding(  # type: ignore[assignment]
                 1, signals_embed_dim, rngs=rngs
             )
         else:
@@ -85,6 +111,7 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
             rngs=rngs,
             dropout_rate=dropout_rate,
             attention_fn=attention_fn,
+            **transformer_kwargs,
         )
 
     def __call__(
@@ -93,7 +120,7 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
         x: ArrayLike,
         deterministic: bool | None = None,
         decode: bool = False,
-    ):
+    ) -> Array:
         bvals = acq.bvals
         bvecs = acq.bvecs
         signals = x
@@ -119,6 +146,10 @@ class SSFPEmbeddingNetConfig:
     attn_size: int = 16
     dropout_rate: float = 0.0
     use_flash_attention: bool = False
+    dtype: DTypeLike | None = None
+    param_dtype: DTypeLike | None = None
+    precision: PrecisionLike | None = None
+    preferred_element_type: DTypeLike | None = None
 
 
 class SSFPEmbeddingNet(nnx.Module):
@@ -130,7 +161,7 @@ class SSFPEmbeddingNet(nnx.Module):
 
     def __init__(
         self,
-        rngs,
+        rngs: RngKey,
         model_dim: int = 64,
         num_heads: int = 4,
         num_layers: int = 3,
@@ -138,6 +169,10 @@ class SSFPEmbeddingNet(nnx.Module):
         attn_size: int = 16,
         dropout_rate: float = 0.0,
         use_flash_attention: bool = False,
+        dtype: DTypeLike | None = None,
+        param_dtype: DTypeLike | None = None,
+        precision: PrecisionLike | None = None,
+        preferred_element_type: DTypeLike | None = None,
     ):
         self.model_dim = model_dim
         self.num_heads = num_heads
@@ -145,13 +180,25 @@ class SSFPEmbeddingNet(nnx.Module):
         self.widening_factor = widening_factor
         self.attn_size = attn_size
 
+        linear_kwargs: dict[str, Any] = {}
+        transformer_kwargs: dict[str, Any] = {}
+        for name, value in (
+            ("dtype", dtype),
+            ("param_dtype", param_dtype),
+            ("precision", precision),
+            ("preferred_element_type", preferred_element_type),
+        ):
+            if value is not None:
+                linear_kwargs[name] = value
+                transformer_kwargs[name] = value
+
         scalar_embed_dim = self.model_dim // 3
         signal_embed_dim = self.model_dim // 3
         bvec_embed_dim = self.model_dim - scalar_embed_dim - signal_embed_dim
         self.embed_scalars = GaussianFourierEmbedding(7, scalar_embed_dim, rngs=rngs)
         self.embed_signals = GaussianFourierEmbedding(1, signal_embed_dim, rngs=rngs)
         # Repeat bvces
-        self.embed_bvecs = lambda x: jnp.repeat(
+        self.embed_bvecs: Callable[[ArrayLike], Array] = lambda x: jnp.repeat(
             x[..., None], bvec_embed_dim, axis=-1
         ).reshape(*x.shape[:-1], -1)[..., :bvec_embed_dim]
 
@@ -169,6 +216,7 @@ class SSFPEmbeddingNet(nnx.Module):
             rngs=rngs,
             dropout_rate=dropout_rate,
             attention_fn=attention_fn,
+            **transformer_kwargs,
         )
 
     def __call__(
@@ -177,7 +225,7 @@ class SSFPEmbeddingNet(nnx.Module):
         signals: ArrayLike,
         deterministic: bool | None = None,
         decode: bool = False,
-    ):
+    ) -> Array:
         # Embed stuff
         T1 = acq.T1
         T2 = acq.T2
