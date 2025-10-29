@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Any, Callable
 
+import jax
 import jax.numpy as jnp
 from flax import nnx
 from probjax.nn import GaussianFourierEmbedding, Transformer
@@ -11,6 +12,12 @@ from dmri.simulators.acquisition_scheme import (
     acquisition_scheme,
     ssfp_acquisition_scheme,
 )
+
+
+def soft_squash(signal, tau=0.5):
+    # signal: arbitrary real
+    # tau: temperature controls how sharp the transition is
+    return jax.nn.sigmoid((signal - 0.5) / tau)
 
 
 @dataclass
@@ -24,12 +31,18 @@ class DMRIEmbeddingConfig:
     bvals_embed_dim: int = 3
     signals_embed_dim: int = 3
     bvec_repeats: int = 1
-    log_transform_signals: bool = False
+    min_bval: float = 0.0
+    max_bval: float = 4000.0
+    min_signal: float = 0.0
+    max_signal: float = 1.0
     embed_signals: str = "repeat"
+    embed_bvals: str = "fourier"
     dtype: DTypeLike | None = None
     param_dtype: DTypeLike | None = None
     precision: PrecisionLike | None = None
     preferred_element_type: DTypeLike | None = None
+    use_global_summary_token: bool = False
+    global_summary_bins: int = 8
 
 
 class BvalBvecSignalEmbeddingNet(nnx.Module):
@@ -41,7 +54,7 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
 
     def __init__(
         self,
-        rngs: RngKey,
+        rngs: nnx.Rngs,
         model_dim: int = 64,
         num_heads: int = 4,
         num_layers: int = 3,
@@ -51,9 +64,16 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
         bvals_embed_dim: int = 3,
         signals_embed_dim: int = 3,
         bvec_repeats: int = 1,
+        min_bval: float = 0.0,
+        max_bval: float = 4000.0,
+        min_signal: float = 0.0,
+        max_signal: float = 1.0,
         log_transform_signals: bool = False,
         use_flash_attention: bool = False,
         embed_signals: str = "repeat",
+        embed_bvals: str = "fourier",
+        use_global_summary_token: bool = False,
+        global_summary_bins: int = 8,
         dtype: DTypeLike | None = None,
         param_dtype: DTypeLike | None = None,
         precision: PrecisionLike | None = None,
@@ -66,33 +86,42 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
         self.attn_size = attn_size
         self.log_transform_signals = log_transform_signals
         self.bvec_repeats = bvec_repeats
+        self.min_bval = min_bval
+        self.max_bval = max_bval
+        self.min_signal = min_signal
+        self.max_signal = max_signal
+        self.use_global_summary_token = use_global_summary_token
+        self.global_summary_bins = global_summary_bins
 
-        linear_kwargs: dict[str, Any] = {}
-        transformer_kwargs: dict[str, Any] = {}
-        for name, value in (
-            ("dtype", dtype),
-            ("param_dtype", param_dtype),
-            ("precision", precision),
-            ("preferred_element_type", preferred_element_type),
-        ):
-            if value is not None:
-                linear_kwargs[name] = value
-                transformer_kwargs[name] = value
-
+        precision_kwargs = {
+            "dtype": dtype,
+            "param_dtype": param_dtype,
+            "precision": precision,
+            "preferred_element_type": preferred_element_type,
+        }
         self.initial_layer = nnx.Linear(
             bvals_embed_dim + signals_embed_dim + 3 * bvec_repeats,
             model_dim,
             rngs=rngs,
-            **linear_kwargs,
+            **precision_kwargs,
         )
-        self.embed_bvals = GaussianFourierEmbedding(1, bvals_embed_dim, rngs=rngs)
-        if embed_signals == "repeat":
-            self.embed_signals: Callable[[ArrayLike], Array] = lambda x: jnp.repeat(
-                x, signals_embed_dim, axis=-1
+        if embed_bvals == "fourier":
+            self.embed_bvals = GaussianFourierEmbedding(1, bvals_embed_dim, rngs=rngs)
+        elif embed_bvals == "linear":
+            self.embed_bvals = nnx.Linear(
+                1, bvals_embed_dim, rngs=rngs, **precision_kwargs
             )
+        else:
+            raise ValueError(f"Invalid embed_bvals: {embed_bvals}")
+        if embed_signals == "repeat":
+            self.embed_signals = lambda x: jnp.repeat(x, signals_embed_dim, axis=-1)
         elif embed_signals == "fourier":
             self.embed_signals = GaussianFourierEmbedding(  # type: ignore[assignment]
-                1, signals_embed_dim, rngs=rngs
+                1, signals_embed_dim, rngs=rngs, **precision_kwargs
+            )
+        elif embed_signals == "linear":
+            self.embed_signals = nnx.Linear(
+                1, signals_embed_dim, rngs=rngs, **precision_kwargs
             )
         else:
             raise ValueError(f"Invalid embed_signals: {embed_signals}")
@@ -111,8 +140,116 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
             rngs=rngs,
             dropout_rate=dropout_rate,
             attention_fn=attention_fn,
-            **transformer_kwargs,
+            **precision_kwargs,
         )
+
+        if self.global_summary_bins <= 0:
+            raise ValueError("global_summary_bins must be a positive integer.")
+
+        self.global_summary_feature_dim = 3 * self.global_summary_bins + 12
+        if self.use_global_summary_token:
+            self.global_summary_projection = nnx.Linear(
+                self.global_summary_feature_dim,
+                model_dim,
+                rngs=rngs,
+                **precision_kwargs,
+            )
+        else:
+            self.global_summary_projection = None
+
+    def transform_bvals(self, bvals: ArrayLike) -> Array:
+        if self.max_bval <= self.min_bval:
+            raise ValueError(
+                "max_bval must be greater than min_bval for normalization."
+            )
+        bvals = jnp.asarray(bvals)
+        bvals = jnp.clip(bvals, a_min=self.min_bval, a_max=self.max_bval)
+        bvals = (bvals - self.min_bval) / (self.max_bval - self.min_bval)
+        return bvals * 2.0 - 1.0
+
+    def transform_signals(self, signals: ArrayLike) -> Array:
+        if self.max_signal <= self.min_signal:
+            raise ValueError(
+                "max_signal must be greater than min_signal for normalization."
+            )
+        signals = jnp.asarray(signals)
+        normalized = (signals - self.min_signal) / (self.max_signal - self.min_signal)
+        normalized = soft_squash(normalized)
+        transformed = self.min_signal + normalized * (self.max_signal - self.min_signal)
+        if self.log_transform_signals:
+            transformed = jnp.log(jnp.clip(transformed, a_min=1e-8))
+        return transformed
+
+    def global_summary_token(self, bvals, bvecs, signals) -> Array:
+        if not self.use_global_summary_token or self.global_summary_projection is None:
+            raise ValueError("Global summary token requested but not configured.")
+
+        signals_arr = jnp.asarray(signals)
+        bvals_arr = jnp.asarray(bvals)
+        bvecs_arr = jnp.asarray(bvecs)
+        dtype = signals_arr.dtype
+
+        min_b = jnp.asarray(self.min_bval, dtype=dtype)
+        max_b = jnp.asarray(self.max_bval, dtype=dtype)
+        max_b = jnp.where(max_b > min_b, max_b, min_b + jnp.asarray(1.0, dtype=dtype))
+
+        bin_width = (max_b - min_b) / self.global_summary_bins
+        bin_width = jnp.where(bin_width > 0, bin_width, jnp.asarray(1.0, dtype=dtype))
+        clipped_bvals = jnp.clip(bvals_arr, min_b, max_b)
+        relative_position = (clipped_bvals - min_b) / bin_width
+        bin_idx = jnp.floor(relative_position).astype(jnp.int32)
+        bin_idx = jnp.clip(bin_idx, 0, self.global_summary_bins - 1)
+
+        one_hot = jax.nn.one_hot(
+            bin_idx, self.global_summary_bins, axis=-1, dtype=dtype
+        )
+        counts = jnp.sum(one_hot, axis=-2).astype(dtype)
+        token_count = signals_arr.shape[-1]
+        total = jnp.maximum(
+            jnp.asarray(token_count, dtype=dtype), jnp.asarray(1.0, dtype=dtype)
+        )
+        density = counts / total
+
+        sum_signal = jnp.sum(one_hot * signals_arr[..., None], axis=-2)
+        sum_sq_signal = jnp.sum(one_hot * (signals_arr[..., None] ** 2), axis=-2)
+        counts_safe = jnp.where(counts > 0, counts, jnp.ones_like(counts))
+        mean_signal = sum_signal / counts_safe
+        variance_signal = jnp.maximum(sum_sq_signal / counts_safe - mean_signal**2, 0.0)
+        mean_signal = jnp.where(counts > 0, mean_signal, jnp.zeros_like(mean_signal))
+        variance_signal = jnp.where(
+            counts > 0, variance_signal, jnp.zeros_like(variance_signal)
+        )
+
+        bvecs_arr = jnp.asarray(bvecs_arr, dtype=dtype)
+        bvec_mean = jnp.mean(bvecs_arr, axis=-2)
+        bvec_std = jnp.std(bvecs_arr, axis=-2)
+
+        signal_mean = jnp.mean(signals_arr, axis=-1, keepdims=True)
+        signal_std = jnp.std(signals_arr, axis=-1, keepdims=True)
+        signal_min = jnp.min(signals_arr, axis=-1, keepdims=True)
+        signal_max = jnp.max(signals_arr, axis=-1, keepdims=True)
+
+        bval_mean = jnp.mean(bvals_arr, axis=-1, keepdims=True)
+        bval_std = jnp.std(bvals_arr, axis=-1, keepdims=True)
+
+        summary_features = jnp.concatenate(
+            [
+                density,
+                mean_signal,
+                variance_signal,
+                bvec_mean,
+                bvec_std,
+                signal_mean,
+                signal_std,
+                signal_min,
+                signal_max,
+                bval_mean,
+                bval_std,
+            ],
+            axis=-1,
+        )
+
+        return self.global_summary_projection(summary_features)
 
     def __call__(
         self,
@@ -120,21 +257,37 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
         x: ArrayLike,
         deterministic: bool | None = None,
         decode: bool = False,
-    ) -> Array:
-        bvals = acq.bvals
-        bvecs = acq.bvecs
-        signals = x
-        if self.log_transform_signals:
-            signals = jnp.log(jnp.clip(signals, min=1e-8))
+    ) -> tuple[Array | None, Array]:
+        raw_bvals = acq.bvals
+        raw_bvecs = acq.bvecs
+        summary_token = None
+        if self.use_global_summary_token:
+            summary_token = self.global_summary_token(raw_bvals, raw_bvecs, x)
+        using_summary = summary_token is not None
+
+        bvals = self.transform_bvals(raw_bvals)
+        signals = self.transform_signals(x)
         bvals = self.embed_bvals(bvals[..., None])
         signals = self.embed_signals(signals[..., None])
+        bvecs = jnp.asarray(raw_bvecs)
         bvecs = jnp.repeat(bvecs, self.bvec_repeats, axis=-1)
         data = jnp.concatenate([bvals, signals, bvecs], axis=-1)
         tokens = self.initial_layer(data)
+        if using_summary:
+            expanded_summary = summary_token.reshape(
+                summary_token.shape[:-1] + (1, summary_token.shape[-1])
+            )
+            tokens = jnp.concatenate([expanded_summary, tokens], axis=-2)
         out_tokens = self.transformer(
             tokens, deterministic=deterministic, decode=decode
         )
-        return out_tokens
+        if using_summary:
+            global_summary = out_tokens[..., 0, :]
+            sequence_tokens = out_tokens[..., 1:, :]
+        else:
+            global_summary = None
+            sequence_tokens = out_tokens
+        return global_summary, sequence_tokens
 
 
 @dataclass
