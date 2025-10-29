@@ -50,17 +50,15 @@ class DiffusionTransformer(nnx.Module):
         precision: PrecisionLike | None = None,
         preferred_element_type: DTypeLike | None = None,
     ) -> None:
-        transformer_kwargs: dict[str, Any] = {}
-        for name, value in (
-            ("dtype", dtype),
-            ("param_dtype", param_dtype),
-            ("precision", precision),
-            ("preferred_element_type", preferred_element_type),
-        ):
-            if value is not None:
-                transformer_kwargs[name] = value
-
-        self.time_embedding = GaussianFourierEmbedding(1, context_dim, rngs=rngs)
+        precision_kwargs = {
+            "dtype": dtype,
+            "param_dtype": param_dtype,
+            "precision": precision,
+            "preferred_element_type": preferred_element_type,
+        }
+        self.time_embedding = GaussianFourierEmbedding(
+            1, context_dim, rngs=rngs, **precision_kwargs
+        )
 
         attn_fn = flex_attention if use_flash_attention else None
         cross_attn_fn = flex_attention if use_flash_cross_attention else None
@@ -77,7 +75,7 @@ class DiffusionTransformer(nnx.Module):
             context_dim=context_dim,
             attention_fn=attn_fn,
             cross_attention_fn=cross_attn_fn,
-            **transformer_kwargs,
+            **precision_kwargs,
         )
 
     def __call__(
