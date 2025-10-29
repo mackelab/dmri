@@ -1,20 +1,21 @@
 from abc import abstractmethod
 from collections import defaultdict
 from copy import deepcopy
-from functools import cache
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 from flax import nnx
-from jax.typing import ArrayLike
+from probjax.utils.typing import Array, ArrayLike, DTypeLike, PrecisionLike, RngKey
 
 from dmri.simulators import MultiCompartment
 from dmri.utils.transform import eps_mask
 
 
-def map_classes_to_indices(class_list: list, start_idx: int = 0):
+def map_classes_to_indices(
+    class_list: Sequence[type], start_idx: int = 0
+) -> Dict[str, List[int]]:
     """
     Returns a dictionary mapping each class object in `class_list`
     to a list of distinct integer indices corresponding to all of
@@ -30,41 +31,72 @@ def map_classes_to_indices(class_list: list, start_idx: int = 0):
 
 
 class Tokenizer(nnx.Module):
-    def __call__(self, *args, **kwds):
+    def __call__(self, *args: Any, **kwds: Any) -> Array:
         return self.encode(*args, **kwds)
 
     @abstractmethod
-    def encode(self, *args, **kwargs):
+    def encode(self, *args: Any, **kwargs: Any) -> Array:
         pass
 
     @abstractmethod
-    def decode(self, *args, **kwargs):
+    def decode(self, *args: Any, **kwargs: Any) -> Array:
         pass
 
 
 class ScalarTokenizer(Tokenizer):
     def __init__(
-        self, num_nodes, rngs, value_dim=20, id_dim=20, cond_dim=10, context_dim=None
-    ):
+        self,
+        num_nodes: int,
+        rngs: nnx.Rngs,
+        value_dim: int = 20,
+        id_dim: int = 20,
+        cond_dim: int = 10,
+        context_dim: Optional[int] = None,
+        dtype: DTypeLike | None = None,
+        param_dtype: DTypeLike | None = None,
+        precision: PrecisionLike | None = None,
+        preferred_element_type: DTypeLike | None = None,
+    ) -> None:
         self.model_dim = value_dim + id_dim + cond_dim
         self.num_nodes = num_nodes
         self.value_dim = value_dim
         self.id_dim = id_dim
         self.cond_dim = cond_dim
 
+        linear_kwargs: dict[str, Any] = {}
+        for name, value in (
+            ("dtype", dtype),
+            ("param_dtype", param_dtype),
+            ("precision", precision),
+            ("preferred_element_type", preferred_element_type),
+        ):
+            if value is not None:
+                linear_kwargs[name] = value
+        self._linear_kwargs = linear_kwargs
+
         self.embed_id = nnx.Embed(num_nodes, self.id_dim, rngs=rngs)
-        self.embed_value = nnx.Linear(1, self.value_dim, rngs=rngs)
+        self.embed_value = nnx.Linear(
+            1, self.value_dim, rngs=rngs, **self._linear_kwargs
+        )
         if cond_dim > 0:
             self.condition_token = nnx.Param(
                 0.01 * jax.random.normal(rngs.next(), (1, cond_dim))
             )
         if context_dim is not None:
-            self.context_embed = nnx.Linear(context_dim, self.model_dim, rngs=rngs)
+            self.context_embed = nnx.Linear(
+                context_dim, self.model_dim, rngs=rngs, **self._linear_kwargs
+            )
         self.context_dim = context_dim
 
-        self.outlayer = nnx.Linear(self.model_dim, 1, rngs=rngs)
+        self.outlayer = nnx.Linear(self.model_dim, 1, rngs=rngs, **self._linear_kwargs)
 
-    def encode(self, x, node_ids, condition_mask, context=None):
+    def encode(
+        self,
+        x: ArrayLike,
+        node_ids: ArrayLike,
+        condition_mask: ArrayLike,
+        context: Optional[ArrayLike] = None,
+    ) -> Array:
         node_embed = self.embed_id(node_ids)
         value_embed = self.embed_value(x)
 
@@ -82,7 +114,13 @@ class ScalarTokenizer(Tokenizer):
 
         return input_embed
 
-    def decode(self, h, node_ids, condition_mask, context=None):
+    def decode(
+        self,
+        h: ArrayLike,
+        node_ids: ArrayLike,
+        condition_mask: ArrayLike,
+        context: Optional[ArrayLike] = None,
+    ) -> Array:
         return self.outlayer(h)
 
 
@@ -90,20 +128,25 @@ class StructuredTokenizer(Tokenizer):
     def __init__(
         self,
         dims_by_id: list[int],
+        *,
         value_dim: int = 32,
         id_dim: int = 32,
         cond_dim: int = 0,
-        encode_nets: Optional[list[nnx.Module]] = None,
-        decode_nets: Optional[list[nnx.Module]] = None,
-        rngs: nnx.RngStream = None,
+        encode_nets: Optional[nnx.List[nnx.Module]] = None,
+        decode_nets: Optional[nnx.List[nnx.Module]] = None,
+        rngs: nnx.Rngs,
     ):
         self.dims_by_id = dims_by_id
         self.num_nodes = len(dims_by_id)
         if encode_nets is None:
-            encode_nets = nnx.List([nnx.Linear(d, value_dim, rngs=rngs) for d in dims_by_id])
+            encode_nets = nnx.List([
+                nnx.Linear(d, value_dim, rngs=rngs) for d in dims_by_id
+            ])
         if decode_nets is None:
             dim_token = id_dim + value_dim + cond_dim
-            decode_nets = nnx.List([nnx.Linear(dim_token, d, rngs=rngs) for d in dims_by_id])
+            decode_nets = nnx.List([
+                nnx.Linear(dim_token, d, rngs=rngs) for d in dims_by_id
+            ])
 
         self.encode_nets = encode_nets
         self.decode_nets = decode_nets
@@ -119,7 +162,13 @@ class StructuredTokenizer(Tokenizer):
                 0.01 * jax.random.normal(rngs.next(), (1, cond_dim))
             )
 
-    def __call__(self, x, node_ids, condition_mask=None, **kwargs):
+    def __call__(
+        self,
+        x: ArrayLike,
+        node_ids: Sequence[int],
+        condition_mask: Optional[ArrayLike] = None,
+        **kwargs: Any,
+    ) -> Array:
         # These needs to be done outside of jax and recompiled on changes
         dims = np.asarray([self.dims_by_id[i] for i in node_ids], dtype=np.int32)
         split_dims = np.cumsum(dims)[:-1]
@@ -140,7 +189,13 @@ class StructuredTokenizer(Tokenizer):
 
         return embeddings
 
-    def decode(self, h, node_ids, condition_mask=None, **kwargs):
+    def decode(
+        self,
+        h: ArrayLike,
+        node_ids: Sequence[int],
+        condition_mask: Optional[ArrayLike] = None,
+        **kwargs: Any,
+    ) -> Array:
         hs = jnp.split(h, h.shape[-2], axis=-2)
         net_subs = [self.decode_nets[i] for i in node_ids]
         x = jax.tree_util.tree_map(lambda x, net: net(x), hs, net_subs)
@@ -158,11 +213,16 @@ class DMRITokenizer(Tokenizer):
     def __init__(
         self,
         simulator: type[MultiCompartment],
-        rngs: Any,
+        *,
         token_dim: int = 64,
-        theta_encode_nets: Optional[list[nnx.Module]] = None,
-        theta_decode_nets: Optional[list[nnx.Module]] = None,
+        theta_encode_nets: Optional[nnx.List[nnx.Module | None]] = None,
+        theta_decode_nets: Optional[nnx.List[nnx.Module | None]] = None,
         init_component_embeddings: Callable | None = None,
+        dtype: DTypeLike | None = None,
+        param_dtype: DTypeLike | None = None,
+        precision: PrecisionLike | None = None,
+        preferred_element_type: DTypeLike | None = None,
+        rngs: nnx.Rngs,
     ) -> None:
         """
         Initializes a DMRITokenizer instance.
@@ -189,6 +249,17 @@ class DMRITokenizer(Tokenizer):
                 start_idx=len(self.simulator.value.model_types),
             )
         )
+        linear_kwargs: dict[str, Any] = {}
+        for name, value in (
+            ("dtype", dtype),
+            ("param_dtype", param_dtype),
+            ("precision", precision),
+            ("preferred_element_type", preferred_element_type),
+        ):
+            if value is not None:
+                linear_kwargs[name] = value
+        self._linear_kwargs = linear_kwargs
+
         self.embed_idx = nnx.Embed(
             rngs=rngs,
             num_embeddings=len(simulator.model_types) + len(simulator.noise_types),
@@ -198,14 +269,20 @@ class DMRITokenizer(Tokenizer):
             else init_component_embeddings,
         )
         self.embed_fraction = nnx.Linear(
-            len(simulator.model_types), token_dim, rngs=rngs
+            len(simulator.model_types), token_dim, rngs=rngs, **self._linear_kwargs
         )
         if simulator.shared_parameter_type is not None:
             self.shared_parameter_embed = nnx.Linear(
-                simulator.shared_parameter_type.theta_dim, token_dim, rngs=rngs
+                simulator.shared_parameter_type.theta_dim,
+                token_dim,
+                rngs=rngs,
+                **self._linear_kwargs,
             )
             self.shared_parameter_decode = nnx.Linear(
-                token_dim, simulator.shared_parameter_type.theta_dim, rngs=rngs
+                token_dim,
+                simulator.shared_parameter_type.theta_dim,
+                rngs=rngs,
+                **self._linear_kwargs,
             )
             self.shared_parameter_idx = nnx.Embed(
                 rngs=rngs, num_embeddings=1, features=token_dim
@@ -214,12 +291,20 @@ class DMRITokenizer(Tokenizer):
         # Default to linear layers
         if theta_encode_nets is None:
             theta_encode_nets = nnx.List([
-                nnx.Linear(d, token_dim, rngs=rngs) if d > 0 else None
+                nnx.Linear(d, token_dim, rngs=rngs, **self._linear_kwargs)
+                if d > 0
+                else None
                 for d in self.params_dims
             ])
         if theta_decode_nets is None:
             theta_decode_nets = nnx.List([
-                nnx.Linear(token_dim, d, rngs=rngs, kernel_init=nnx.initializers.zeros)
+                nnx.Linear(
+                    token_dim,
+                    d,
+                    rngs=rngs,
+                    kernel_init=nnx.initializers.zeros,
+                    **self._linear_kwargs,
+                )
                 if d > 0
                 else None
                 for d in self.params_dims
@@ -227,7 +312,9 @@ class DMRITokenizer(Tokenizer):
         self.theta_encode_nets = theta_encode_nets
         self.theta_decode_nets = theta_decode_nets
 
-    def _init_class_embeddings(self, key, shape, dtype=jnp.float32):
+    def _init_class_embeddings(
+        self, key: RngKey, shape: Tuple[int, ...], dtype: jnp.dtype = jnp.float32
+    ) -> Array:
         """Custom initializer that makes embeddings for same classes identical
         but orthogonal between different classes.
 
@@ -258,16 +345,15 @@ class DMRITokenizer(Tokenizer):
         model_mask: Optional[ArrayLike] = None,
         tokens_cfg: Optional[ArrayLike] = None,
         alpha_prior: Optional[ArrayLike] = None,
-        model_types: Optional[list[type]] = None,
-        noise_types: Optional[list[type]] = None,
-    ):
+        model_types: Optional[Sequence[type]] = None,
+        noise_types: Optional[Sequence[type]] = None,
+    ) -> Array:
         if model_types is None:
-            model_types = tuple(self.simulator.value.model_types)
+            model_types = self.simulator.value.model_types
         if noise_types is None:
-            noise_types = tuple(self.simulator.value.noise_types)
-
+            noise_types = self.simulator.value.noise_types
         if model_mask is None:
-            assert tokens_cfg is not None, "model_mask or tokens_cfg must be provided"
+            model_mask = jnp.ones(len(model_types) + len(noise_types), dtype=jnp.bool_)
 
         if tokens_cfg is None:
             tokens_cfg = self.embed_cfgs(
@@ -292,40 +378,35 @@ class DMRITokenizer(Tokenizer):
     def decode(
         self,
         tokens: ArrayLike,
-        model_types: Optional[list[type]] = None,
-        noise_types: Optional[list[type]] = None,
-        **kwargs,
-    ):
+        model_types: Optional[Sequence[type]] = None,
+        noise_types: Optional[Sequence[type]] = None,
+        **kwargs: Any,
+    ) -> Array:
         if model_types is None:
-            model_types = tuple(self.simulator.value.model_types)
+            model_types = self.simulator.value.model_types
         if noise_types is None:
-            noise_types = tuple(self.simulator.value.noise_types)
+            noise_types = self.simulator.value.noise_types
 
         theta = self.decode_theta(tokens, model_types, noise_types, **kwargs)
         return theta
 
-    @cache
-    def get_model_idx(self, model_types: list[type]) -> list[int]:
+    def get_model_idx(self, model_types: Sequence[type]) -> List[int]:
         """
         Returns a list of model indices corresponding to the provided model types.
         """
         model_types_to_idx = deepcopy(self.model_types_to_idx.value)
-        return tuple(
-            [model_types_to_idx[model.__name__].pop(0) for model in model_types]
-        )
+        return [model_types_to_idx[model.__name__].pop(0) for model in model_types]
 
-    @cache
-    def get_noise_idx(self, noise_types: List[type]) -> List[int]:
+    def get_noise_idx(self, noise_types: Sequence[type]) -> List[int]:
         """
         Returns a list of noise indices corresponding to the provided noise types.
         """
         noise_types_to_idx = deepcopy(self.noise_types_to_idx.value)
-        return tuple(
-            [noise_types_to_idx[noise.__name__].pop(0) for noise in noise_types]
-        )
+        return [noise_types_to_idx[noise.__name__].pop(0) for noise in noise_types]
 
-    @cache
-    def get_idx(self, model_types: List[type], noise_types: List[type]) -> List[int]:
+    def get_idx(
+        self, model_types: Sequence[type], noise_types: Sequence[type]
+    ) -> List[int]:
         """
         Returns a list of model and noise indices corresponding to the provided model and noise types.
         """
@@ -348,15 +429,15 @@ class DMRITokenizer(Tokenizer):
         return indices
 
     @staticmethod
-    def theta_fraction_mask(model_mask):
+    def theta_fraction_mask(model_mask: ArrayLike) -> Array:
         return jnp.ones(model_mask.shape[:-1] + (1,), dtype=jnp.bool_)
 
     def theta_mask(
         self,
-        model_mask,
-        model_types: Optional[list[type]] = None,
-        noise_types: Optional[list[type]] = None,
-    ):
+        model_mask: ArrayLike,
+        model_types: Optional[Sequence[type]] = None,
+        noise_types: Optional[Sequence[type]] = None,
+    ) -> Array:
         if model_types is None:
             model_types = tuple(self.simulator.value.model_types)
         if noise_types is None:
@@ -397,10 +478,10 @@ class DMRITokenizer(Tokenizer):
 
     def theta_token_mask(
         self,
-        model_mask,
-        model_types: Optional[list[type]] = None,
-        noise_types: Optional[list[type]] = None,
-    ):
+        model_mask: ArrayLike,
+        model_types: Optional[Sequence[type]] = None,
+        noise_types: Optional[Sequence[type]] = None,
+    ) -> Array:
         if model_types is None:
             model_types = tuple(self.simulator.value.model_types)
         if noise_types is None:
@@ -449,9 +530,9 @@ class DMRITokenizer(Tokenizer):
         self,
         model_mask: ArrayLike,
         alpha_prior: Optional[ArrayLike] = None,
-        model_types: Optional[list[type]] = None,
-        noise_types: Optional[list[type]] = None,
-    ) -> ArrayLike:
+        model_types: Optional[Sequence[type]] = None,
+        noise_types: Optional[Sequence[type]] = None,
+    ) -> Array:
         """
         Embeds the configuration of model and noise types into tokens.
 
@@ -520,10 +601,10 @@ class DMRITokenizer(Tokenizer):
         self,
         theta: ArrayLike,
         tokens_cfg: ArrayLike,
-        model_types: Optional[list[type]] = None,
-        noise_types: Optional[list[type]] = None,
+        model_types: Optional[Sequence[type]] = None,
+        noise_types: Optional[Sequence[type]] = None,
         model_mask: Optional[ArrayLike] = None,
-    ) -> ArrayLike:
+    ) -> Array:
         """
         Embeds the continuous parameter vector theta into token representation.
 
@@ -562,12 +643,12 @@ class DMRITokenizer(Tokenizer):
             6. The final tokens are the sum of the encoded parameters and the filtered configuration tokens
         """
         if model_types is None:
-            model_types = tuple(self.simulator.value.model_types)
+            model_types = self.simulator.value.model_types
         if noise_types is None:
-            noise_types = tuple(self.simulator.value.noise_types)
+            noise_types = self.simulator.value.noise_types
 
-        model_types_with_params = tuple([m for m in model_types if m.theta_dim > 0])
-        noise_types_with_params = tuple([n for n in noise_types if n.theta_dim > 0])
+        model_types_with_params = [m for m in model_types if m.theta_dim > 0]
+        noise_types_with_params = [n for n in noise_types if n.theta_dim > 0]
 
         model_idx = self.get_model_idx(model_types_with_params)
         noise_idx = self.get_noise_idx(noise_types_with_params)
@@ -649,11 +730,11 @@ class DMRITokenizer(Tokenizer):
     def decode_theta(
         self,
         tokens: ArrayLike,
-        model_types: Optional[List[type]] = None,
-        noise_types: Optional[List[type]] = None,
+        model_types: Optional[Sequence[type]] = None,
+        noise_types: Optional[Sequence[type]] = None,
         model_mask: Optional[ArrayLike] = None,
-        **kwargs,
-    ) -> ArrayLike:
+        **kwargs: Any,
+    ) -> Array:
         """
         Decodes the tokens back into the continuous parameter vector theta.
 
@@ -668,13 +749,13 @@ class DMRITokenizer(Tokenizer):
         del model_mask
 
         if model_types is None:
-            model_types = tuple(self.simulator.value.model_types)
+            model_types = self.simulator.value.model_types
         if noise_types is None:
-            noise_types = tuple(self.simulator.value.noise_types)
+            noise_types = self.simulator.value.noise_types
 
         # Get indices for components with parameters
-        model_types_with_params = tuple([m for m in model_types if m.theta_dim > 0])
-        noise_types_with_params = tuple([n for n in noise_types if n.theta_dim > 0])
+        model_types_with_params = [m for m in model_types if m.theta_dim > 0]
+        noise_types_with_params = [n for n in noise_types if n.theta_dim > 0]
 
         model_idx = self.get_model_idx(model_types_with_params)
         noise_idx = self.get_noise_idx(noise_types_with_params)
@@ -716,19 +797,33 @@ class DMRITokenizerPP(DMRITokenizer):
         token_dim=64,
         theta_encode_nets=None,
         theta_decode_nets=None,
+        dtype: DTypeLike | None = None,
+        param_dtype: DTypeLike | None = None,
+        precision: PrecisionLike | None = None,
+        preferred_element_type: DTypeLike | None = None,
     ):
         super().__init__(
             simulator,
-            rngs,
-            token_dim,
-            theta_encode_nets,
-            theta_decode_nets,
+            token_dim=token_dim,
+            theta_encode_nets=theta_encode_nets,
+            theta_decode_nets=theta_decode_nets,
+            dtype=dtype,
+            param_dtype=param_dtype,
+            precision=precision,
+            preferred_element_type=preferred_element_type,
+            rngs=rngs,
         )
         # Override the first linear layer for the fraction prior
         # Shared linear value embedding applied to all fractions
-        self.theta_encode_nets[0] = nnx.Linear(1, token_dim, rngs=rngs)
+        self.theta_encode_nets[0] = nnx.Linear(
+            1, token_dim, rngs=rngs, **self._linear_kwargs
+        )
         self.theta_decode_nets[0] = nnx.Linear(
-            token_dim, 1, rngs=rngs, kernel_init=nnx.initializers.zeros
+            token_dim,
+            1,
+            rngs=rngs,
+            kernel_init=nnx.initializers.zeros,
+            **self._linear_kwargs,
         )
         # Embedding to distinguish between model and noise components
         self.fraction_embed = nnx.Embed(
@@ -739,7 +834,7 @@ class DMRITokenizerPP(DMRITokenizer):
         )
 
     @staticmethod
-    def theta_fraction_mask(model_mask):
+    def theta_fraction_mask(model_mask: ArrayLike) -> Array:
         """
         Creates a mask for the model fractions.
         """
@@ -751,10 +846,10 @@ class DMRITokenizerPP(DMRITokenizer):
 
     def _create_fraction_tokens(
         self,
-        theta_fractions: jnp.ndarray,
-        model_idx: tuple[int, ...],
-        theta_fraction_mask: jnp.ndarray,
-    ) -> jnp.ndarray:
+        theta_fractions: ArrayLike,
+        model_idx: Tuple[int, ...],
+        theta_fraction_mask: ArrayLike,
+    ) -> Array:
         """
         Creates fraction tokens by combining model type embeddings with fraction values.
 
@@ -796,8 +891,13 @@ class DMRITokenizerPP(DMRITokenizer):
         return fraction_tokens
 
     def embed_theta(
-        self, theta, tokens_cfg, model_types=None, noise_types=None, model_mask=None
-    ):
+        self,
+        theta: ArrayLike,
+        tokens_cfg: ArrayLike,
+        model_types: Optional[Sequence[type]] = None,
+        noise_types: Optional[Sequence[type]] = None,
+        model_mask: Optional[ArrayLike] = None,
+    ) -> Array:
         if model_types is None:
             model_types = tuple(self.simulator.value.model_types)
         if noise_types is None:
@@ -882,8 +982,13 @@ class DMRITokenizerPP(DMRITokenizer):
         return theta_tokens
 
     def decode_theta(
-        self, tokens, model_types=None, noise_types=None, model_mask=None, **kwargs
-    ):
+        self,
+        tokens: ArrayLike,
+        model_types: Optional[Sequence[type]] = None,
+        noise_types: Optional[Sequence[type]] = None,
+        model_mask: Optional[ArrayLike] = None,
+        **kwargs: Any,
+    ) -> Array:
         if model_types is None:
             model_types = tuple(self.simulator.value.model_types)
         if noise_types is None:

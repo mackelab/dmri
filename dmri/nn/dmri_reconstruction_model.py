@@ -1,11 +1,11 @@
 from dataclasses import dataclass, field
 from functools import partial
-from typing import List, Optional
+from typing import Any, List, Optional, Tuple, Type
 
 import jax
 import jax.numpy as jnp
 from flax import nnx
-from jax.typing import ArrayLike
+from probjax.utils.typing import Array, ArrayLike, DTypeLike, PrecisionLike, RngKey
 
 from dmri.simulators import MultiCompartment
 from dmri.simulators.acquisition_scheme import acquisition_scheme
@@ -24,6 +24,9 @@ from .embedding_net import (
 from .simformer import DMRIThetaInferenceConfig, EDMSimformer, GaussianFourierEmbedding
 from .tokenizer import DMRITokenizer, DMRITokenizerPP
 
+EmbeddingModule = nnx.Module
+TokenizerType = Type[DMRITokenizer]
+
 
 @dataclass
 class DMRIInferenceModelConfig:
@@ -31,7 +34,12 @@ class DMRIInferenceModelConfig:
     model_dim: int = 64
     use_attention_mask: bool = False
     inference_loss_type: str = "v"
-    tokenizer = DMRITokenizer
+    dtype: DTypeLike | None = None
+    param_dtype: DTypeLike | None = None
+    precision: PrecisionLike | None = None
+    preferred_element_type: DTypeLike | None = None
+    tokenizer_cls: TokenizerType = DMRITokenizer
+    embedding_cls: Type[EmbeddingModule] = BvalBvecSignalEmbeddingNet
     embedding_cfg: DMRIEmbeddingConfig = field(default_factory=DMRIEmbeddingConfig)
     model_selection_cfg: DMRIModelSelectionConfig = field(
         default_factory=DMRIModelSelectionConfig
@@ -47,7 +55,12 @@ class DMRIInferenceModelConfigMaskPriorAmortized:
     model_dim: int = 64
     use_attention_mask: bool = True
     inference_loss_type: str = "v"
-    tokenizer = DMRITokenizer
+    dtype: DTypeLike | None = None
+    param_dtype: DTypeLike | None = None
+    precision: PrecisionLike | None = None
+    preferred_element_type: DTypeLike | None = None
+    tokenizer_cls: TokenizerType = DMRITokenizer
+    embedding_cls: Type[EmbeddingModule] = BvalBvecSignalEmbeddingNet
     embedding_cfg: DMRIEmbeddingConfig = field(default_factory=DMRIEmbeddingConfig)
     model_selection_cfg: DMRIModelSelectionConfig = field(
         default_factory=DMRIModelSelectionAmortizedPriorConfig
@@ -63,7 +76,12 @@ class DMRIInferenceModelConfigMaskPriorAmortizedPP:
     model_dim: int = 64
     use_attention_mask: bool = True
     inference_loss_type: str = "v"
-    tokenizer = DMRITokenizerPP
+    dtype: DTypeLike | None = None
+    param_dtype: DTypeLike | None = None
+    precision: PrecisionLike | None = None
+    preferred_element_type: DTypeLike | None = None
+    tokenizer_cls: TokenizerType = DMRITokenizerPP
+    embedding_cls: Type[EmbeddingModule] = BvalBvecSignalEmbeddingNet
     embedding_cfg: DMRIEmbeddingConfig = field(default_factory=DMRIEmbeddingConfig)
     model_selection_cfg: DMRIModelSelectionConfig = field(
         default_factory=DMRIModelSelectionAmortizedPriorConfig
@@ -79,8 +97,12 @@ class SSFPInferenceModelConfig:
     model_dim: int = 64
     use_attention_mask: bool = True
     inference_loss_type: str = "v"
-    tokenizer = DMRITokenizerPP
-    embedding_cls: type = SSFPEmbeddingNet
+    dtype: DTypeLike | None = None
+    param_dtype: DTypeLike | None = None
+    precision: PrecisionLike | None = None
+    preferred_element_type: DTypeLike | None = None
+    tokenizer_cls: TokenizerType = DMRITokenizerPP
+    embedding_cls: Type[EmbeddingModule] = SSFPEmbeddingNet
     embedding_cfg: SSFPEmbeddingNetConfig = field(
         default_factory=SSFPEmbeddingNetConfig
     )
@@ -93,62 +115,87 @@ class SSFPInferenceModelConfig:
 
 
 class DMRIInferenceModel(nnx.Module):
-    def __init__(self, cfg: DMRIInferenceModelConfig, rngs):
-        self.cfg = cfg
+    def __init__(self, cfg: DMRIInferenceModelConfig, rngs: RngKey) -> None:
+        self.cfg: DMRIInferenceModelConfig = cfg
+        precision_keys: tuple[str, ...] = (
+            "dtype",
+            "param_dtype",
+            "precision",
+            "preferred_element_type",
+        )
+
+        def _merge_kwargs(source: dict[str, Any]) -> dict[str, Any]:
+            merged: dict[str, Any] = source.copy()
+            for key in precision_keys:
+                value = merged.get(key)
+                if value is None:
+                    fallback = getattr(cfg, key, None)
+                    if fallback is not None:
+                        merged[key] = fallback
+            return {k: v for k, v in merged.items() if v is not None}
+
         # Setup embedding net observations
-        if hasattr(cfg, "embedding_cls"):
-            embedding_cls = cfg.embedding_cls
-        else:
-            embedding_cls = BvalBvecSignalEmbeddingNet
-        self.encoder = embedding_cls(
+        embedding_kwargs = _merge_kwargs(vars(cfg.embedding_cfg))
+        self.encoder = cfg.embedding_cls(
             rngs,
             model_dim=cfg.model_dim,
-            **cfg.embedding_cfg.__dict__,
+            **embedding_kwargs,
         )
         # Setup tokenizers
-        self.tokenizer = cfg.tokenizer(
-            cfg.simulator, token_dim=cfg.model_dim, rngs=rngs
+        tokenizer_kwargs = {
+            key: getattr(cfg, key)
+            for key in precision_keys
+            if getattr(cfg, key, None) is not None
+        }
+        self.tokenizer: DMRITokenizer = cfg.tokenizer_cls(
+            cfg.simulator, token_dim=cfg.model_dim, rngs=rngs, **tokenizer_kwargs
         )
 
         # Setup model selection network
-        params = cfg.model_selection_cfg.__dict__
-        if cfg.model_selection_cfg.context_dim is not None:
+        selection_cfg = vars(cfg.model_selection_cfg).copy()
+        mask_prior_dim = selection_cfg.pop("mask_prior_dim", None)
+        selection_kwargs = _merge_kwargs(selection_cfg)
+
+        self.mask_prior_need: bool = False
+        context_dim = selection_kwargs.get("context_dim")
+        if context_dim is not None:
             # We expect a mask prior input
             self.mask_prior_need = True
-            mask_prior_dim = params.pop("mask_prior_dim", 1)
-            self.mask_prior_embed = GaussianFourierEmbedding(
+            mask_prior_dim = mask_prior_dim or 1
+            self.mask_prior_embed: GaussianFourierEmbedding = GaussianFourierEmbedding(
                 mask_prior_dim,
-                cfg.model_selection_cfg.context_dim,
+                context_dim,
                 rngs=rngs,
             )
 
         self.model_decoder = BinaryAutoregressiveDecoder(
             rngs,
             model_dim=cfg.model_dim,
-            **cfg.model_selection_cfg.__dict__,
+            **selection_kwargs,
         )
 
         # Inference decoder
+        theta_kwargs = _merge_kwargs(vars(cfg.theta_inference_cfg))
         simformer = EDMSimformer(
             rngs=rngs,
             model_dim=cfg.model_dim,
-            **cfg.theta_inference_cfg.__dict__,
+            **theta_kwargs,
             loss_type=cfg.inference_loss_type,
         )
         self.inference_decoder = simformer
 
     def __call__(
         self,
-        model_mask: ArrayLike,
-        theta: ArrayLike,
-        x: ArrayLike,
+        model_mask: Array,
+        theta: Array,
+        x: Array,
         acq: acquisition_scheme,
         mask_prior: Optional[ArrayLike] = None,
         alpha_prior: Optional[ArrayLike] = None,
         model_types: Optional[List[type]] = None,
         noise_types: Optional[List[type]] = None,
         t: Optional[ArrayLike] = None,
-    ):
+    ) -> tuple[Array, Array]:
         # Embed model configuration
         tokens_cfg, y, mask_prior = self.embed_inputs(
             model_mask,
@@ -189,11 +236,11 @@ class DMRIInferenceModel(nnx.Module):
         model_mask: ArrayLike,
         x: ArrayLike,
         acq: acquisition_scheme,
-        mask_prior=None,
-        alpha_prior=None,
-        model_types=None,
-        noise_types=None,
-    ):
+        mask_prior: Optional[ArrayLike] = None,
+        alpha_prior: Optional[ArrayLike] = None,
+        model_types: Optional[List[type]] = None,
+        noise_types: Optional[List[type]] = None,
+    ) -> Tuple[Array, Array, Optional[Array]]:
         # Embed model configuration
         tokens_cfg = self.tokenizer.embed_cfgs(
             model_mask, alpha_prior, model_types=model_types, noise_types=noise_types
@@ -214,18 +261,19 @@ class DMRIInferenceModel(nnx.Module):
         model_mask: ArrayLike,
         model_types: Optional[list[type]] = None,
         noise_types: Optional[list[type]] = None,
-    ):
+    ) -> Array:
         theta_token_mask = self.tokenizer.theta_token_mask(
             model_mask, model_types=model_types, noise_types=noise_types
         )
         # Expand this by the
+        return theta_token_mask
 
     def marginalization_mask(
         self,
         model_mask: ArrayLike,
         model_types: Optional[list[type]] = None,
         noise_types: Optional[list[type]] = None,
-    ):
+    ) -> Array:
         _model_mask_extended = self.tokenizer.theta_token_mask(
             model_mask, model_types=model_types, noise_types=noise_types
         )
@@ -239,21 +287,21 @@ class DMRIInferenceModel(nnx.Module):
 
     def loss_fn(
         self,
-        rng,
+        rng: RngKey,
         model_mask: ArrayLike,
         theta: ArrayLike,
         x: ArrayLike,
         acq: acquisition_scheme,
-        mask_prior=None,
-        alpha_prior=None,
-        target_score=None,
-        model_types=None,
-        noise_types=None,
-        permute_order=False,
-        use_loss_mask=False,
-        weight_by_complexity=False,
-        cut_off_tsm=0.1,
-    ):
+        mask_prior: ArrayLike | None = None,
+        alpha_prior: Array | None = None,
+        target_score: Array | None = None,
+        model_types: Optional[list[type]] = None,
+        noise_types: Optional[list[type]] = None,
+        permute_order: bool = False,
+        use_loss_mask: bool = False,
+        weight_by_complexity: bool = False,
+        cut_off_tsm: float = 0.1,
+    ) -> Array:
         # Embed model configuration
         tokens_cfg = self.tokenizer.embed_cfgs(
             model_mask, alpha_prior, model_types=model_types, noise_types=noise_types
@@ -314,7 +362,13 @@ class DMRIInferenceModel(nnx.Module):
 
         return jnp.concatenate([model_mask_loss[None], theta_loss[None]])
 
-    def sample_mask(self, rng, acq: acquisition_scheme, x: ArrayLike, mask_prior=None):
+    def sample_mask(
+        self,
+        rng: RngKey,
+        acq: acquisition_scheme,
+        x: ArrayLike,
+        mask_prior: ArrayLike | None = None,
+    ) -> Array:
         # Update for different model configs
         y = self.encoder(acq, x)
         if mask_prior is not None:
@@ -333,8 +387,8 @@ class DMRIInferenceModel(nnx.Module):
         model_mask: ArrayLike,
         acq: acquisition_scheme,
         x: ArrayLike,
-        mask_prior=None,
-    ):
+        mask_prior: ArrayLike | None = None,
+    ) -> Array:
         y = self.encoder(acq, x)
         if mask_prior is not None:
             mask_prior = self.mask_prior_embed(mask_prior)
@@ -348,16 +402,16 @@ class DMRIInferenceModel(nnx.Module):
 
     def sample_theta(
         self,
-        rng,
+        rng: RngKey,
         acq: acquisition_scheme,
         x: ArrayLike,
         model_mask: ArrayLike,
-        num_steps=16,
-        max_noise=None,
-        rho=7,
-        min_noise_nugget=0.0,
-        sample_method="ode",
-    ):
+        num_steps: int = 16,
+        max_noise: Optional[float] = None,
+        rho: float = 7,
+        min_noise_nugget: float = 0.0,
+        sample_method: str = "ode",
+    ) -> Array:
         y = self.encoder(acq, x)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
 
@@ -383,15 +437,15 @@ class DMRIInferenceModel(nnx.Module):
 
     def log_prob_theta(
         self,
-        theta,
+        theta: Array,
         acq: acquisition_scheme,
         x: ArrayLike,
-        model_mask,
-        num_steps=16,
-        max_noise=None,
-        rho=7,
-        min_noise_nugget=0.0,
-    ):
+        model_mask: ArrayLike,
+        num_steps: int = 16,
+        max_noise: Optional[float] = None,
+        rho: float = 7,
+        min_noise_nugget: float = 0.0,
+    ) -> Array:
         y = self.encoder(acq, x)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
 
@@ -414,15 +468,15 @@ class DMRIInferenceModel(nnx.Module):
 
     def sample_and_log_prob_theta(
         self,
-        rng,
+        rng: RngKey,
         acq: acquisition_scheme,
         x: ArrayLike,
-        model_mask,
-        num_steps=16,
-        max_noise=None,
-        rho=7,
-        min_noise_nugget=0.0,
-    ):
+        model_mask: ArrayLike,
+        num_steps: int = 16,
+        max_noise: Optional[float] = None,
+        rho: float = 7,
+        min_noise_nugget: float = 0.0,
+    ) -> tuple[Array, Array]:
         y = self.encoder(acq, x)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
 
@@ -446,12 +500,12 @@ class DMRIInferenceModel(nnx.Module):
 
     def score_theta(
         self,
-        theta,
+        theta: Array,
         acq: acquisition_scheme,
         x: ArrayLike,
-        model_mask,
-        t=None,
-    ):
+        model_mask: ArrayLike,
+        t: Optional[ArrayLike] = None,
+    ) -> Array:
         if t is None:
             t = jnp.ones((1,)) * 0.01
 
