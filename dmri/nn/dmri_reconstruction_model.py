@@ -73,44 +73,51 @@ class SSFPInferenceModelConfig(DMRIInferenceModelConfig):
 class DMRIInferenceModel(nnx.Module):
     def __init__(self, cfg: DMRIInferenceModelConfig, rngs: nnx.Rngs) -> None:
         self.cfg: DMRIInferenceModelConfig = cfg
-        precision_keys: tuple[str, ...] = (
+        self.precision_fields: tuple[str, ...] = (
             "dtype",
             "param_dtype",
             "precision",
             "preferred_element_type",
         )
 
-        def _merge_kwargs(source: dict[str, Any]) -> dict[str, Any]:
-            merged: dict[str, Any] = source.copy()
-            for key in precision_keys:
-                value = merged.get(key)
-                if value is None:
-                    fallback = getattr(cfg, key, None)
-                    if fallback is not None:
-                        merged[key] = fallback
-            return {k: v for k, v in merged.items() if v is not None}
+        precision_defaults = {
+            key: getattr(cfg, key, None)
+            for key in self.precision_fields
+            if getattr(cfg, key, None) is not None
+        }
+
+        def _config_kwargs(source_cfg: Any) -> dict[str, Any]:
+            kwargs: dict[str, Any] = {
+                key: value
+                for key, value in vars(source_cfg).items()
+                if value is not None and key not in self.precision_fields
+            }
+            for key, value in precision_defaults.items():
+                kwargs.setdefault(key, value)
+            for key in self.precision_fields:
+                explicit_value = getattr(source_cfg, key, None)
+                if explicit_value is not None:
+                    kwargs[key] = explicit_value
+            return kwargs
 
         # Setup embedding net observations
-        embedding_kwargs = _merge_kwargs(vars(cfg.embedding_cfg))
+        embedding_kwargs = _config_kwargs(cfg.embedding_cfg)
         self.encoder = cfg.embedding_cls(
             rngs,
             model_dim=cfg.model_dim,
             **embedding_kwargs,
         )
         # Setup tokenizers
-        tokenizer_kwargs = {
-            key: getattr(cfg, key)
-            for key in precision_keys
-            if getattr(cfg, key, None) is not None
-        }
         self.tokenizer: DMRITokenizer = cfg.tokenizer_cls(
-            cfg.simulator, token_dim=cfg.model_dim, rngs=rngs, **tokenizer_kwargs
+            cfg.simulator,
+            token_dim=cfg.model_dim,
+            rngs=rngs,
+            **precision_defaults,
         )
 
         # Setup model selection network
-        selection_cfg = vars(cfg.model_selection_cfg).copy()
-        mask_prior_dim = selection_cfg.pop("mask_prior_dim", None)
-        selection_kwargs = _merge_kwargs(selection_cfg)
+        selection_kwargs = _config_kwargs(cfg.model_selection_cfg)
+        mask_prior_dim = selection_kwargs.pop("mask_prior_dim", None)
 
         self.mask_prior_need: bool = False
         context_dim = selection_kwargs.get("context_dim")
@@ -118,10 +125,11 @@ class DMRIInferenceModel(nnx.Module):
             # We expect a mask prior input
             self.mask_prior_need = True
             mask_prior_dim = mask_prior_dim or 1
-            self.mask_prior_embed: GaussianFourierEmbedding = GaussianFourierEmbedding(
+            self.mask_prior_embed = GaussianFourierEmbedding(
                 mask_prior_dim,
                 context_dim,
                 rngs=rngs,
+                **precision_defaults,  # type: ignore
             )
 
         self.model_decoder = BinaryAutoregressiveDecoder(
@@ -131,12 +139,12 @@ class DMRIInferenceModel(nnx.Module):
         )
 
         # Inference decoder
-        theta_kwargs = _merge_kwargs(vars(cfg.theta_inference_cfg))
+        theta_kwargs = _config_kwargs(cfg.theta_inference_cfg)
         simformer = EDMSimformer(
             rngs=rngs,
             model_dim=cfg.model_dim,
-            **theta_kwargs,
             loss_type=cfg.inference_loss_type,
+            **theta_kwargs,
         )
         self.inference_decoder = simformer
 
