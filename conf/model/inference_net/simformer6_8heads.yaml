@@ -3,6 +3,8 @@ params:
   num_layers: 6
   num_heads: 8
   widening_factor: 4
+  use_flash_attention: false
+  use_flash_cross_attention: false
   attn_size: 8
   context_dim: 64
   dropout_rate: 0.0

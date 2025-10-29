@@ -3,6 +3,8 @@ params:
   num_layers: 3
   num_heads: 4
   widening_factor: 4
+  use_flash_attention: false
+  use_flash_cross_attention: false
   attn_size: 8
   dropout_rate: 0.0
   context_dim: 64  # Context dimension embedding
