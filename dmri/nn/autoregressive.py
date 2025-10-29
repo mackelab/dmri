@@ -28,21 +28,8 @@ class DMRIModelSelectionConfig:
 
 @dataclass
 class DMRIModelSelectionAmortizedPriorConfig(DMRIModelSelectionConfig):
-    num_layers: int = 4
-    num_heads: int = 4
-    widening_factor: int = 3
-    attn_size: int = 16
-    dropout_rate: float = 0.0
     context_dim: Optional[int] = 64  # Context dimension embedding
     mask_prior_dim: int = 1  # Scalar mask probability
-    attention: Optional[str] = None
-    cross_attention: Optional[str] = None
-    attn_fuse: Optional[str] = None
-    mlp_fuse: Optional[str] = None
-    dtype: DTypeLike | None = None
-    param_dtype: DTypeLike | None = None
-    precision: PrecisionLike | None = None
-    preferred_element_type: DTypeLike | None = None
 
 
 class BinaryAutoregressiveDecoder(nnx.Module):

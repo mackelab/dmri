@@ -6,7 +6,7 @@ import jax.numpy as jnp
 from flax import nnx
 from probjax.nn import GaussianFourierEmbedding, Transformer
 from probjax.nn.layers.attention import flex_attention
-from probjax.utils.typing import Array, ArrayLike, DTypeLike, PrecisionLike, RngKey
+from probjax.utils.typing import Array, ArrayLike, DTypeLike, PrecisionLike
 
 from dmri.simulators.acquisition_scheme import (
     acquisition_scheme,
@@ -35,6 +35,7 @@ class DMRIEmbeddingConfig:
     max_bval: float = 4000.0
     min_signal: float = 0.0
     max_signal: float = 1.0
+    log_transform_signals: bool = False
     embed_signals: str = "repeat"
     embed_bvals: str = "fourier"
     dtype: DTypeLike | None = None
@@ -303,6 +304,8 @@ class SSFPEmbeddingNetConfig:
     param_dtype: DTypeLike | None = None
     precision: PrecisionLike | None = None
     preferred_element_type: DTypeLike | None = None
+    use_global_summary_token: bool = False
+    global_summary_bins: int = 8
 
 
 class SSFPEmbeddingNet(nnx.Module):
@@ -314,7 +317,7 @@ class SSFPEmbeddingNet(nnx.Module):
 
     def __init__(
         self,
-        rngs: RngKey,
+        rngs: nnx.Rngs,
         model_dim: int = 64,
         num_heads: int = 4,
         num_layers: int = 3,
@@ -322,6 +325,8 @@ class SSFPEmbeddingNet(nnx.Module):
         attn_size: int = 16,
         dropout_rate: float = 0.0,
         use_flash_attention: bool = False,
+        use_global_summary_token: bool = False,
+        global_summary_bins: int = 8,
         dtype: DTypeLike | None = None,
         param_dtype: DTypeLike | None = None,
         precision: PrecisionLike | None = None,
@@ -332,6 +337,11 @@ class SSFPEmbeddingNet(nnx.Module):
         self.num_layers = num_layers
         self.widening_factor = widening_factor
         self.attn_size = attn_size
+        self.use_global_summary_token = use_global_summary_token
+        self.global_summary_bins = global_summary_bins
+
+        if self.global_summary_bins <= 0:
+            raise ValueError("global_summary_bins must be a positive integer.")
 
         linear_kwargs: dict[str, Any] = {}
         transformer_kwargs: dict[str, Any] = {}
@@ -350,7 +360,7 @@ class SSFPEmbeddingNet(nnx.Module):
         bvec_embed_dim = self.model_dim - scalar_embed_dim - signal_embed_dim
         self.embed_scalars = GaussianFourierEmbedding(7, scalar_embed_dim, rngs=rngs)
         self.embed_signals = GaussianFourierEmbedding(1, signal_embed_dim, rngs=rngs)
-        # Repeat bvces
+        # Repeat bvecs
         self.embed_bvecs: Callable[[ArrayLike], Array] = lambda x: jnp.repeat(
             x[..., None], bvec_embed_dim, axis=-1
         ).reshape(*x.shape[:-1], -1)[..., :bvec_embed_dim]
@@ -372,14 +382,109 @@ class SSFPEmbeddingNet(nnx.Module):
             **transformer_kwargs,
         )
 
+        self.global_summary_feature_dim = 3 * self.global_summary_bins + 18
+        if self.use_global_summary_token:
+            self.global_summary_projection = nnx.Linear(
+                self.global_summary_feature_dim,
+                model_dim,
+                rngs=rngs,
+                **linear_kwargs,
+            )
+        else:
+            self.global_summary_projection = None
+
+    def global_summary_token(
+        self, acq: ssfp_acquisition_scheme, signals: ArrayLike
+    ) -> Array:
+        if not self.use_global_summary_token or self.global_summary_projection is None:
+            raise ValueError("Global summary token requested but not configured.")
+
+        signals_arr = jnp.asarray(signals)
+        dtype = signals_arr.dtype
+        grad = jnp.asarray(acq.diffGradAmps, dtype=dtype)
+
+        min_grad = jnp.min(grad, axis=-1, keepdims=True)
+        max_grad = jnp.max(grad, axis=-1, keepdims=True)
+        span_grad = jnp.maximum(max_grad - min_grad, jnp.asarray(1e-6, dtype=dtype))
+        bin_width = span_grad / jnp.asarray(self.global_summary_bins, dtype=dtype)
+        bin_width = jnp.where(bin_width > 0, bin_width, jnp.ones_like(bin_width))
+        relative_position = (grad - min_grad) / bin_width
+        bin_idx = jnp.floor(relative_position).astype(jnp.int32)
+        bin_idx = jnp.clip(bin_idx, 0, self.global_summary_bins - 1)
+
+        one_hot = jax.nn.one_hot(
+            bin_idx, self.global_summary_bins, axis=-1, dtype=dtype
+        )
+        counts = jnp.sum(one_hot, axis=-2).astype(dtype)
+        token_count = signals_arr.shape[-1]
+        total = jnp.maximum(
+            jnp.asarray(token_count, dtype=dtype), jnp.asarray(1.0, dtype=dtype)
+        )
+        density = counts / total
+
+        sum_signal = jnp.sum(one_hot * signals_arr[..., None], axis=-2)
+        sum_sq_signal = jnp.sum(one_hot * (signals_arr[..., None] ** 2), axis=-2)
+        counts_safe = jnp.where(counts > 0, counts, jnp.ones_like(counts))
+        mean_signal = sum_signal / counts_safe
+        variance_signal = jnp.maximum(sum_sq_signal / counts_safe - mean_signal**2, 0.0)
+        mean_signal = jnp.where(counts > 0, mean_signal, jnp.zeros_like(mean_signal))
+        variance_signal = jnp.where(
+            counts > 0, variance_signal, jnp.zeros_like(variance_signal)
+        )
+
+        def _mean_std(x: ArrayLike) -> tuple[Array, Array]:
+            arr = jnp.asarray(x, dtype=dtype)
+            return (
+                jnp.mean(arr, axis=-1, keepdims=True),
+                jnp.std(arr, axis=-1, keepdims=True),
+            )
+
+        stats = []
+        for field in (
+            acq.T1,
+            acq.T2,
+            acq.B1,
+            acq.diffGradAmps,
+            acq.flipAngles,
+            acq.TRs,
+            acq.diffGradDur,
+        ):
+            mean_val, std_val = _mean_std(field)
+            stats.extend([mean_val, std_val])
+
+        signal_mean = jnp.mean(signals_arr, axis=-1, keepdims=True)
+        signal_std = jnp.std(signals_arr, axis=-1, keepdims=True)
+        signal_min = jnp.min(signals_arr, axis=-1, keepdims=True)
+        signal_max = jnp.max(signals_arr, axis=-1, keepdims=True)
+
+        summary_features = jnp.concatenate(
+            [
+                density,
+                mean_signal,
+                variance_signal,
+                signal_mean,
+                signal_std,
+                signal_min,
+                signal_max,
+                *stats,
+            ],
+            axis=-1,
+        )
+
+        return self.global_summary_projection(summary_features)
+
     def __call__(
         self,
         acq: ssfp_acquisition_scheme,
         signals: ArrayLike,
         deterministic: bool | None = None,
         decode: bool = False,
-    ) -> Array:
-        # Embed stuff
+    ) -> tuple[Array | None, Array]:
+        summary_token = None
+        if self.use_global_summary_token:
+            summary_token = self.global_summary_token(acq, signals)
+        using_summary = summary_token is not None
+
         T1 = acq.T1
         T2 = acq.T2
         B1 = acq.B1
@@ -394,7 +499,18 @@ class SSFPEmbeddingNet(nnx.Module):
         signal = self.embed_signals(signals[..., None])
         bvecs = self.embed_bvecs(acq.bvecs)
         tokens = jnp.concatenate([scalar, signal, bvecs], axis=-1)
+        if using_summary:
+            expanded_summary = summary_token.reshape(
+                summary_token.shape[:-1] + (1, summary_token.shape[-1])
+            )
+            tokens = jnp.concatenate([expanded_summary, tokens], axis=-2)
         out_tokens = self.transformer(
             tokens, deterministic=deterministic, decode=decode
         )
-        return out_tokens
+        if using_summary:
+            global_summary = out_tokens[..., 0, :]
+            sequence_tokens = out_tokens[..., 1:, :]
+        else:
+            global_summary = None
+            sequence_tokens = out_tokens
+        return global_summary, sequence_tokens

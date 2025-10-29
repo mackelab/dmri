@@ -38,8 +38,6 @@ class DMRIInferenceModelConfig:
     param_dtype: DTypeLike | None = None
     precision: PrecisionLike | None = None
     preferred_element_type: DTypeLike | None = None
-    use_flash_attention: bool = False
-    use_flash_cross_attention: bool = False
     tokenizer_cls: TokenizerType = DMRITokenizer
     embedding_cls: Type[EmbeddingModule] = BvalBvecSignalEmbeddingNet
     embedding_cfg: Any = field(default_factory=DMRIEmbeddingConfig)
@@ -73,7 +71,7 @@ class SSFPInferenceModelConfig(DMRIInferenceModelConfig):
 
 
 class DMRIInferenceModel(nnx.Module):
-    def __init__(self, cfg: DMRIInferenceModelConfig, rngs: RngKey) -> None:
+    def __init__(self, cfg: DMRIInferenceModelConfig, *, rngs: nnx.Rngs) -> None:
         self.cfg: DMRIInferenceModelConfig = cfg
         precision_keys: tuple[str, ...] = (
             "dtype",

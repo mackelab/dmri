@@ -167,9 +167,26 @@ def test_ssfp_embedding_net(use_flashattn, rng):
     # Create signal data
     signals = jax.random.normal(rng.next(), (batch_size, num_acquisitions))
 
-    # Test with full batch
-    output_batch = embedding_net(acq, signals)
-    assert output_batch.shape == (batch_size, num_acquisitions, 64)
+    # Test with full batch and default summary disabled
+    global_summary, sequence_tokens = embedding_net(acq, signals)
+    assert global_summary is None
+    assert sequence_tokens.shape == (batch_size, num_acquisitions, 64)
+
+    # Test with global summary enabled
+    rng_summary = nnx.Rngs(2)
+    embedding_net_summary = SSFPEmbeddingNet(
+        model_dim=64,
+        num_heads=4,
+        num_layers=6,
+        attn_size=16,
+        widening_factor=3,
+        use_flash_attention=use_flashattn,
+        use_global_summary_token=True,
+        rngs=rng_summary,
+    )
+    summary_token, summarized_sequence = embedding_net_summary(acq, signals)
+    assert summary_token.shape == (batch_size, 64)
+    assert summarized_sequence.shape == (batch_size, num_acquisitions, 64)
 
 
 def test_dmri_tokenizer(rng, simulator, data):
