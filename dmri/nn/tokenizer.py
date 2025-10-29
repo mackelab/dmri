@@ -671,13 +671,10 @@ class DMRITokenizer(Tokenizer):
 
         token_cfg_models_with_params = tokens_cfg_models[..., indices, :]
         if self.simulator.value.shared_parameter_type is not None:
-            shared_parameter_idx = self.shared_parameter_idx(
-                jnp.array(0, dtype=jnp.int32)
+            shared_index_array = jnp.zeros(
+                tokens_cfg.shape[:-2] + (1,), dtype=jnp.int32
             )
-            shared_parameter_token = jnp.broadcast_to(
-                shared_parameter_idx,
-                tokens_cfg.shape[:-2] + (1, tokens_cfg.shape[-1]),
-            )
+            shared_parameter_token = self.shared_parameter_idx(shared_index_array)
             tokens_cfg = jnp.concatenate(
                 [
                     tokens_cfg_fractions,
@@ -935,8 +932,10 @@ class DMRITokenizerPP(DMRITokenizer):
         model_tokens = val_tokens_cfg[..., indices_with_params, :] + val_embeddings
         # Combine the tokens
         if self.simulator.value.shared_parameter_type is not None:
-            shared_tokens_idx = self.shared_parameter_idx(jnp.array(0, dtype=jnp.int32))
-            shared_tokens_idx = jnp.broadcast_to(shared_tokens_idx, shared_tokens.shape)
+            shared_index_array = jnp.zeros(
+                shared_tokens.shape[:-1], dtype=jnp.int32
+            )
+            shared_tokens_idx = self.shared_parameter_idx(shared_index_array)
             shared_tokens = shared_tokens_idx + shared_tokens
             theta_tokens = jnp.concatenate(
                 [fraction_tokens, shared_tokens, model_tokens], axis=-2
