@@ -192,8 +192,8 @@ class DMRIInferenceModel(nnx.Module):
         acq: acquisition_scheme,
         mask_prior: Optional[ArrayLike] = None,
         alpha_prior: Optional[ArrayLike] = None,
-        model_types: Optional[List[type]] = None,
-        noise_types: Optional[List[type]] = None,
+        model_idx: Optional[List[int]] = None,
+        noise_idx: Optional[List[int]] = None,
         t: Optional[ArrayLike] = None,
     ) -> tuple[Array, Array]:
         # Embed model configuration
@@ -203,8 +203,8 @@ class DMRIInferenceModel(nnx.Module):
             acq,
             mask_prior=mask_prior,
             alpha_prior=alpha_prior,
-            model_types=model_types,
-            noise_types=noise_types,
+            model_idx=model_idx,
+            noise_idx=noise_idx,
         )
 
         # Mode compartment prediction
@@ -217,7 +217,7 @@ class DMRIInferenceModel(nnx.Module):
             t = jnp.ones((theta.shape[0], 1)) * 0.0001
         # Mask out non-selected models
         attention_mask = self.marginalization_mask(
-            model_mask, model_types=model_types, noise_types=noise_types
+            model_mask, model_idx=model_idx, noise_idx=noise_idx
         )
         theta_pred = self.inference_decoder(
             t,
@@ -238,12 +238,15 @@ class DMRIInferenceModel(nnx.Module):
         acq: acquisition_scheme,
         mask_prior: Optional[ArrayLike] = None,
         alpha_prior: Optional[ArrayLike] = None,
-        model_types: Optional[List[type]] = None,
-        noise_types: Optional[List[type]] = None,
+        model_idx: Optional[List[int]] = None,
+        noise_idx: Optional[List[int]] = None,
     ) -> Tuple[Array, Array, Optional[Array]]:
         # Embed model configuration
         tokens_cfg = self.tokenizer.embed_cfgs(
-            model_mask, alpha_prior, model_types=model_types, noise_types=noise_types
+            model_mask,
+            alpha_prior,
+            model_idx=model_idx,
+            noise_idx=noise_idx,
         )
         # Embed observations and acquisition parameters
         y = self.encoder(acq, x)
@@ -259,23 +262,22 @@ class DMRIInferenceModel(nnx.Module):
     def theta_mask(
         self,
         model_mask: ArrayLike,
-        model_types: Optional[list[type]] = None,
-        noise_types: Optional[list[type]] = None,
+        model_idx: Optional[List[int]] = None,
+        noise_idx: Optional[List[int]] = None,
     ) -> Array:
         theta_token_mask = self.tokenizer.theta_token_mask(
-            model_mask, model_types=model_types, noise_types=noise_types
+            model_mask, model_idx=model_idx, noise_idx=noise_idx
         )
-        # Expand this by the
         return theta_token_mask
 
     def marginalization_mask(
         self,
         model_mask: ArrayLike,
-        model_types: Optional[list[type]] = None,
-        noise_types: Optional[list[type]] = None,
+        model_idx: Optional[List[int]] = None,
+        noise_idx: Optional[List[int]] = None,
     ) -> Array:
         _model_mask_extended = self.tokenizer.theta_token_mask(
-            model_mask, model_types=model_types, noise_types=noise_types
+            model_mask, model_idx=model_idx, noise_idx=noise_idx
         )
         attention_mask = (
             _model_mask_extended[..., None, :] & _model_mask_extended[..., :, None]
@@ -295,8 +297,8 @@ class DMRIInferenceModel(nnx.Module):
         mask_prior: ArrayLike | None = None,
         alpha_prior: Array | None = None,
         target_score: Array | None = None,
-        model_types: Optional[list[type]] = None,
-        noise_types: Optional[list[type]] = None,
+        model_idx: Optional[List[int]] = None,
+        noise_idx: Optional[List[int]] = None,
         permute_order: bool = False,
         use_loss_mask: bool = False,
         weight_by_complexity: bool = False,
@@ -304,7 +306,7 @@ class DMRIInferenceModel(nnx.Module):
     ) -> Array:
         # Embed model configuration
         tokens_cfg = self.tokenizer.embed_cfgs(
-            model_mask, alpha_prior, model_types=model_types, noise_types=noise_types
+            model_mask, alpha_prior, model_idx=model_idx, noise_idx=noise_idx
         )
         # Embed observatiosn
         y = self.encoder(acq, x)
@@ -338,8 +340,8 @@ class DMRIInferenceModel(nnx.Module):
             loss_mask = ~jax.vmap(
                 partial(
                     self.tokenizer.theta_mask,
-                    model_types=model_types,
-                    noise_types=noise_types,
+                    model_idx=model_idx,
+                    noise_idx=noise_idx,
                 )
             )(model_mask)
         else:

@@ -1,4 +1,7 @@
-from typing import Callable, Optional
+from __future__ import annotations
+
+from functools import lru_cache
+from typing import Callable, Optional, Sequence, Tuple
 
 import jax
 import jax.numpy as jnp
@@ -271,6 +274,27 @@ class MultiCompartment(SignalCompartment):
             shared_parameter,
         )
 
+    @classmethod
+    def sub_model(
+        cls,
+        model_idx: Sequence[int],
+        noise_idx: Sequence[int],
+    ) -> type["MultiCompartment"]:
+        """Return a reduced ``MultiCompartment`` subclass with selected components."""
+
+        model_idx_tuple = tuple(int(i) for i in model_idx)
+        noise_idx_tuple = tuple(int(i) for i in noise_idx)
+
+        if not model_idx_tuple:
+            raise ValueError("model_idx must contain at least one entry")
+
+        if any(i < 0 or i >= len(cls.model_types) for i in model_idx_tuple):
+            raise IndexError("model_idx contains entries outside available model types")
+        if any(i < 0 or i >= len(cls.noise_types) for i in noise_idx_tuple):
+            raise IndexError("noise_idx contains entries outside available noise types")
+
+        return _build_submodel(cls, model_idx_tuple, noise_idx_tuple)
+
     def to_fod(self, no_isotropic=False):
         if not no_isotropic:
             fods = [m.to_fod() for m in self.model_compartments]
@@ -337,7 +361,7 @@ class SharedDiffusivity(SharedParameterState):
     def to_params(cls, theta: ArrayLike) -> tuple:
         u = jax.scipy.stats.norm.cdf(theta)
         lam = cls.lam_min + u * (cls.lam_max - cls.lam_min)
-        return lam
+        return (lam,)
 
     @classmethod
     def to_theta(cls, shared_parameters: ArrayLike) -> ArrayLike:
@@ -372,6 +396,35 @@ class SharedMultiShellDiffusivity(SharedParameterState):
         )
         us = jnp.array([u, u_std])
         return jax.scipy.stats.norm.ppf(us)
+
+
+@lru_cache(maxsize=None)
+def _build_submodel(
+    base_cls: type[MultiCompartment],
+    model_idx_tuple: Tuple[int, ...],
+    noise_idx_tuple: Tuple[int, ...],
+) -> type[MultiCompartment]:
+    model_types = [base_cls.model_types[i] for i in model_idx_tuple]
+    noise_types = [base_cls.noise_types[i] for i in noise_idx_tuple]
+    fraction_prior = jnp.asarray(base_cls.fraction_prior)[list(model_idx_tuple)]
+
+    attrs = {
+        "model_types": model_types,
+        "noise_types": noise_types,
+        "fraction_prior": fraction_prior,
+        "shared_parameter_type": base_cls.shared_parameter_type,
+        "normalizing_fn": base_cls.normalizing_fn,
+        "pre_normalizing_fn": base_cls.pre_normalizing_fn,
+        "__module__": base_cls.__module__,
+    }
+
+    subclass_name = (
+        f"{base_cls.__name__}Sub_"
+        f"{'_'.join(map(str, model_idx_tuple))}__"
+        f"{'_'.join(map(str, noise_idx_tuple)) if noise_idx_tuple else 'none'}"
+    )
+
+    return type(subclass_name, (base_cls,), attrs)
 
 
 class SharedMultiShellDiffusivityGammaPrior(SharedParameterState):
