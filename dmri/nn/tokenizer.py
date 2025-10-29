@@ -230,6 +230,7 @@ class DMRITokenizer(Tokenizer):
 
         self.model_indices: Tuple[int, ...] = tuple(range(self.num_models))
         self.noise_indices: Tuple[int, ...] = tuple(range(self.num_noises))
+        self._model_class_labels = [cls.__name__ for cls in simulator.model_types]
         linear_kwargs: dict[str, Any] = {}
         for name, value in (
             ("dtype", dtype),
@@ -304,9 +305,9 @@ class DMRITokenizer(Tokenizer):
             shape: Shape of embeddings (num_embeddings, embedding_dim)
             dtype: Data type of embeddings
         """
-        # Get unique class indices from model_types_to_idx
-        class_to_indices = self.model_types_to_idx.value
-        num_classes = len(class_to_indices)
+        # Get unique class names for available model types
+        class_names = self._model_class_labels
+        num_classes = len(class_names)
 
         # Initialize orthogonal embeddings for each unique class
         class_embeddings = jax.random.orthogonal(
@@ -315,8 +316,8 @@ class DMRITokenizer(Tokenizer):
 
         # Create full embedding matrix by mapping class embeddings to all indices
         embeddings = jnp.zeros(shape, dtype=dtype)
-        for i, (_, indices) in enumerate(class_to_indices.items()):
-            embeddings = embeddings.at[tuple(indices), ...].set(class_embeddings[i])
+        for idx, name in enumerate(class_names):
+            embeddings = embeddings.at[idx, ...].set(class_embeddings[idx])
 
         return embeddings
 
@@ -420,18 +421,19 @@ class DMRITokenizer(Tokenizer):
             )
 
         # Next are the model parameters, if model_mask is true it should be multiplied by the dimension of the parameter
-        for i in range(len(model_types)):
+        for i in model_idx:
             active_thetas = jnp.concatenate(
-                [active_thetas] + [model_mask[..., i, None]] * model_types[i].theta_dim,
+                [active_thetas]
+                + [model_mask[..., i, None]] * self.simulator.value.model_types[i].theta_dim,
                 axis=-1,
             )
 
         # Next are the noise parameters, if noise_mask is true it should be multiplied by the dimension of the parameter
-        for i in range(len(noise_types)):
+        for idx in noise_idx:
             active_thetas = jnp.concatenate(
                 [active_thetas]
-                + [model_mask[..., len(model_types) + i, None]]
-                * noise_types[i].theta_dim,
+                + [model_mask[..., self.num_models + idx, None]]
+                * self.simulator.value.noise_types[idx].theta_dim,
                 axis=-1,
             )
 
@@ -440,20 +442,24 @@ class DMRITokenizer(Tokenizer):
     def theta_token_mask(
         self,
         model_mask: ArrayLike,
-        model_types: Optional[Sequence[type]] = None,
-        noise_types: Optional[Sequence[type]] = None,
+        model_idx: Optional[Sequence[int]] = None,
+        noise_idx: Optional[Sequence[int]] = None,
     ) -> Array:
-        if model_types is None:
-            model_types = tuple(self.simulator.value.model_types)
-        if noise_types is None:
-            noise_types = tuple(self.simulator.value.noise_types)
+        if model_idx is None:
+            model_idx = self.model_indices
+        if noise_idx is None:
+            noise_idx = self.noise_indices
 
-        idx_with_params = [i for i, m in enumerate(model_types) if m.theta_dim > 0]
+        idx_with_params = [
+            i for i in model_idx if self.simulator.value.model_types[i].theta_dim > 0
+        ]
         idx_with_params_noise = [
-            len(model_types) + i for i, n in enumerate(noise_types) if n.theta_dim > 0
+            self.num_models + i
+            for i in noise_idx
+            if self.simulator.value.noise_types[i].theta_dim > 0
         ]
         theta_fraction_mask = self.theta_fraction_mask(
-            model_mask[..., : len(model_types)]
+            model_mask[..., : self.num_models]
         )
 
         # Create a mask for shared parameters - always true (1) since they're global
@@ -491,8 +497,8 @@ class DMRITokenizer(Tokenizer):
         self,
         model_mask: ArrayLike,
         alpha_prior: Optional[ArrayLike] = None,
-        model_types: Optional[Sequence[type]] = None,
-        noise_types: Optional[Sequence[type]] = None,
+        model_idx: Optional[Sequence[int]] = None,
+        noise_idx: Optional[Sequence[int]] = None,
     ) -> Array:
         """
         Embeds the configuration of model and noise types into tokens.

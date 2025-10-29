@@ -167,10 +167,13 @@ def test_dmri_tokenizer(rng, simulator, data):
     model_mask, theta, _, _, _, _ = data
 
     # Test encode with model mask
+    model_idx = tuple(range(len(simulator.model_types)))
+    noise_idx = tuple(range(len(simulator.noise_types)))
+
     encoded_mask = tokenizer.encode(
         model_mask=model_mask,
-        model_idx=tuple(range(len(simulator.model_types))),
-        noise_idx=tuple(range(len(simulator.noise_types))),
+        model_idx=model_idx,
+        noise_idx=noise_idx,
     )
     assert encoded_mask.shape == (
         100,
@@ -182,8 +185,8 @@ def test_dmri_tokenizer(rng, simulator, data):
     encoded_theta = tokenizer.encode(
         theta=theta,
         model_mask=model_mask,
-        model_idx=tuple(range(len(simulator.model_types))),
-        noise_idx=tuple(range(len(simulator.noise_types))),
+        model_idx=model_idx,
+        noise_idx=noise_idx,
     )
     assert encoded_theta.shape == (
         100,
@@ -195,8 +198,8 @@ def test_dmri_tokenizer(rng, simulator, data):
     decoded_theta = tokenizer.decode(
         encoded_theta,
         model_mask=model_mask,
-        model_idx=tuple(range(len(simulator.model_types))),
-        noise_idx=tuple(range(len(simulator.noise_types))),
+        model_idx=model_idx,
+        noise_idx=noise_idx,
     )
     assert decoded_theta.shape == theta.shape
 
@@ -289,9 +292,18 @@ def test_dmri_tokenizer_pp(rng, simulator, data):
 
     # Test mask coding
     mask2 = jnp.ones_like(model_mask)
-    encoded_theta2 = tokenizer.encode(theta=theta, model_mask=mask2)
+    encoded_theta2 = tokenizer.encode(
+        theta=theta,
+        model_mask=mask2,
+        model_idx=model_idx,
+        noise_idx=noise_idx,
+    )
 
     # You only be different where mask is False in first encoding
     diff = jnp.all(encoded_theta == encoded_theta2, axis=-1)
-    token_mask = tokenizer.theta_token_mask(model_mask)
+    token_mask = tokenizer.theta_token_mask(
+        model_mask,
+        model_idx=model_idx,
+        noise_idx=noise_idx,
+    )
     assert jnp.all(diff == token_mask), "Mask coding is not correct"
