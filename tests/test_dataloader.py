@@ -43,6 +43,7 @@ def create_loader(simulator_fn, **kwargs):
     """Helper function to create a loader with default CPU settings"""
     default_kwargs = {
         "batch_size": 32,
+        "simulation_batch_size": 8,
         "max_queue_size": 100,
         "num_producers": 2,
         "data_device": "cpu",
@@ -87,8 +88,10 @@ def test_multiple_simulators(multiple_simulators):
     # Verify we get different types of data (from different simulators)
     # Check if we have at least one batch with values > 1 (from uniform)
     has_uniform = any(np.max(batch) > 1 for batch in batches)
-    # Check if we have at least one batch with constant values (from simulator3)
-    has_constant = any(np.allclose(batch, batch[0]) for batch in batches)
+    # Check if we have at least one sample with constant values (from simulator3)
+    has_constant = any(
+        np.any([np.allclose(sample, sample[0]) for sample in batch]) for batch in batches
+    )
 
     assert has_uniform, "Did not get uniform distribution data"
     assert has_constant, "Did not get constant data"
@@ -137,7 +140,7 @@ def test_dataloader_recycling(single_simulator):
 
 def test_dataloader_context_manager(single_simulator):
     # Test context manager functionality
-    with create_loader(single_simulator) as loader:
+    with create_loader(single_simulator, simulation_batch_size=8) as loader:
         # Get a batch
         batch = next(iter(loader))
         assert batch.shape == (32, 10)

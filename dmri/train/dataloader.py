@@ -3,6 +3,7 @@ import random  # Add Python's random module
 import threading
 import time
 from functools import partial
+from typing import Any, Optional
 
 import jax
 import numpy as np
@@ -20,6 +21,7 @@ class StreamDataLoader:
         self,
         simulator_fn,
         batch_size=256,
+        simulation_batch_size: Optional[int] = None,
         max_queue_size=10_000,
         seed=0,
         data_device="gpu",
@@ -41,6 +43,8 @@ class StreamDataLoader:
                           We'll vmap/jit over it in a background thread.
             rng:          JAX PRNGKey to seed the simulator.
             batch_size:   Number of items per batch.
+            simulation_batch_size: Number of items generated per simulator call.
+                                   If None, defaults to batch_size.
             max_queue_size: Max items the queue can hold.
             device:       "cpu" or "gpu" (passed to jax.devices()).
             device_idx:   Index of the device (0 for first GPU, etc.).
@@ -64,6 +68,9 @@ class StreamDataLoader:
 
         self.rng = jax.random.key(seed)
         self.batch_size = batch_size
+        self.simulation_batch_size = simulation_batch_size or batch_size
+        if self.simulation_batch_size <= 0:
+            raise ValueError("simulation_batch_size must be positive.")
         self.data_device = jax.devices(data_device)[device_idx]
         self.simulation_device = jax.devices(simulation_device)[device_idx]
         self.num_producers = max(1, num_producers)  # Ensure at least 1 producer
@@ -71,11 +78,15 @@ class StreamDataLoader:
         self.ring_size = ring_size
         self.recycle_batches = recycle_batches
         self.recycle_threshold = recycle_threshold  # Store the recycle threshold
+        self._simulator_cycle: list[int] = []
+        self._simulator_cycle_lock = threading.Lock()
+        self._recycle_buffer: list[Any] = []
+        self._recycle_lock = threading.Lock()
 
         # Compile the batch simulator once during initialization
         @partial(jax.jit, device=self.simulation_device, static_argnums=(1,))
         def batch_simulator(rng_key, simulator_idx):
-            rngs = jax.random.split(rng_key, self.batch_size)
+            rngs = jax.random.split(rng_key, self.simulation_batch_size)
             return jax.vmap(self.simulators[simulator_idx])(rngs)
 
         self.batch_simulator = batch_simulator
@@ -143,26 +154,24 @@ class StreamDataLoader:
         try:
             key = jax.device_put(thread_rng, self.simulation_device)
             while not self.event.is_set():
-                # Wait if production is paused
                 if self.paused.is_set():
                     time.sleep(0.01)
                     continue
 
-                # Generate a batch
+                self._drain_recycled_segments()
+
+                if self.queue.full():
+                    time.sleep(0.01)
+                    continue
+
                 start_time = time.time()
-                # Split key for simulator selection and data generation
                 key, rng_sub = jax.random.split(key)
-                # Use Python's random for simulator selection
-                simulator_idx = random.randint(0, self.num_simulators - 1)
-                # Use the split key for data generation
+                simulator_idx = self._next_simulator_index()
                 data = self.batch_simulator(rng_sub, simulator_idx)
 
-                # PyTree-friendly conversion to CPU
-                # This handles cases where data is a nested structure (PyTree)
-                data_cpu = data  # jax.tree_util.tree_map(np.array, data)
-                # TODO This is a hack to avoid NaNs and Infs in the data
+                data_cpu = jax.tree_util.tree_map(np.asarray, data)
                 data_cpu = jax.tree_util.tree_map(
-                    lambda x: jax.numpy.nan_to_num(x, nan=1.0, posinf=1.0, neginf=0.0),
+                    lambda x: np.nan_to_num(x, nan=1.0, posinf=1.0, neginf=0.0),
                     data_cpu,
                 )
 
@@ -170,20 +179,36 @@ class StreamDataLoader:
                 with threading.Lock():
                     self.stats["production_time"] += production_time
 
-                # Blocks if queue is full
-                queue_start = time.time()
-                try:
-                    self.queue.put(data_cpu, timeout=self.queue_timeout)
-                    with threading.Lock():
-                        self.stats["batches_produced"] += 1
-                        self.stats["queue_wait_time"] += time.time() - queue_start
-                except queue.Full:
-                    # Just continue trying if we hit a timeout
-                    continue
+                timeout = self._queue_timeout()
+                while not self.event.is_set():
+                    queue_start = time.time()
+                    try:
+                        self.queue.put(data_cpu, timeout=timeout)
+                        with threading.Lock():
+                            self.stats["batches_produced"] += 1
+                            self.stats["queue_wait_time"] += time.time() - queue_start
+                        break
+                    except queue.Full:
+                        if self.event.is_set():
+                            break
+                        time.sleep(0.01)
+
         except Exception as e:
             # Capture exceptions from threads
             self.thread_exceptions.put((threading.current_thread().name, e))
             raise  # Re-raise to see in thread
+
+    def _next_simulator_index(self) -> int:
+        """
+        Return the next simulator index using a shuffled cycle to ensure coverage
+        while keeping random ordering across threads.
+        """
+        with self._simulator_cycle_lock:
+            if not self._simulator_cycle:
+                indices = list(range(self.num_simulators))
+                random.shuffle(indices)
+                self._simulator_cycle.extend(indices)
+            return self._simulator_cycle.pop()
 
     def _recycle_batch(self, batch):
         """
@@ -193,52 +218,100 @@ class StreamDataLoader:
         if not self.recycle_batches:
             return
 
-        # Only recycle if queue is below the configured threshold capacity
-        current_fullness = self.queue.qsize() / self.queue.maxsize
-        if current_fullness >= self.recycle_threshold:
-            return
+        segments = []
+        total_size = self._tree_batch_size(batch)
+        start = 0
+        while start < total_size:
+            end = min(start + self.simulation_batch_size, total_size)
+            segments.append(self._tree_slice(batch, start, end))
+            start = end
 
-        try:
-            # Use non-blocking put to avoid deadlocks if queue is full
-            self.queue.put_nowait(batch)
+        with self._recycle_lock:
+            self._recycle_buffer.extend(segments)
+            random.shuffle(self._recycle_buffer)
+
+        if segments:
             with threading.Lock():
-                self.stats["batches_recycled"] += 1
-        except queue.Full:
-            # Queue is full, drop the batch
-            pass
+                self.stats["batches_recycled"] += len(segments)
 
     def _cpu_data_stream(self):
         """
-        A generator that yields batches from the CPU queue.
-        Recycles batches back into the queue if enabled.
-        Ends if the event is set or a thread exception occurred.
+        A generator that assembles full training batches from simulation-sized
+        segments produced by background threads.
         """
+        pending_batch = None
+        pending_size = 0
+
         while not self.event.is_set():
-            # Check for thread exceptions
+            # Flush pending segments into a full batch if possible
+            if pending_batch is not None and pending_size >= self.batch_size:
+                full_batch = self._tree_slice(pending_batch, 0, self.batch_size)
+                remaining_size = pending_size - self.batch_size
+                pending_batch = (
+                    self._tree_slice(pending_batch, self.batch_size, pending_size)
+                    if remaining_size > 0
+                    else None
+                )
+                pending_size = remaining_size
+                with threading.Lock():
+                    self.stats["batches_consumed"] += 1
+                yield full_batch
+                if self.recycle_batches:
+                    self._recycle_batch(full_batch)
+                continue
+
+            # Otherwise, pull the next simulation segment
             if not self.thread_exceptions.empty():
                 thread_name, exception = self.thread_exceptions.get()
                 raise RuntimeError(
                     f"Exception in producer thread {thread_name}: {exception}"
                 )
 
-            # Try to get batch from queue
+            self._drain_recycled_segments()
+
+            timeout = self._queue_timeout()
             try:
-                batch_cpu = self.queue.get(timeout=self.queue_timeout)
-                with threading.Lock():
-                    self.stats["batches_consumed"] += 1
-
-                yield batch_cpu
-
-                # Recycle the batch by putting it back into the queue
-                if self.recycle_batches:
-                    self._recycle_batch(batch_cpu)
-
+                segment = self.queue.get(timeout=timeout)
+                segment_size = self._tree_batch_size(segment)
+                if pending_batch is None:
+                    pending_batch = segment
+                    pending_size = segment_size
+                else:
+                    pending_batch = self._tree_concat(pending_batch, segment)
+                    pending_size += segment_size
             except queue.Empty:
-                # If queue is empty, check if we should exit
                 if self.event.is_set():
                     break
-                # Otherwise, continue to try again
-                continue
+                time.sleep(0.01)
+
+        # Move any recycled segments into the pending buffer before final drain
+        self._drain_recycled_segments()
+        if self.recycle_batches and self._recycle_buffer:
+            with self._recycle_lock:
+                while self._recycle_buffer:
+                    segment = self._recycle_buffer.pop()
+                    if pending_batch is None:
+                        pending_batch = segment
+                        pending_size = self._tree_batch_size(segment)
+                    else:
+                        pending_batch = self._tree_concat(pending_batch, segment)
+                        pending_size += self._tree_batch_size(segment)
+
+        # Drain any remaining full batch when shutting down
+        while pending_batch is not None and pending_size >= self.batch_size:
+            full_batch = self._tree_slice(pending_batch, 0, self.batch_size)
+            remaining_size = pending_size - self.batch_size
+            pending_batch = (
+                self._tree_slice(pending_batch, self.batch_size, pending_size)
+                if remaining_size > 0
+                else None
+            )
+            pending_size = remaining_size
+            with threading.Lock():
+                self.stats["batches_consumed"] += 1
+            yield full_batch
+            if self.recycle_batches:
+                self._recycle_batch(full_batch)
 
     # --------------------------------------------------------------------------
     # Method A: Device put in prefetch generator
@@ -302,6 +375,24 @@ class StreamDataLoader:
     # --------------------------------------------------------------------------
     # Method B: In-place updates with ring buffer
     # --------------------------------------------------------------------------
+
+    @staticmethod
+    def _tree_batch_size(batch):
+        first_leaf = jax.tree_util.tree_leaves(batch)[0]
+        return first_leaf.shape[0]
+
+    @staticmethod
+    def _tree_concat(batch_a, batch_b):
+        if batch_a is None:
+            return batch_b
+        return jax.tree_util.tree_map(
+            lambda x, y: np.concatenate([x, y], axis=0), batch_a, batch_b
+        )
+
+    @staticmethod
+    def _tree_slice(batch, start, end):
+        return jax.tree_util.tree_map(lambda x: np.array(x[start:end], copy=True), batch)
+
     @staticmethod
     def _copy_inplace(dst, src):
         """
@@ -419,9 +510,8 @@ class StreamDataLoader:
                 # Set a timeout for joining threads
                 thread.join(timeout=1.0)
                 if thread.is_alive():
-                    print(
-                        f"Warning: Thread {thread.name} did not terminate within timeout"
-                    )
+                    # Final attempt without timeout to ensure clean shutdown
+                    thread.join()
 
     def __del__(self):
         """
@@ -456,6 +546,27 @@ class StreamDataLoader:
     def resume(self):
         """Resume data production after pausing."""
         self.paused.clear()
+
+    def _drain_recycled_segments(self) -> None:
+        """Push recycled simulation segments back into the queue when there is space."""
+        if not self.recycle_batches:
+            return
+        if not self._recycle_buffer:
+            return
+
+        with self._recycle_lock:
+            while self._recycle_buffer and not self.queue.full():
+                segment = self._recycle_buffer.pop()
+                try:
+                    self.queue.put_nowait(segment)
+                except queue.Full:
+                    # Put it back and stop if queue became full mid-loop
+                    self._recycle_buffer.append(segment)
+                    break
+
+    def _queue_timeout(self) -> float:
+        """Return a finite timeout value for queue operations."""
+        return self.queue_timeout if self.queue_timeout is not None else 0.1
 
     def __enter__(self):
         """Support for context manager protocol."""
