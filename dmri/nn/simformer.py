@@ -6,6 +6,7 @@ import jax.numpy as jnp
 import numpy as np
 from flax import nnx
 from probjax.nn import GaussianFourierEmbedding, Transformer
+from probjax.nn.layers.attention import flex_attention
 from probjax.nn.nets.denoising_diffusion_model import EDM
 from probjax.utils.odeint import odeint
 from probjax.utils.sdeint import sdeint
@@ -22,6 +23,8 @@ class DMRIThetaInferenceConfig:
     attn_size: int = 16
     context_dim: int = 64
     dropout_rate: float = 0.0
+    use_flash_attention: bool = False
+    use_flash_cross_attention: bool = False
     dtype: DTypeLike | None = None
     param_dtype: DTypeLike | None = None
     precision: PrecisionLike | None = None
@@ -31,7 +34,7 @@ class DMRIThetaInferenceConfig:
 class DiffusionTransformer(nnx.Module):
     def __init__(
         self,
-        rngs: RngKey,
+        rngs: nnx.Rngs,
         model_dim: int = 64,
         context_dim: int = 64,
         num_heads: int = 4,
@@ -40,6 +43,8 @@ class DiffusionTransformer(nnx.Module):
         widening_factor: int = 3,
         dropout_rate: float = 0.0,
         enable_cross_attention: bool = True,
+        use_flash_attention: bool = False,
+        use_flash_cross_attention: bool = False,
         dtype: DTypeLike | None = None,
         param_dtype: DTypeLike | None = None,
         precision: PrecisionLike | None = None,
@@ -56,6 +61,10 @@ class DiffusionTransformer(nnx.Module):
                 transformer_kwargs[name] = value
 
         self.time_embedding = GaussianFourierEmbedding(1, context_dim, rngs=rngs)
+
+        attn_fn = flex_attention if use_flash_attention else None
+        cross_attn_fn = flex_attention if use_flash_cross_attention else None
+
         self.transformer = Transformer(
             model_dim,
             num_heads=num_heads,
@@ -66,6 +75,8 @@ class DiffusionTransformer(nnx.Module):
             dropout_rate=dropout_rate,
             rngs=rngs,
             context_dim=context_dim,
+            attention_fn=attn_fn,
+            cross_attention_fn=cross_attn_fn,
             **transformer_kwargs,
         )
 
@@ -74,9 +85,9 @@ class DiffusionTransformer(nnx.Module):
         t: ArrayLike,
         x: ArrayLike,
         tokenizer: Tokenizer,
-        y: Optional[ArrayLike] = None,
-        context: Optional[ArrayLike] = None,
-        attention_mask: Optional[ArrayLike] = None,
+        y: Optional[Array] = None,
+        context: Optional[Array] = None,
+        attention_mask: Optional[Array] = None,
         **kwargs: Any,
     ) -> Array:
         time_embed = self.time_embedding(t)
@@ -104,7 +115,7 @@ class DiffusionTransformer(nnx.Module):
 class EDMSimformer(EDM):
     def __init__(
         self,
-        rngs: RngKey,
+        rngs: nnx.Rngs,
         model_dim: int = 64,
         context_dim: int = 64,
         num_heads: int = 4,
@@ -113,6 +124,8 @@ class EDMSimformer(EDM):
         widening_factor: int = 3,
         dropout_rate: float = 0.0,
         enable_cross_attention: bool = True,
+        use_flash_attention: bool = False,
+        use_flash_cross_attention: bool = False,
         loss_type: str = "x0",
         dtype: DTypeLike | None = None,
         param_dtype: DTypeLike | None = None,
@@ -129,6 +142,8 @@ class EDMSimformer(EDM):
             widening_factor=widening_factor,
             dropout_rate=dropout_rate,
             enable_cross_attention=enable_cross_attention,
+            use_flash_attention=use_flash_attention,
+            use_flash_cross_attention=use_flash_cross_attention,
             dtype=dtype,
             param_dtype=param_dtype,
             precision=precision,

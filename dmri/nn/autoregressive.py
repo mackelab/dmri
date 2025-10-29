@@ -7,6 +7,7 @@ import jax.numpy as jnp
 import optax
 from flax import nnx
 from probjax.nn import Transformer
+from probjax.nn.layers.attention import flex_attention
 from probjax.utils.typing import Array, ArrayLike, DTypeLike, PrecisionLike, RngKey
 
 from dmri.nn.tokenizer import Tokenizer
@@ -20,6 +21,8 @@ class DMRIModelSelectionConfig:
     attn_size: int = 16
     dropout_rate: float = 0.0
     context_dim: Optional[int] = None
+    use_flash_attention: bool = False
+    use_flash_cross_attention: bool = False
     dtype: DTypeLike | None = None
     param_dtype: DTypeLike | None = None
     precision: PrecisionLike | None = None
@@ -41,7 +44,7 @@ class BinaryAutoregressiveDecoder(nnx.Module):
 
     def __init__(
         self,
-        rngs: RngKey,
+        rngs: nnx.Rngs,
         model_dim: int = 64,
         num_heads: int = 4,
         num_layers: int = 4,
@@ -50,6 +53,8 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         dropout_rate: float = 0.0,
         context_dim: Optional[int] = None,
         enable_cross_attention: bool = True,
+        use_flash_attention: bool = False,
+        use_flash_cross_attention: bool = False,
         dtype: DTypeLike | None = None,
         param_dtype: DTypeLike | None = None,
         precision: PrecisionLike | None = None,
@@ -62,6 +67,20 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         self.attn_size = attn_size
         self.context_dim = context_dim
 
+        precision_kwargs: dict[str, Any] = {
+            name: value
+            for name, value in (
+                ("dtype", dtype),
+                ("param_dtype", param_dtype),
+                ("precision", precision),
+                ("preferred_element_type", preferred_element_type),
+            )
+            if value is not None
+        }
+
+        attn_fn = flex_attention if use_flash_attention else None
+        cross_attn_fn = flex_attention if use_flash_cross_attention else None
+
         self.transformer = Transformer(
             model_dim,
             self.num_heads,
@@ -71,20 +90,16 @@ class BinaryAutoregressiveDecoder(nnx.Module):
             widening_factor=self.widening_factor,
             rngs=rngs,
             dropout_rate=dropout_rate,
+            attention_fn=attn_fn,
+            cross_attention_fn=cross_attn_fn,
             enable_cross_attention=enable_cross_attention,
-            dtype=dtype,
-            param_dtype=param_dtype,
-            precision=precision,
-            preferred_element_type=preferred_element_type,
+            **precision_kwargs,
         )
         self.output = nnx.Linear(
             model_dim,
             1,
             rngs=rngs,
-            dtype=dtype,
-            param_dtype=param_dtype,
-            precision=precision,
-            preferred_element_type=preferred_element_type,
+            **precision_kwargs,
         )
 
     def __call__(

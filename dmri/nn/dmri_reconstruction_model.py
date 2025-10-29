@@ -24,7 +24,7 @@ from .embedding_net import (
 from .simformer import DMRIThetaInferenceConfig, EDMSimformer, GaussianFourierEmbedding
 from .tokenizer import DMRITokenizer, DMRITokenizerPP
 
-EmbeddingModule = nnx.Module
+EmbeddingModule = BvalBvecSignalEmbeddingNet | SSFPEmbeddingNet
 TokenizerType = Type[DMRITokenizer]
 
 
@@ -71,7 +71,7 @@ class SSFPInferenceModelConfig(DMRIInferenceModelConfig):
 
 
 class DMRIInferenceModel(nnx.Module):
-    def __init__(self, cfg: DMRIInferenceModelConfig, *, rngs: nnx.Rngs) -> None:
+    def __init__(self, cfg: DMRIInferenceModelConfig, rngs: nnx.Rngs) -> None:
         self.cfg: DMRIInferenceModelConfig = cfg
         precision_keys: tuple[str, ...] = (
             "dtype",
