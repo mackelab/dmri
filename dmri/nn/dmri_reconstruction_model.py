@@ -32,86 +32,44 @@ TokenizerType = Type[DMRITokenizer]
 class DMRIInferenceModelConfig:
     simulator: type[MultiCompartment]
     model_dim: int = 64
-    use_attention_mask: bool = False
-    inference_loss_type: str = "v"
-    dtype: DTypeLike | None = None
-    param_dtype: DTypeLike | None = None
-    precision: PrecisionLike | None = None
-    preferred_element_type: DTypeLike | None = None
-    tokenizer_cls: TokenizerType = DMRITokenizer
-    embedding_cls: Type[EmbeddingModule] = BvalBvecSignalEmbeddingNet
-    embedding_cfg: DMRIEmbeddingConfig = field(default_factory=DMRIEmbeddingConfig)
-    model_selection_cfg: DMRIModelSelectionConfig = field(
-        default_factory=DMRIModelSelectionConfig
-    )
-    theta_inference_cfg: DMRIThetaInferenceConfig = field(
-        default_factory=DMRIThetaInferenceConfig
-    )
-
-
-@dataclass
-class DMRIInferenceModelConfigMaskPriorAmortized:
-    simulator: type[MultiCompartment]
-    model_dim: int = 64
     use_attention_mask: bool = True
     inference_loss_type: str = "v"
     dtype: DTypeLike | None = None
     param_dtype: DTypeLike | None = None
     precision: PrecisionLike | None = None
     preferred_element_type: DTypeLike | None = None
+    use_flash_attention: bool = False
+    use_flash_cross_attention: bool = False
     tokenizer_cls: TokenizerType = DMRITokenizer
     embedding_cls: Type[EmbeddingModule] = BvalBvecSignalEmbeddingNet
-    embedding_cfg: DMRIEmbeddingConfig = field(default_factory=DMRIEmbeddingConfig)
-    model_selection_cfg: DMRIModelSelectionConfig = field(
+    embedding_cfg: Any = field(default_factory=DMRIEmbeddingConfig)
+    model_selection_cfg: Any = field(default_factory=DMRIModelSelectionConfig)
+    theta_inference_cfg: DMRIThetaInferenceConfig = field(
+        default_factory=DMRIThetaInferenceConfig
+    )
+
+
+@dataclass
+class DMRIInferenceModelConfigMaskPriorAmortized(DMRIInferenceModelConfig):
+    model_selection_cfg: Any = field(
         default_factory=DMRIModelSelectionAmortizedPriorConfig
     )
-    theta_inference_cfg: DMRIThetaInferenceConfig = field(
-        default_factory=DMRIThetaInferenceConfig
-    )
 
 
 @dataclass
-class DMRIInferenceModelConfigMaskPriorAmortizedPP:
-    simulator: type[MultiCompartment]
-    model_dim: int = 64
-    use_attention_mask: bool = True
-    inference_loss_type: str = "v"
-    dtype: DTypeLike | None = None
-    param_dtype: DTypeLike | None = None
-    precision: PrecisionLike | None = None
-    preferred_element_type: DTypeLike | None = None
+class DMRIInferenceModelConfigMaskPriorAmortizedPP(
+    DMRIInferenceModelConfigMaskPriorAmortized
+):
     tokenizer_cls: TokenizerType = DMRITokenizerPP
     embedding_cls: Type[EmbeddingModule] = BvalBvecSignalEmbeddingNet
-    embedding_cfg: DMRIEmbeddingConfig = field(default_factory=DMRIEmbeddingConfig)
-    model_selection_cfg: DMRIModelSelectionConfig = field(
-        default_factory=DMRIModelSelectionAmortizedPriorConfig
-    )
-    theta_inference_cfg: DMRIThetaInferenceConfig = field(
-        default_factory=DMRIThetaInferenceConfig
-    )
+    embedding_cfg: Any = field(default_factory=DMRIEmbeddingConfig)
 
 
 @dataclass
-class SSFPInferenceModelConfig:
-    simulator: type[MultiCompartment]
-    model_dim: int = 64
-    use_attention_mask: bool = True
-    inference_loss_type: str = "v"
-    dtype: DTypeLike | None = None
-    param_dtype: DTypeLike | None = None
-    precision: PrecisionLike | None = None
-    preferred_element_type: DTypeLike | None = None
+class SSFPInferenceModelConfig(DMRIInferenceModelConfig):
     tokenizer_cls: TokenizerType = DMRITokenizerPP
     embedding_cls: Type[EmbeddingModule] = SSFPEmbeddingNet
-    embedding_cfg: SSFPEmbeddingNetConfig = field(
-        default_factory=SSFPEmbeddingNetConfig
-    )
-    model_selection_cfg: DMRIModelSelectionConfig = field(
-        default_factory=DMRIModelSelectionConfig
-    )
-    theta_inference_cfg: DMRIThetaInferenceConfig = field(
-        default_factory=DMRIThetaInferenceConfig
-    )
+    embedding_cfg: Any = field(default_factory=SSFPEmbeddingNetConfig)
 
 
 class DMRIInferenceModel(nnx.Module):
@@ -249,7 +207,7 @@ class DMRIInferenceModel(nnx.Module):
             noise_idx=noise_idx,
         )
         # Embed observations and acquisition parameters
-        y = self.encoder(acq, x)
+        _, y = self.encoder(acq, x)
         if y.ndim == 2:
             y = y[..., None, :]
 
@@ -309,7 +267,7 @@ class DMRIInferenceModel(nnx.Module):
             model_mask, alpha_prior, model_idx=model_idx, noise_idx=noise_idx
         )
         # Embed observatiosn
-        y = self.encoder(acq, x)
+        _, y = self.encoder(acq, x)
         if y.ndim == 2:
             y = y[..., None, :]
 
@@ -372,7 +330,7 @@ class DMRIInferenceModel(nnx.Module):
         mask_prior: ArrayLike | None = None,
     ) -> Array:
         # Update for different model configs
-        y = self.encoder(acq, x)
+        _, y = self.encoder(acq, x)
         if mask_prior is not None:
             mask_prior = self.mask_prior_embed(mask_prior)
         model_mask = self.model_decoder.sample(
@@ -391,7 +349,7 @@ class DMRIInferenceModel(nnx.Module):
         x: ArrayLike,
         mask_prior: ArrayLike | None = None,
     ) -> Array:
-        y = self.encoder(acq, x)
+        _, y = self.encoder(acq, x)
         if mask_prior is not None:
             mask_prior = self.mask_prior_embed(mask_prior)
         log_prob = self.model_decoder.log_prob(
@@ -414,7 +372,7 @@ class DMRIInferenceModel(nnx.Module):
         min_noise_nugget: float = 0.0,
         sample_method: str = "ode",
     ) -> Array:
-        y = self.encoder(acq, x)
+        _, y = self.encoder(acq, x)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
 
         attention_mask = self.marginalization_mask(model_mask)
@@ -448,7 +406,7 @@ class DMRIInferenceModel(nnx.Module):
         rho: float = 7,
         min_noise_nugget: float = 0.0,
     ) -> Array:
-        y = self.encoder(acq, x)
+        _, y = self.encoder(acq, x)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
 
         attention_mask = self.marginalization_mask(model_mask)
@@ -479,7 +437,7 @@ class DMRIInferenceModel(nnx.Module):
         rho: float = 7,
         min_noise_nugget: float = 0.0,
     ) -> tuple[Array, Array]:
-        y = self.encoder(acq, x)
+        _, y = self.encoder(acq, x)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
 
         attention_mask = self.marginalization_mask(model_mask)
@@ -511,7 +469,7 @@ class DMRIInferenceModel(nnx.Module):
         if t is None:
             t = jnp.ones((1,)) * 0.01
 
-        y = self.encoder(acq, x)
+        _, y = self.encoder(acq, x)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
 
         attention_mask = self.marginalization_mask(model_mask)

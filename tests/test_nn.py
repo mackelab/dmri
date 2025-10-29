@@ -99,9 +99,26 @@ def test_bval_bvec_signal_embedding_net(use_flashattn, rng, data):
 
     acq = acquisition_scheme(bvals=bvals, bvecs=bvecs)
 
-    # Test with full batch
-    output_batch = embedding_net(acq, signals)
-    assert output_batch.shape == (100, 64, 64)
+    # Test with full batch and default summary disabled
+    global_summary, sequence_tokens = embedding_net(acq, signals)
+    assert global_summary is None
+    assert sequence_tokens.shape == (100, 64, 64)
+
+    # Test with global summary enabled
+    rng_summary = nnx.Rngs(1)
+    embedding_net_summary = BvalBvecSignalEmbeddingNet(
+        model_dim=64,
+        num_heads=4,
+        num_layers=6,
+        attn_size=16,
+        widening_factor=3,
+        use_flash_attention=use_flashattn,
+        use_global_summary_token=True,
+        rngs=rng_summary,
+    )
+    summary_token, summarized_sequence = embedding_net_summary(acq, signals)
+    assert summary_token.shape == (100, 64)
+    assert summarized_sequence.shape == (100, 64, 64)
 
 
 @pytest.mark.parametrize("use_flashattn", [False])
