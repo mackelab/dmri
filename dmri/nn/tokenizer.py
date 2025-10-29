@@ -1,7 +1,12 @@
 from abc import abstractmethod
-from collections import defaultdict
-from copy import deepcopy
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import (
+    Any,
+    Callable,
+    List,
+    Optional,
+    Tuple,
+)
 
 import jax
 import jax.numpy as jnp
@@ -11,23 +16,6 @@ from probjax.utils.typing import Array, ArrayLike, DTypeLike, PrecisionLike, Rng
 
 from dmri.simulators import MultiCompartment
 from dmri.utils.transform import eps_mask
-
-
-def map_classes_to_indices(
-    class_list: Sequence[type], start_idx: int = 0
-) -> Dict[str, List[int]]:
-    """
-    Returns a dictionary mapping each class object in `class_list`
-    to a list of distinct integer indices corresponding to all of
-    its occurrences in `class_list`.
-    """
-    mapping = defaultdict(list)
-
-    for idx, cls in enumerate(class_list):
-        # Classes make problems with tree_flatten
-        mapping[cls.__name__].append(idx + start_idx)
-
-    return dict(mapping)  # convert defaultdict back to a normal dict
 
 
 class Tokenizer(nnx.Module):
@@ -240,15 +228,8 @@ class DMRITokenizer(Tokenizer):
         self.num_noises = len(simulator.noise_types)
         self.params_dims = tuple(simulator.split_idx())
 
-        self.model_types_to_idx = nnx.Intermediate(
-            map_classes_to_indices(self.simulator.value.model_types)
-        )
-        self.noise_types_to_idx = nnx.Intermediate(
-            map_classes_to_indices(
-                self.simulator.value.noise_types,
-                start_idx=len(self.simulator.value.model_types),
-            )
-        )
+        self.model_indices: Tuple[int, ...] = tuple(range(self.num_models))
+        self.noise_indices: Tuple[int, ...] = tuple(range(self.num_noises))
         linear_kwargs: dict[str, Any] = {}
         for name, value in (
             ("dtype", dtype),
@@ -345,30 +326,32 @@ class DMRITokenizer(Tokenizer):
         model_mask: Optional[ArrayLike] = None,
         tokens_cfg: Optional[ArrayLike] = None,
         alpha_prior: Optional[ArrayLike] = None,
-        model_types: Optional[Sequence[type]] = None,
-        noise_types: Optional[Sequence[type]] = None,
+        model_idx: Optional[Sequence[int]] = None,
+        noise_idx: Optional[Sequence[int]] = None,
     ) -> Array:
-        if model_types is None:
-            model_types = self.simulator.value.model_types
-        if noise_types is None:
-            noise_types = self.simulator.value.noise_types
+        if model_idx is None:
+            model_idx = self.model_indices
+        if noise_idx is None:
+            noise_idx = self.noise_indices
         if model_mask is None:
-            model_mask = jnp.ones(len(model_types) + len(noise_types), dtype=jnp.bool_)
+            model_mask = jnp.ones(
+                len(self.model_indices) + len(self.noise_indices), dtype=jnp.bool_
+            )
 
         if tokens_cfg is None:
             tokens_cfg = self.embed_cfgs(
                 model_mask,
                 alpha_prior,
-                model_types=model_types,
-                noise_types=noise_types,
+                model_idx=model_idx,
+                noise_idx=noise_idx,
             )
         # We assume that the provided tokens_cfg is already in the correct shape
         if theta is not None:
             tokens = self.embed_theta(
                 theta,
                 tokens_cfg,
-                model_types=model_types,
-                noise_types=noise_types,
+                model_idx=model_idx,
+                noise_idx=noise_idx,
                 model_mask=model_mask,
             )
         else:
@@ -378,54 +361,32 @@ class DMRITokenizer(Tokenizer):
     def decode(
         self,
         tokens: ArrayLike,
-        model_types: Optional[Sequence[type]] = None,
-        noise_types: Optional[Sequence[type]] = None,
+        model_idx: Optional[Sequence[int]] = None,
+        noise_idx: Optional[Sequence[int]] = None,
         **kwargs: Any,
     ) -> Array:
-        if model_types is None:
-            model_types = self.simulator.value.model_types
-        if noise_types is None:
-            noise_types = self.simulator.value.noise_types
+        if model_idx is None:
+            model_idx = self.model_indices
+        if noise_idx is None:
+            noise_idx = self.noise_indices
 
-        theta = self.decode_theta(tokens, model_types, noise_types, **kwargs)
+        theta = self.decode_theta(tokens, model_idx, noise_idx, **kwargs)
         return theta
 
-    def get_model_idx(self, model_types: Sequence[type]) -> List[int]:
-        """
-        Returns a list of model indices corresponding to the provided model types.
-        """
-        model_types_to_idx = deepcopy(self.model_types_to_idx.value)
-        return [model_types_to_idx[model.__name__].pop(0) for model in model_types]
-
-    def get_noise_idx(self, noise_types: Sequence[type]) -> List[int]:
-        """
-        Returns a list of noise indices corresponding to the provided noise types.
-        """
-        noise_types_to_idx = deepcopy(self.noise_types_to_idx.value)
-        return [noise_types_to_idx[noise.__name__].pop(0) for noise in noise_types]
-
-    def get_idx(
-        self, model_types: Sequence[type], noise_types: Sequence[type]
-    ) -> List[int]:
-        """
-        Returns a list of model and noise indices corresponding to the provided model and noise types.
-        """
-        model_idx = self.get_model_idx(model_types)
-        noise_idx = self.get_noise_idx(noise_types)
-        return model_idx + noise_idx
-
     def get_indices_with_params(
-        self, model_types: List[type], noise_types: List[type]
+        self, model_idx: Sequence[int], noise_idx: Sequence[int]
     ) -> List[int]:
         """
         Returns a list of model and noise indices corresponding to the provided model and noise types.
         """
-        indices = []
-        i = 0
-        for m in model_types + noise_types:
-            if m.theta_dim > 0:
-                indices.append(i)
-            i += 1
+        indices: List[int] = []
+        for idx in model_idx:
+            if self.simulator.value.model_types[idx].theta_dim > 0:
+                indices.append(idx)
+        offset = self.num_models
+        for idx in noise_idx:
+            if self.simulator.value.noise_types[idx].theta_dim > 0:
+                indices.append(offset + idx)
         return indices
 
     @staticmethod
@@ -558,29 +519,29 @@ class DMRITokenizer(Tokenizer):
         Args:
             model_mask (ArrayLike): A binary mask indicating active model components.
             alpha_prior (Optional[ArrayLike]): Prior fractions for model components.
-            model_types (Optional[List[type]]): List of model types.
-            noise_types (Optional[List[type]]): List of noise types.
+            model_idx (Optional[Sequence[int]]): Indices of model components.
+            noise_idx (Optional[Sequence[int]]): Indices of noise components.
 
         Returns:
             ArrayLike: The embedded tokens for each model/noise component.
         """
-        if model_types is None:
-            model_types = tuple(self.simulator.value.model_types)
-        if noise_types is None:
-            noise_types = tuple(self.simulator.value.noise_types)
+        if model_idx is None:
+            model_idx = self.model_indices
+        if noise_idx is None:
+            noise_idx = self.noise_indices
         if alpha_prior is None:
             alpha_prior = self.simulator.value.fraction_prior
 
-        idx = self.get_idx(model_types, noise_types)
+        idx = tuple(int(i) for i in model_idx) + tuple(
+            self.num_models + int(i) for i in noise_idx
+        )
         assert len(idx) == model_mask.shape[-1], (
             f"model_mask shape last axis {model_mask.shape} does not match the number of model components {len(idx)}"
         )
 
         *batch_dims, T = model_mask.shape
         # Broadcast alpha_prior to the batch dims
-        alpha_prior = jnp.broadcast_to(
-            alpha_prior, batch_dims + [len(self.simulator.model_types)]
-        )
+        alpha_prior = jnp.broadcast_to(alpha_prior, batch_dims + [self.num_models])
 
         # Get the fraction prior token, which will always be in the beginning
         alpha_token = self.embed_fraction(alpha_prior)[
@@ -601,8 +562,8 @@ class DMRITokenizer(Tokenizer):
         self,
         theta: ArrayLike,
         tokens_cfg: ArrayLike,
-        model_types: Optional[Sequence[type]] = None,
-        noise_types: Optional[Sequence[type]] = None,
+        model_idx: Optional[Sequence[int]] = None,
+        noise_idx: Optional[Sequence[int]] = None,
         model_mask: Optional[ArrayLike] = None,
     ) -> Array:
         """
@@ -642,17 +603,24 @@ class DMRITokenizer(Tokenizer):
             5. The configuration tokens are filtered to match only the components with parameters
             6. The final tokens are the sum of the encoded parameters and the filtered configuration tokens
         """
-        if model_types is None:
-            model_types = self.simulator.value.model_types
-        if noise_types is None:
-            noise_types = self.simulator.value.noise_types
+        if model_idx is None:
+            model_idx = self.model_indices
+        if noise_idx is None:
+            noise_idx = self.noise_indices
 
-        model_types_with_params = [m for m in model_types if m.theta_dim > 0]
-        noise_types_with_params = [n for n in noise_types if n.theta_dim > 0]
+        model_types_all = self.simulator.value.model_types
+        noise_types_all = self.simulator.value.noise_types
 
-        model_idx = self.get_model_idx(model_types_with_params)
-        noise_idx = self.get_noise_idx(noise_types_with_params)
-        idx = model_idx + noise_idx
+        model_idx_with_params = [
+            int(i) for i in model_idx if model_types_all[i].theta_dim > 0
+        ]
+        noise_idx_with_params = [
+            int(i) for i in noise_idx if noise_types_all[i].theta_dim > 0
+        ]
+
+        idx = tuple(model_idx_with_params) + tuple(
+            self.num_models + i for i in noise_idx_with_params
+        )
 
         # First dim -> Model fractions
         # Second dim -> Shared parameters (if any)
@@ -693,9 +661,7 @@ class DMRITokenizer(Tokenizer):
         # Add configuration tokens for shared parameters
         tokens_cfg_fractions = tokens_cfg[..., :1, :]
         tokens_cfg_models = tokens_cfg[..., 1:, :]
-        indices = self.get_indices_with_params(
-            model_types_with_params, noise_types_with_params
-        )
+        indices = self.get_indices_with_params(model_idx, noise_idx)
 
         token_cfg_models_with_params = tokens_cfg_models[..., indices, :]
         if self.simulator.value.shared_parameter_type is not None:
@@ -730,60 +696,49 @@ class DMRITokenizer(Tokenizer):
     def decode_theta(
         self,
         tokens: ArrayLike,
-        model_types: Optional[Sequence[type]] = None,
-        noise_types: Optional[Sequence[type]] = None,
+        model_idx: Optional[Sequence[int]] = None,
+        noise_idx: Optional[Sequence[int]] = None,
         model_mask: Optional[ArrayLike] = None,
         **kwargs: Any,
     ) -> Array:
-        """
-        Decodes the tokens back into the continuous parameter vector theta.
+        """Decode tokens back into the continuous parameter vector theta."""
+        del model_mask, kwargs
 
-        Args:
-            tokens (ArrayLike): The token representation that includes the embedded parameters.
-            model_types (Optional[List[type]]): List of model types.
-            noise_types (Optional[List[type]]): List of noise types.
+        if model_idx is None:
+            model_idx = self.model_indices
+        if noise_idx is None:
+            noise_idx = self.noise_indices
 
-        Returns:
-            ArrayLike: The decoded parameter vector.
-        """
-        del model_mask
+        model_types_all = self.simulator.value.model_types
+        noise_types_all = self.simulator.value.noise_types
 
-        if model_types is None:
-            model_types = self.simulator.value.model_types
-        if noise_types is None:
-            noise_types = self.simulator.value.noise_types
-
-        # Get indices for components with parameters
-        model_types_with_params = [m for m in model_types if m.theta_dim > 0]
-        noise_types_with_params = [n for n in noise_types if n.theta_dim > 0]
-
-        model_idx = self.get_model_idx(model_types_with_params)
-        noise_idx = self.get_noise_idx(noise_types_with_params)
-        idx = model_idx + noise_idx
+        model_idx_with_params = [
+            int(i) for i in model_idx if model_types_all[i].theta_dim > 0
+        ]
+        noise_idx_with_params = [
+            int(i) for i in noise_idx if noise_types_all[i].theta_dim > 0
+        ]
 
         tokens_split = jnp.split(tokens, tokens.shape[-2], axis=-2)
 
-        # TODO: This needs to be in tokenizer PP
-        # Create a list of networks for decoding
-
-        net_subs = []
-
-        # Fraction decoder
-        net_subs += [self.theta_decode_nets[0]]
+        net_subs: List[nnx.Module] = [self.theta_decode_nets[0]]
         offset = 1
         if self.simulator.value.shared_parameter_type is not None:
-            net_subs += [self.theta_decode_nets[1]]
+            net_subs.append(self.theta_decode_nets[1])
             offset += 1
 
-        # Add networks for component parameters
-        net_subs += [self.theta_decode_nets[i + offset] for i in idx]
+        for i in model_idx_with_params:
+            net_subs.append(self.theta_decode_nets[i + offset])
+        for i in noise_idx_with_params:
+            net_subs.append(self.theta_decode_nets[self.num_models + i + offset])
 
-        # Verify that the number of networks matches the number of tokens
         assert len(net_subs) == len(tokens_split), (
             f"Number of networks ({len(net_subs)}) does not match number of tokens ({len(tokens_split)})"
         )
 
-        x = jax.tree_util.tree_map(lambda x, net: net(x), tokens_split, net_subs)
+        x = jax.tree_util.tree_map(
+            lambda token, net: net(token), tokens_split, net_subs
+        )
         out = jnp.concatenate(x, axis=-1)
         out = jnp.squeeze(out, axis=-2)
         return out
@@ -894,24 +849,28 @@ class DMRITokenizerPP(DMRITokenizer):
         self,
         theta: ArrayLike,
         tokens_cfg: ArrayLike,
-        model_types: Optional[Sequence[type]] = None,
-        noise_types: Optional[Sequence[type]] = None,
+        model_idx: Optional[Sequence[int]] = None,
+        noise_idx: Optional[Sequence[int]] = None,
         model_mask: Optional[ArrayLike] = None,
     ) -> Array:
-        if model_types is None:
-            model_types = tuple(self.simulator.value.model_types)
-        if noise_types is None:
-            noise_types = tuple(self.simulator.value.noise_types)
+        if model_idx is None:
+            model_idx = self.model_indices
+        if noise_idx is None:
+            noise_idx = self.noise_indices
 
-        # Filter out components without parameters
-        model_types_with_params = tuple([m for m in model_types if m.theta_dim > 0])
-        noise_types_with_params = tuple([n for n in noise_types if n.theta_dim > 0])
+        model_types_all = self.simulator.value.model_types
+        noise_types_all = self.simulator.value.noise_types
 
-        # Get indices for components with parameters
-        model_idx = self.get_model_idx(tuple(model_types))
-        model_idx_with_params = self.get_model_idx(model_types_with_params)
-        noise_idx = self.get_noise_idx(noise_types_with_params)
-        idx = model_idx_with_params + noise_idx
+        model_idx_with_params = [
+            int(i) for i in model_idx if model_types_all[i].theta_dim > 0
+        ]
+        noise_idx_with_params = [
+            int(i) for i in noise_idx if noise_types_all[i].theta_dim > 0
+        ]
+
+        idx = tuple(model_idx_with_params) + tuple(
+            self.num_models + i for i in noise_idx_with_params
+        )
 
         # First dim -> Model fractions
         # Second dim -> Shared parameters (if any)
@@ -936,10 +895,10 @@ class DMRITokenizerPP(DMRITokenizer):
 
         # Create fraction tokens
         theta_fractions = theta_split[0]
-        model_component_mask = model_mask[..., : len(model_types)]
+        model_component_mask = model_mask[..., : self.num_models]
         theta_fraction_mask = self.theta_fraction_mask(model_component_mask)
         fraction_tokens = self._create_fraction_tokens(
-            theta_fractions, model_idx, theta_fraction_mask
+            theta_fractions, tuple(int(i) for i in model_idx), theta_fraction_mask
         )
 
         # Handle shared parameters if they exist
@@ -965,7 +924,7 @@ class DMRITokenizerPP(DMRITokenizer):
         )
         val_embeddings = jnp.concatenate(val_embeddings, axis=-2)
         val_tokens_cfg = tokens_cfg[..., 1:, :]
-        indices_with_params = self.get_indices_with_params(model_types, noise_types)
+        indices_with_params = self.get_indices_with_params(model_idx, noise_idx)
 
         model_tokens = val_tokens_cfg[..., indices_with_params, :] + val_embeddings
         # Combine the tokens
@@ -984,59 +943,53 @@ class DMRITokenizerPP(DMRITokenizer):
     def decode_theta(
         self,
         tokens: ArrayLike,
-        model_types: Optional[Sequence[type]] = None,
-        noise_types: Optional[Sequence[type]] = None,
+        model_idx: Optional[Sequence[int]] = None,
+        noise_idx: Optional[Sequence[int]] = None,
         model_mask: Optional[ArrayLike] = None,
         **kwargs: Any,
     ) -> Array:
-        if model_types is None:
-            model_types = tuple(self.simulator.value.model_types)
-        if noise_types is None:
-            noise_types = tuple(self.simulator.value.noise_types)
+        del model_mask, kwargs
 
-        # Get indices for components with parameters
-        model_types_with_params = tuple([m for m in model_types if m.theta_dim > 0])
-        noise_types_with_params = tuple([n for n in noise_types if n.theta_dim > 0])
+        if model_idx is None:
+            model_idx = self.model_indices
+        if noise_idx is None:
+            noise_idx = self.noise_indices
 
-        model_idx = self.get_model_idx(model_types_with_params)
-        noise_idx = self.get_noise_idx(noise_types_with_params)
-        idx = model_idx + noise_idx
+        model_types_all = self.simulator.value.model_types
+        noise_types_all = self.simulator.value.noise_types
+
+        model_idx_with_params = [
+            int(i) for i in model_idx if model_types_all[i].theta_dim > 0
+        ]
+        noise_idx_with_params = [
+            int(i) for i in noise_idx if noise_types_all[i].theta_dim > 0
+        ]
 
         tokens_split = jnp.split(tokens, tokens.shape[-2], axis=-2)
 
-        # Create a list of networks for decoding
-        net_subs = []
+        net_subs: List[nnx.Module] = []
 
-        # Add fraction networks for each model type
-        num_fractions = (
-            len(model_types) - 1
-        )  # Number of fractions (one less than number of models)
+        num_fractions = len(model_idx) - 1
         for _ in range(num_fractions):
             net_subs.append(self.theta_decode_nets[0])
 
-        # Add network for shared parameters if they exist
+        offset = 1
         if self.simulator.value.shared_parameter_type is not None:
             net_subs.append(self.theta_decode_nets[1])
+            offset += 1
 
-        # Add networks for component parameters
-        for i in idx:
-            net_subs.append(
-                self.theta_decode_nets[
-                    i
-                    + (
-                        2
-                        if self.simulator.value.shared_parameter_type is not None
-                        else 1
-                    )
-                ]
-            )
+        for i in model_idx_with_params:
+            net_subs.append(self.theta_decode_nets[i + offset])
+        for i in noise_idx_with_params:
+            net_subs.append(self.theta_decode_nets[self.num_models + i + offset])
 
-        # Verify that the number of networks matches the number of tokens
         assert len(net_subs) == len(tokens_split), (
             f"Number of networks ({len(net_subs)}) does not match number of tokens ({len(tokens_split)})"
         )
 
-        x = jax.tree_util.tree_map(lambda x, net: net(x), tokens_split, net_subs)
+        x = jax.tree_util.tree_map(
+            lambda token, net: net(token), tokens_split, net_subs
+        )
         out = jnp.concatenate(x, axis=-1)
         out = jnp.squeeze(out, axis=-2)
         return out
