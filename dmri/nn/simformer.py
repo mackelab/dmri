@@ -5,7 +5,12 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from flax import nnx
-from probjax.nn import GaussianFourierEmbedding, Transformer
+from probjax.nn import (
+    AdditiveBinaryFuse,
+    GatedFuse,
+    GaussianFourierEmbedding,
+    Transformer,
+)
 from probjax.nn.layers.attention import flex_attention
 from probjax.nn.nets.denoising_diffusion_model import EDM
 from probjax.utils.odeint import odeint
@@ -25,6 +30,9 @@ class DMRIThetaInferenceConfig:
     dropout_rate: float = 0.0
     use_flash_attention: bool = False
     use_flash_cross_attention: bool = False
+    gate_attention: bool = False
+    gate_mlp: bool = False
+    kv_in_features: Optional[int] = None
     dtype: DTypeLike | None = None
     param_dtype: DTypeLike | None = None
     precision: PrecisionLike | None = None
@@ -46,6 +54,9 @@ class DiffusionTransformer(nnx.Module):
         enable_cross_attention: bool = True,
         use_flash_attention: bool = False,
         use_flash_cross_attention: bool = False,
+        gate_attention: bool = False,
+        gate_mlp: bool = False,
+        kv_in_features: Optional[int] = None,
         dtype: DTypeLike | None = None,
         param_dtype: DTypeLike | None = None,
         precision: PrecisionLike | None = None,
@@ -74,11 +85,15 @@ class DiffusionTransformer(nnx.Module):
         transformer_context_dim = (
             self.total_context_dim if self.total_context_dim > 0 else None
         )
+        attn_fuse_cls = AdditiveBinaryFuse if gate_attention else GatedFuse
+        mlp_fuse_cls = AdditiveBinaryFuse if gate_mlp else GatedFuse
+        self.kv_in_features = kv_in_features if kv_in_features is not None else model_dim
         self.transformer = Transformer(
             model_dim,
             num_heads=num_heads,
             num_layers=num_layers,
             attn_size=attn_size,
+            kv_in_features=self.kv_in_features,
             widening_factor=widening_factor,
             enable_cross_attention=enable_cross_attention,
             dropout_rate=dropout_rate,
@@ -86,6 +101,8 @@ class DiffusionTransformer(nnx.Module):
             context_dim=transformer_context_dim,
             attention_fn=attn_fn,
             cross_attention_fn=cross_attn_fn,
+            attn_fuse_cls=attn_fuse_cls,
+            mlp_fuse_cls=mlp_fuse_cls,
             **precision_kwargs,
         )
 
@@ -150,6 +167,9 @@ class EDMSimformer(EDM):
         enable_cross_attention: bool = True,
         use_flash_attention: bool = False,
         use_flash_cross_attention: bool = False,
+        gate_attention: bool = False,
+        gate_mlp: bool = False,
+        kv_in_features: Optional[int] = None,
         loss_type: str = "x0",
         dtype: DTypeLike | None = None,
         param_dtype: DTypeLike | None = None,
@@ -169,6 +189,9 @@ class EDMSimformer(EDM):
             enable_cross_attention=enable_cross_attention,
             use_flash_attention=use_flash_attention,
             use_flash_cross_attention=use_flash_cross_attention,
+            gate_attention=gate_attention,
+            gate_mlp=gate_mlp,
+            kv_in_features=kv_in_features,
             dtype=dtype,
             param_dtype=param_dtype,
             precision=precision,

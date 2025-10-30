@@ -163,6 +163,59 @@ def test_dmri_inference_model_without_mask_prior(simulator, data):
     assert theta_pred.shape == theta.shape
 
 
+def test_dmri_inference_model_with_gated_simformer(simulator, data):
+    """Ensure gated transformer configuration integrates without errors."""
+    cfg = DMRIInferenceModelConfig(
+        simulator=simulator,
+        model_dim=64,
+        embedding_cfg=DMRIEmbeddingConfig(),
+        model_selection_cfg=DMRIModelSelectionConfig(prior_params_embed_dim=0),
+        theta_inference_cfg=DMRIThetaInferenceConfig(
+            gate_attention=True,
+            gate_mlp=True,
+        ),
+    )
+    model = DMRIInferenceModel(cfg, nnx.Rngs(16))
+    model_mask, theta, x, bvals, bvecs, _ = data
+
+    from dmri.simulators.acquisition_scheme import acquisition_scheme
+
+    acq = acquisition_scheme(bvals=bvals, bvecs=bvecs)
+    logits, theta_pred = model(model_mask, theta, x, acq)
+
+    assert logits.shape == model_mask.shape
+    assert theta_pred.shape == theta.shape
+
+
+def test_dmri_inference_model_custom_embedding_dims(rng, simulator, data):
+    """Custom encoder output dims should propagate to decoders."""
+    cfg = DMRIInferenceModelConfig(
+        simulator=simulator,
+        model_dim=64,
+        embedding_cfg=DMRIEmbeddingConfig(
+            use_global_summary_token=True,
+            y_seq_dim=32,
+            y_glob_dim=16,
+        ),
+        model_selection_cfg=DMRIModelSelectionConfig(prior_params_embed_dim=0),
+        theta_inference_cfg=DMRIThetaInferenceConfig(),
+    )
+    model = DMRIInferenceModel(cfg, rng)
+    assert model.model_decoder.kv_in_features == 32
+    assert model.y_ctx_dim == 16
+    assert model.inference_decoder.net.kv_in_features == 32
+
+    model_mask, theta, x, bvals, bvecs, _ = data
+
+    from dmri.simulators.acquisition_scheme import acquisition_scheme
+
+    acq = acquisition_scheme(bvals=bvals, bvecs=bvecs)
+    logits, theta_pred = model(model_mask, theta, x, acq)
+
+    assert logits.shape == model_mask.shape
+    assert theta_pred.shape == theta.shape
+
+
 @pytest.mark.parametrize("use_flashattn", [False])
 def test_bval_bvec_signal_embedding_net(use_flashattn, rng, data):
     """Test instantiation and forward pass of BvalBvecSignalEmbeddingNet."""
