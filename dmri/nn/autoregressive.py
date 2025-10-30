@@ -22,6 +22,7 @@ class DMRIModelSelectionConfig:
     dropout_rate: float = 0.0
     prior_params_embed_dim: int = 0
     mask_prior_dim: Optional[int] = None
+    kv_in_features: Optional[int] = None
     use_flash_attention: bool = False
     use_flash_cross_attention: bool = False
     dtype: DTypeLike | None = None
@@ -33,7 +34,7 @@ class DMRIModelSelectionConfig:
 @dataclass
 class DMRIModelSelectionAmortizedPriorConfig(DMRIModelSelectionConfig):
     prior_params_embed_dim: int = 64  # Context dimension embedding
-    mask_prior_dim: int = 1  # Scalar mask probability
+    mask_prior_dim: Optional[int] = 1  # Scalar mask probability
 
 
 class BinaryAutoregressiveDecoder(nnx.Module):
@@ -55,6 +56,7 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         prior_params_embed_dim: int = 0,
         mask_prior_dim: Optional[int] = None,
         additional_context_dim: int = 0,
+        kv_in_features: Optional[int] = None,
         enable_cross_attention: bool = True,
         use_flash_attention: bool = False,
         use_flash_cross_attention: bool = False,
@@ -107,11 +109,16 @@ class BinaryAutoregressiveDecoder(nnx.Module):
             self.mask_prior_dim = None
             self.mask_prior_embed = None
 
+        self.kv_in_features = (
+            kv_in_features if kv_in_features is not None else model_dim
+        )
+
         self.transformer = Transformer(
             model_dim,
             self.num_heads,
             self.num_layers,
             self.attn_size,
+            kv_in_features=self.kv_in_features,
             context_dim=context_dim,
             widening_factor=self.widening_factor,
             rngs=rngs,

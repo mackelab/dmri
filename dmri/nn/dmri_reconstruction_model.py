@@ -107,12 +107,12 @@ class DMRIInferenceModel(nnx.Module):
             model_dim=cfg.model_dim,
             **embedding_kwargs,
         )
+        self.y_seq_dim: int = getattr(self.encoder, "y_seq_dim", cfg.model_dim)
         self.use_y_ctx: bool = bool(
             getattr(self.encoder, "use_global_summary_token", False)
         )
-        self.y_ctx_dim: int = (
-            getattr(self.encoder, "model_dim", cfg.model_dim) if self.use_y_ctx else 0
-        )
+        self.y_glob_dim: int = getattr(self.encoder, "y_glob_dim", cfg.model_dim)
+        self.y_ctx_dim: int = self.y_glob_dim if self.use_y_ctx else 0
         # Setup tokenizers
         self.tokenizer: DMRITokenizer = cfg.tokenizer_cls(
             cfg.simulator,
@@ -124,7 +124,10 @@ class DMRIInferenceModel(nnx.Module):
         # Setup model selection network
         selection_cfg = cfg.model_selection_cfg
         selection_kwargs = _config_kwargs(selection_cfg)
+        prior_params_embed_dim = selection_kwargs["prior_params_embed_dim"]
+        self.requires_mask_prior = prior_params_embed_dim > 0
         selection_kwargs["additional_context_dim"] = self.y_ctx_dim
+        selection_kwargs["kv_in_features"] = self.y_seq_dim
 
         self.model_decoder = BinaryAutoregressiveDecoder(
             rngs,
@@ -137,6 +140,7 @@ class DMRIInferenceModel(nnx.Module):
         theta_cfg = cfg.theta_inference_cfg
         theta_kwargs = _config_kwargs(theta_cfg)
         theta_kwargs["additional_context_dim"] = self.y_ctx_dim
+        theta_kwargs["kv_in_features"] = self.y_seq_dim
         simformer = EDMSimformer(
             rngs=rngs,
             model_dim=cfg.model_dim,
