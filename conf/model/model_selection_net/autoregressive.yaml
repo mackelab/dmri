@@ -7,4 +7,4 @@ params:
   use_flash_cross_attention: false
   attn_size: 8
   dropout_rate: 0.0
-  context_dim: null  # Context dimension embedding
+  prior_params_embed_dim: 0  # Context embedding for prior parameters

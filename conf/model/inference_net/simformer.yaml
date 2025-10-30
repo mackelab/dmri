@@ -6,5 +6,5 @@ params:
   use_flash_attention: false
   use_flash_cross_attention: false
   attn_size: 16
-  context_dim: 64
+  time_embed_dim: 64
   dropout_rate: 0.0

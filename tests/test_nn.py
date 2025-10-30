@@ -77,6 +77,92 @@ def test_dmri_inference_model_amortized(rng, simulator, data):
     assert output[1].shape == theta.shape
 
 
+def test_binary_decoder_requires_mask_prior(simulator):
+    """Decoder should enforce mask prior when the config requests it."""
+    decoder = BinaryAutoregressiveDecoder(
+        rngs=nnx.Rngs(10),
+        model_dim=64,
+        prior_params_embed_dim=8,
+        mask_prior_dim=2,
+        additional_context_dim=3,
+    )
+    tokenizer = DMRITokenizer(simulator=simulator, token_dim=64, rngs=nnx.Rngs(11))
+    batch = 4
+    num_components = tokenizer.num_models + tokenizer.num_noises
+    model_mask = jnp.ones((batch, num_components), dtype=jnp.bool_)
+    additional_context = jnp.zeros((batch, 3))
+
+    with pytest.raises(ValueError, match="mask_prior must be provided"):
+        decoder(model_mask, tokenizer, additional_context=additional_context)
+
+    mask_prior = jnp.zeros((batch, 2))
+    logits = decoder(
+        model_mask,
+        tokenizer,
+        mask_prior=mask_prior,
+        additional_context=additional_context,
+    )
+    assert logits.shape == model_mask.shape
+
+
+def test_binary_decoder_fills_missing_additional_context(simulator):
+    """Decoder should fall back to zeros when only extra context is expected."""
+    decoder = BinaryAutoregressiveDecoder(
+        rngs=nnx.Rngs(12),
+        model_dim=64,
+        prior_params_embed_dim=0,
+        additional_context_dim=5,
+    )
+    tokenizer = DMRITokenizer(simulator=simulator, token_dim=64, rngs=nnx.Rngs(13))
+    batch = 3
+    num_components = tokenizer.num_models + tokenizer.num_noises
+    model_mask = jnp.zeros((batch, num_components), dtype=jnp.bool_)
+
+    logits = decoder(model_mask, tokenizer)
+    assert logits.shape == model_mask.shape
+
+
+def test_dmri_inference_model_requires_mask_prior(simulator, data):
+    """High-level model should surface mask-prior requirement errors."""
+    cfg = DMRIInferenceModelConfigMaskPriorAmortized(
+        simulator=simulator,
+        model_dim=64,
+        embedding_cfg=DMRIEmbeddingConfig(),
+        model_selection_cfg=DMRIModelSelectionAmortizedPriorConfig(),
+        theta_inference_cfg=DMRIThetaInferenceConfig(),
+    )
+    model = DMRIInferenceModel(cfg, nnx.Rngs(14))
+    model_mask, theta, x, bvals, bvecs, _ = data
+
+    from dmri.simulators.acquisition_scheme import acquisition_scheme
+
+    acq = acquisition_scheme(bvals=bvals, bvecs=bvecs)
+
+    with pytest.raises(ValueError, match="mask_prior must be provided"):
+        model(model_mask, theta, x, acq)
+
+
+def test_dmri_inference_model_without_mask_prior(simulator, data):
+    """Mask prior should be optional when prior embedding is disabled."""
+    cfg = DMRIInferenceModelConfig(
+        simulator=simulator,
+        model_dim=64,
+        embedding_cfg=DMRIEmbeddingConfig(),
+        model_selection_cfg=DMRIModelSelectionConfig(prior_params_embed_dim=0),
+        theta_inference_cfg=DMRIThetaInferenceConfig(),
+    )
+    model = DMRIInferenceModel(cfg, nnx.Rngs(15))
+    model_mask, theta, x, bvals, bvecs, _ = data
+
+    from dmri.simulators.acquisition_scheme import acquisition_scheme
+
+    acq = acquisition_scheme(bvals=bvals, bvecs=bvecs)
+    logits, theta_pred = model(model_mask, theta, x, acq)
+
+    assert logits.shape == model_mask.shape
+    assert theta_pred.shape == theta.shape
+
+
 @pytest.mark.parametrize("use_flashattn", [False])
 def test_bval_bvec_signal_embedding_net(use_flashattn, rng, data):
     """Test instantiation and forward pass of BvalBvecSignalEmbeddingNet."""

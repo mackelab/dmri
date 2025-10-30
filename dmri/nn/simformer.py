@@ -21,7 +21,7 @@ class DMRIThetaInferenceConfig:
     num_heads: int = 4
     widening_factor: int = 3
     attn_size: int = 16
-    context_dim: int = 64
+    time_embed_dim: int = 64
     dropout_rate: float = 0.0
     use_flash_attention: bool = False
     use_flash_cross_attention: bool = False
@@ -36,7 +36,8 @@ class DiffusionTransformer(nnx.Module):
         self,
         rngs: nnx.Rngs,
         model_dim: int = 64,
-        context_dim: int = 64,
+        time_embed_dim: int = 64,
+        additional_context_dim: int = 0,
         num_heads: int = 4,
         num_layers: int = 6,
         attn_size: int = 16,
@@ -50,6 +51,13 @@ class DiffusionTransformer(nnx.Module):
         precision: PrecisionLike | None = None,
         preferred_element_type: DTypeLike | None = None,
     ) -> None:
+        self.time_embed_dim = time_embed_dim
+        self.additional_context_dim = additional_context_dim
+        self.total_context_dim = self.time_embed_dim + self.additional_context_dim
+        if self.time_embed_dim <= 0:
+            raise ValueError("time_embed_dim must be a positive integer.")
+        if self.additional_context_dim < 0:
+            raise ValueError("additional_context_dim must be non-negative.")
         precision_kwargs = {
             "dtype": dtype,
             "param_dtype": param_dtype,
@@ -57,12 +65,15 @@ class DiffusionTransformer(nnx.Module):
             "preferred_element_type": preferred_element_type,
         }
         self.time_embedding = GaussianFourierEmbedding(
-            1, context_dim, rngs=rngs, **precision_kwargs
+            1, self.time_embed_dim, rngs=rngs, **precision_kwargs
         )
 
         attn_fn = flex_attention if use_flash_attention else None
         cross_attn_fn = flex_attention if use_flash_cross_attention else None
 
+        transformer_context_dim = (
+            self.total_context_dim if self.total_context_dim > 0 else None
+        )
         self.transformer = Transformer(
             model_dim,
             num_heads=num_heads,
@@ -72,7 +83,7 @@ class DiffusionTransformer(nnx.Module):
             enable_cross_attention=enable_cross_attention,
             dropout_rate=dropout_rate,
             rngs=rngs,
-            context_dim=context_dim,
+            context_dim=transformer_context_dim,
             attention_fn=attn_fn,
             cross_attention_fn=cross_attn_fn,
             **precision_kwargs,
@@ -95,13 +106,27 @@ class DiffusionTransformer(nnx.Module):
         # print(input_embed.shape)
         while time_embed.ndim < input_embed.ndim:
             time_embed = time_embed[..., None, :]
-        _context = time_embed
-
-        # Additional context
-        if context is not None:
-            while context.ndim < input_embed.ndim:
-                context = context[..., None, :]
-            _context = jnp.concatenate([_context, context], axis=-1)
+        if self.additional_context_dim > 0:
+            if context is None:
+                extra_context = jnp.zeros(
+                    time_embed.shape[:-1] + (self.additional_context_dim,),
+                    dtype=time_embed.dtype,
+                )
+            else:
+                extra_context = jnp.asarray(context, dtype=time_embed.dtype)
+                while extra_context.ndim < input_embed.ndim:
+                    extra_context = extra_context[..., None, :]
+                if extra_context.shape[-1] != self.additional_context_dim:
+                    raise ValueError(
+                        "Context dimensionality mismatch for diffusion transformer."
+                    )
+            _context = jnp.concatenate([time_embed, extra_context], axis=-1)
+        else:
+            if context is not None:
+                raise ValueError(
+                    "Context provided but no additional context dimension configured."
+                )
+            _context = time_embed
 
         output = self.transformer(
             input_embed, y, y, context=_context, mask=attention_mask
@@ -115,7 +140,8 @@ class EDMSimformer(EDM):
         self,
         rngs: nnx.Rngs,
         model_dim: int = 64,
-        context_dim: int = 64,
+        time_embed_dim: int = 64,
+        additional_context_dim: int = 0,
         num_heads: int = 4,
         num_layers: int = 4,
         attn_size: int = 16,
@@ -133,7 +159,8 @@ class EDMSimformer(EDM):
         transformer = DiffusionTransformer(
             rngs,
             model_dim=model_dim,
-            context_dim=context_dim,
+            time_embed_dim=time_embed_dim,
+            additional_context_dim=additional_context_dim,
             num_heads=num_heads,
             num_layers=num_layers,
             attn_size=attn_size,

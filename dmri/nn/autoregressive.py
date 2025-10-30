@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 import optax
 from flax import nnx
-from probjax.nn import CausalMask, Transformer
+from probjax.nn import CausalMask, GaussianFourierEmbedding, Transformer
 from probjax.nn.layers.attention import flex_attention
 from probjax.utils.typing import Array, ArrayLike, DTypeLike, PrecisionLike, RngKey
 
@@ -20,7 +20,8 @@ class DMRIModelSelectionConfig:
     widening_factor: int = 3
     attn_size: int = 16
     dropout_rate: float = 0.0
-    context_dim: Optional[int] = None
+    prior_params_embed_dim: int = 0
+    mask_prior_dim: Optional[int] = None
     use_flash_attention: bool = False
     use_flash_cross_attention: bool = False
     dtype: DTypeLike | None = None
@@ -31,7 +32,7 @@ class DMRIModelSelectionConfig:
 
 @dataclass
 class DMRIModelSelectionAmortizedPriorConfig(DMRIModelSelectionConfig):
-    context_dim: Optional[int] = 64  # Context dimension embedding
+    prior_params_embed_dim: int = 64  # Context dimension embedding
     mask_prior_dim: int = 1  # Scalar mask probability
 
 
@@ -51,7 +52,9 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         widening_factor: int = 4,
         attn_size: int = 16,
         dropout_rate: float = 0.0,
-        context_dim: Optional[int] = None,
+        prior_params_embed_dim: int = 0,
+        mask_prior_dim: Optional[int] = None,
+        additional_context_dim: int = 0,
         enable_cross_attention: bool = True,
         use_flash_attention: bool = False,
         use_flash_cross_attention: bool = False,
@@ -65,6 +68,12 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         self.num_layers = num_layers
         self.widening_factor = widening_factor
         self.attn_size = attn_size
+        self.prior_params_embed_dim = prior_params_embed_dim
+        self.additional_context_dim = additional_context_dim
+        self.total_context_dim = (
+            self.prior_params_embed_dim + self.additional_context_dim
+        )
+        context_dim = self.total_context_dim if self.total_context_dim > 0 else None
         self.context_dim = context_dim
         self.use_flash_attention = use_flash_attention
 
@@ -81,6 +90,22 @@ class BinaryAutoregressiveDecoder(nnx.Module):
 
         attn_fn = flex_attention if use_flash_attention else None
         cross_attn_fn = flex_attention if use_flash_cross_attention else None
+
+        if self.prior_params_embed_dim > 0:
+            if mask_prior_dim is None:
+                raise ValueError(
+                    "mask_prior_dim must be provided when prior_params_embed_dim > 0."
+                )
+            self.mask_prior_dim = mask_prior_dim
+            self.mask_prior_embed = GaussianFourierEmbedding(
+                mask_prior_dim,
+                self.prior_params_embed_dim,
+                rngs=rngs,
+                **precision_kwargs,  # type: ignore[arg-type]
+            )
+        else:
+            self.mask_prior_dim = None
+            self.mask_prior_embed = None
 
         self.transformer = Transformer(
             model_dim,
@@ -107,7 +132,8 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         self,
         model_mask: Array,
         tokenizer: Tokenizer,
-        context: Optional[Array] = None,
+        mask_prior: Optional[Array] = None,
+        additional_context: Optional[Array] = None,
         y: Optional[Array] = None,
         mask: Optional[Array] = None,
         decode: bool = False,
@@ -115,11 +141,18 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         **kwargs: Any,
     ) -> Array:
         input_tokens = self._encode_model_mask(model_mask, tokenizer, **kwargs)
+        batch_shape = input_tokens.shape[:-2]
+        context_vec = self._prepare_context(
+            batch_shape,
+            input_tokens.dtype,
+            mask_prior=mask_prior,
+            additional_context=additional_context,
+        )
         # Autoregressive mask constrained
         output_tokens = self._forward_tokens(
             input_tokens,
             y,
-            context=context,
+            context=context_vec,
             attention_mask=mask,
             decode=decode,
             deterministic=deterministic,
@@ -139,6 +172,61 @@ class BinaryAutoregressiveDecoder(nnx.Module):
             f"Token dim mismatch, is {model_dim}, expected {self.model_dim}"
         )
         return input_tokens
+
+    def _prepare_context(
+        self,
+        batch_shape: tuple[Any, ...],
+        dtype: jnp.dtype,
+        mask_prior: Optional[Array],
+        additional_context: Optional[Array],
+    ) -> Optional[Array]:
+        context_parts = []
+
+        if self.prior_params_embed_dim > 0:
+            if mask_prior is None:
+                raise ValueError(
+                    "mask_prior must be provided for prior-parameter context."
+                )
+            mask_prior_arr = jnp.asarray(mask_prior, dtype=dtype)
+            if mask_prior_arr.shape[:-1] != batch_shape:
+                raise ValueError("Mask prior batch shape does not match tokens.")
+            if mask_prior_arr.shape[-1] != self.mask_prior_dim:
+                raise ValueError(
+                    "Mask prior dimensionality does not match configured mask_prior_dim."
+                )
+            if self.mask_prior_embed is None:
+                raise ValueError("Mask prior embedding is not initialized.")
+            context_parts.append(self.mask_prior_embed(mask_prior_arr))
+        elif mask_prior is not None:
+            raise ValueError(
+                "Mask prior provided but prior_params_embed_dim is set to 0."
+            )
+
+        if self.additional_context_dim > 0:
+            if additional_context is None:
+                additional_context_arr = jnp.zeros(
+                    batch_shape + (self.additional_context_dim,),
+                    dtype=dtype,
+                )
+            else:
+                additional_context_arr = jnp.asarray(additional_context, dtype=dtype)
+                if additional_context_arr.shape[:-1] != batch_shape:
+                    raise ValueError(
+                        "Additional context batch shape does not match tokens."
+                    )
+                if additional_context_arr.shape[-1] != self.additional_context_dim:
+                    raise ValueError(
+                        "Additional context dimensionality does not match configuration."
+                    )
+            context_parts.append(additional_context_arr)
+        elif additional_context is not None:
+            raise ValueError(
+                "Additional context provided but additional_context_dim is 0."
+            )
+
+        if not context_parts:
+            return None
+        return jnp.concatenate(context_parts, axis=-1)
 
     def _forward_tokens(
         self,
@@ -161,6 +249,20 @@ class BinaryAutoregressiveDecoder(nnx.Module):
             if attention_mask is not None:
                 raise NotImplementedError("Not supported with flash attention")
 
+        batch_shape = input_tokens.shape[:-2]
+        if self.total_context_dim > 0:
+            if context is None:
+                raise ValueError("Context expected but not provided.")
+            context = jnp.asarray(context, dtype=input_tokens.dtype)
+            if context.shape[:-1] != batch_shape:
+                raise ValueError("Context batch shape does not match inputs.")
+            if context.shape[-1] != self.total_context_dim:
+                raise ValueError(
+                    "Context dimension mismatch for autoregressive decoder."
+                )
+        elif context is not None:
+            raise ValueError("Context provided but no context dimension configured.")
+
         if context is not None:
             context = context[..., None, :]
 
@@ -182,7 +284,8 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         y: Array,
         rng: Optional[RngKey] = None,
         permute_order: bool = False,
-        context: Optional[Array] = None,
+        mask_prior: Optional[Array] = None,
+        additional_context: Optional[Array] = None,
         tokens_cfg: Optional[Array] = None,
         **kwargs: Any,
     ) -> Array:
@@ -219,11 +322,18 @@ class BinaryAutoregressiveDecoder(nnx.Module):
             # Target should be permuted
             model_mask = jax.vmap(permute_batch_element)(model_mask, batch_orders)
 
+        context_vec = self._prepare_context(
+            batch_shape,
+            input_tokens.dtype,
+            mask_prior=mask_prior,
+            additional_context=additional_context,
+        )
+
         # AR next token prediction
         output_tokens = self._forward_tokens(
             input_tokens,
             y,
-            context=context,
+            context=context_vec,
             **kwargs,
         )
         model_mask_logits = self.output(output_tokens)
@@ -233,15 +343,42 @@ class BinaryAutoregressiveDecoder(nnx.Module):
             optax.sigmoid_binary_cross_entropy(model_mask_logits, model_mask).sum(-1)
         )
 
-    def sample(self, key, tokenizer, y, dim, context=None):
+    def sample(
+        self,
+        key,
+        tokenizer,
+        y,
+        dim,
+        mask_prior: Optional[Array] = None,
+        additional_context: Optional[Array] = None,
+    ):
         return naive_autoregressive_decoding(
-            self, key, tokenizer, y, dim, context=context
+            self,
+            key,
+            tokenizer,
+            y,
+            dim,
+            mask_prior=mask_prior,
+            additional_context=additional_context,
         )
 
     def log_prob(
-        self, model_mask: Array, tokenizer: Tokenizer, y: Array, **kwargs: Any
+        self,
+        model_mask: Array,
+        tokenizer: Tokenizer,
+        y: Array,
+        mask_prior: Optional[Array] = None,
+        additional_context: Optional[Array] = None,
+        **kwargs: Any,
     ) -> Array:
-        model_mask_logits = self(model_mask, tokenizer, y=y, **kwargs)
+        model_mask_logits = self(
+            model_mask,
+            tokenizer,
+            y=y,
+            mask_prior=mask_prior,
+            additional_context=additional_context,
+            **kwargs,
+        )
         # Correct Bernoulli log probability is negative binary cross entropy
         bernoulli_log_prob = -optax.sigmoid_binary_cross_entropy(
             model_mask_logits, model_mask
@@ -256,13 +393,20 @@ def naive_autoregressive_decoding(
     tokenizer: Tokenizer,
     y: Array,
     dim: int,
-    context: Optional[Array] = None,
+    mask_prior: Optional[Array] = None,
+    additional_context: Optional[Array] = None,
 ) -> Array:
     x = jnp.zeros((dim,), dtype=jnp.bool_)
 
     def scan_fn(carry: tuple[Array, int], k: RngKey) -> tuple[tuple[Array, int], None]:
         x, i = carry
-        logits = model(x.astype(jnp.int32), tokenizer, y=y, context=context)
+        logits = model(
+            x.astype(jnp.int32),
+            tokenizer,
+            y=y,
+            mask_prior=mask_prior,
+            additional_context=additional_context,
+        )
         p_i = jax.nn.sigmoid(logits[i])
 
         x_i = jax.random.bernoulli(k, p_i)
