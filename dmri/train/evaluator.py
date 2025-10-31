@@ -125,7 +125,6 @@ def build_pure_eval_fns(graphdef, static, sim_type):
 
         thetas_post = jax.vmap(sample_thetas)(keys_K)
 
-        print(thetas_post.shape, xs.shape)
 
         def smc_ess_single(thetas_post, xs, acq, model_mask):
             def log_prior_fn(thetas):
