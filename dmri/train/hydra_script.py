@@ -163,7 +163,7 @@ def _main(cfg: DictConfig):
             p_mask, model_mask, thetas, xs, acq = data
             target_score = None
 
-        model = nnx.merge(graphdef, params, static, state)
+        model = nnx.merge(graphdef, params, static, state, copy=True)
         model.train()
         losses = model.loss_fn(
             rng,

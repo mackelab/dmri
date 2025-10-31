@@ -11,7 +11,7 @@ from flax import nnx
 def build_pure_eval_fns(graphdef, static, sim_type):
     @jax.jit
     def sample_masks(params, state, rng, data):
-        model = nnx.merge(graphdef, params, static, state)
+        model = nnx.merge(graphdef, params, static, state, copy=True)
         model.eval()
         p_mask = data[0]
         thetas = data[2]
@@ -24,7 +24,7 @@ def build_pure_eval_fns(graphdef, static, sim_type):
 
     @jax.jit
     def log_prob_masks(params, state, data):
-        model = nnx.merge(graphdef, params, static, state)
+        model = nnx.merge(graphdef, params, static, state, copy=True)
         model.eval()
 
         p_mask = data[0]
@@ -35,7 +35,7 @@ def build_pure_eval_fns(graphdef, static, sim_type):
 
     @jax.jit
     def sample_thetas(params, state, rng, data, num_steps=128, max_noise=40):
-        model = nnx.merge(graphdef, params, static, state)
+        model = nnx.merge(graphdef, params, static, state, copy=True)
         model.eval()
 
         model_mask = data[1]
@@ -51,7 +51,7 @@ def build_pure_eval_fns(graphdef, static, sim_type):
 
     @jax.jit
     def log_prob_thetas(params, state, data, num_steps=128, max_noise=40):
-        model = nnx.merge(graphdef, params, static, state)
+        model = nnx.merge(graphdef, params, static, state, copy=True)
         model.eval()
 
         model_mask = data[1]
@@ -67,7 +67,7 @@ def build_pure_eval_fns(graphdef, static, sim_type):
     def sample_and_log_prob_thetas(
         params, state, rng, data, num_steps=128, max_noise=40
     ):
-        model = nnx.merge(graphdef, params, static, state)
+        model = nnx.merge(graphdef, params, static, state, copy=True)
         model.eval()
 
         model_mask = data[1]
@@ -111,7 +111,7 @@ def build_pure_eval_fns(graphdef, static, sim_type):
         acq = data[4]
         xs = data[3]
 
-        model = nnx.merge(graphdef, params, static, state)
+        model = nnx.merge(graphdef, params, static, state, copy=True)
         model.eval()
 
         key1, key2 = jax.random.split(rng)

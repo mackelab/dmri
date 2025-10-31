@@ -187,6 +187,7 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         mask_prior: Optional[Array],
         additional_context: Optional[Array],
     ) -> Optional[Array]:
+        batch_shape = tuple(batch_shape)
         context_parts = []
 
         if self.prior_params_embed_dim > 0:
@@ -195,12 +196,31 @@ class BinaryAutoregressiveDecoder(nnx.Module):
                     "mask_prior must be provided for prior-parameter context."
                 )
             mask_prior_arr = jnp.asarray(mask_prior, dtype=dtype)
-            if mask_prior_arr.shape[:-1] != batch_shape:
-                raise ValueError("Mask prior batch shape does not match tokens.")
+
+            expected_shape = batch_shape + (self.mask_prior_dim,)
+
+            # Allow callers to omit the trailing singleton dimension.
+            if mask_prior_arr.ndim == len(batch_shape):
+                mask_prior_arr = mask_prior_arr[..., None]
+
+            # Make sure the final dimension can align with the configured context size.
             if mask_prior_arr.shape[-1] != self.mask_prior_dim:
-                raise ValueError(
-                    "Mask prior dimensionality does not match configured mask_prior_dim."
-                )
+                if mask_prior_arr.shape[-1] == 1:
+                    mask_prior_arr = jnp.broadcast_to(
+                        mask_prior_arr,
+                        mask_prior_arr.shape[:-1] + (self.mask_prior_dim,),
+                    )
+                else:
+                    raise ValueError(
+                        "Mask prior dimensionality does not match configured mask_prior_dim."
+                    )
+
+            # Broadcast leading dimensions if needed (e.g. scalar or single batch prior).
+            try:
+                mask_prior_arr = jnp.broadcast_to(mask_prior_arr, expected_shape)
+            except ValueError as err:
+                raise ValueError("Mask prior batch shape does not match tokens.") from err
+
             if self.mask_prior_embed is None:
                 raise ValueError("Mask prior embedding is not initialized.")
             context_parts.append(self.mask_prior_embed(mask_prior_arr))

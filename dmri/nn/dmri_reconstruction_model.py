@@ -224,6 +224,7 @@ class DMRIInferenceModel(nnx.Module):
         if y.ndim == 2:
             y = y[..., None, :]
 
+        print("cfg", tokens_cfg.shape, y.shape, y_ctx.shape if y_ctx is not None else None)
         return tokens_cfg, y_ctx, y, mask_prior
 
     def theta_mask(
@@ -356,6 +357,7 @@ class DMRIInferenceModel(nnx.Module):
         x: Array,
         mask_prior: Array | None = None,
     ) -> Array:
+        mask_prior_arr = jnp.asarray(mask_prior) if mask_prior is not None else None
         y_ctx, y = self.encoder(acq, x)
         log_prob = self.model_decoder.log_prob(
             model_mask,
@@ -373,9 +375,9 @@ class DMRIInferenceModel(nnx.Module):
         x: Array,
         model_mask: Array,
         num_steps: int = 16,
+        min_noise: Optional[float] = None,
         max_noise: Optional[float] = None,
         rho: float = 7,
-        min_noise_nugget: float = 0.0,
         sample_method: str = "ode",
     ) -> Array:
         y_ctx, y = self.encoder(acq, x)
@@ -393,12 +395,12 @@ class DMRIInferenceModel(nnx.Module):
             dim=self.cfg.simulator.theta_dim,
             tokens_cfg=tokens_cfg,
             num_steps=num_steps,
+            min_noise=min_noise,
             max_noise=max_noise,
             attention_mask=attention_mask,
             model_mask=model_mask,
             sample_method=sample_method,
             rho=rho,
-            min_noise_nugget=min_noise_nugget,
             context=y_ctx,
         )
 
@@ -411,9 +413,9 @@ class DMRIInferenceModel(nnx.Module):
         x: Array,
         model_mask: Array,
         num_steps: int = 16,
+        min_noise: Optional[float] = None,
         max_noise: Optional[float] = None,
         rho: float = 7,
-        min_noise_nugget: float = 0.0,
     ) -> Array:
         y_ctx, y = self.encoder(acq, x)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
@@ -428,11 +430,11 @@ class DMRIInferenceModel(nnx.Module):
             tokenizer=self.tokenizer,
             tokens_cfg=tokens_cfg,
             num_steps=num_steps,
+            min_noise=min_noise,
             max_noise=max_noise,
             attention_mask=attention_mask,
             model_mask=model_mask,
             rho=rho,
-            min_noise_nugget=min_noise_nugget,
             context=y_ctx,
         )
 
@@ -445,9 +447,9 @@ class DMRIInferenceModel(nnx.Module):
         x: ArrayLike,
         model_mask: Array,
         num_steps: int = 16,
+        min_noise: Optional[float] = None,
         max_noise: Optional[float] = None,
         rho: float = 7,
-        min_noise_nugget: float = 0.0,
     ) -> tuple[Array, Array]:
         y_ctx, y = self.encoder(acq, x)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
@@ -463,11 +465,11 @@ class DMRIInferenceModel(nnx.Module):
             dim=self.cfg.simulator.theta_dim,
             tokens_cfg=tokens_cfg,
             num_steps=num_steps,
+            min_noise=min_noise,
             max_noise=max_noise,
             attention_mask=attention_mask,
             model_mask=model_mask,
             rho=rho,
-            min_noise_nugget=min_noise_nugget,
             context=y_ctx,
         )
 
