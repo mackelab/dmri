@@ -382,8 +382,6 @@ class DMRIInferenceModel(nnx.Module):
     ) -> Array:
         y_ctx, y = self.encoder(acq, x)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
-        if y.ndim == 2:
-            y = y[..., None, :]
 
         attention_mask = self.marginalization_mask(model_mask)
 
@@ -419,8 +417,6 @@ class DMRIInferenceModel(nnx.Module):
     ) -> Array:
         y_ctx, y = self.encoder(acq, x)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
-        if y.ndim == 2:
-            y = y[..., None, :]
 
         attention_mask = self.marginalization_mask(model_mask)
 
@@ -453,8 +449,6 @@ class DMRIInferenceModel(nnx.Module):
     ) -> tuple[Array, Array]:
         y_ctx, y = self.encoder(acq, x)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
-        if y.ndim == 2:
-            y = y[..., None, :]
 
         attention_mask = self.marginalization_mask(model_mask)
 
@@ -490,8 +484,6 @@ class DMRIInferenceModel(nnx.Module):
 
         y_ctx, y = self.encoder(acq, x)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
-        if y.ndim == 2:
-            y = y[..., None, :]
 
         attention_mask = self.marginalization_mask(model_mask)
 
