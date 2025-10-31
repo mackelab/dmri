@@ -213,6 +213,7 @@ class EDMSimformer(EDM):
         loss_mask: Optional[ArrayLike] = None,
         weight_by_complexity: bool = False,
         cut_off_tsm: float = 0.1,
+        context: Optional[ArrayLike] = None,
     ) -> Array:
         assert loss_mask is None
         rng0, rng1 = jax.random.split(rng)
@@ -229,6 +230,7 @@ class EDMSimformer(EDM):
                 model_mask=model_mask,
                 tokens_cfg=tokens_cfg,
                 attention_mask=attention_mask,
+                context=context,
             )
             weight = self.weight_fn(t)
             loss_denoised = weight * jnp.sum(
@@ -249,6 +251,7 @@ class EDMSimformer(EDM):
                 model_mask=model_mask,
                 tokens_cfg=tokens_cfg,
                 attention_mask=attention_mask,
+                context=context,
             )
             eps_pred = (thetas_noisy - theta_denoised) / std
             v = alpha_t * eps_pred - sigma_t * theta_denoised
@@ -292,16 +295,14 @@ class EDMSimformer(EDM):
         context: Optional[ArrayLike] = None,
         attention_mask: Optional[ArrayLike] = None,
         max_noise: Optional[float] = None,
+        min_noise: Optional[float] = None,
         num_steps: int = 16,
         sample_method: str = "ode",
         rho: float = 7,
-        min_noise_nugget: float = 0.0,
     ) -> Array:
-        if max_noise is not None:
-            self.max_noise = max_noise
         rng, rng_init = jax.random.split(rng)
         eps = jax.random.normal(rng_init, dim) * self.marginal_std(self.max_noise)
-        ts = self.solve_schedule(num_steps, rho) + min_noise_nugget
+        ts = self.solve_schedule(num_steps, rho=rho, min_noise=min_noise, max_noise=max_noise)
 
         if sample_method == "ode":
 
@@ -374,14 +375,13 @@ class EDMSimformer(EDM):
         context: Optional[ArrayLike] = None,
         attention_mask: Optional[ArrayLike] = None,
         model_mask: Optional[ArrayLike] = None,
+        min_noise: Optional[float] = None,
         max_noise: Optional[float] = None,
         num_steps: int = 16,
         rho: float = 7,
-        min_noise_nugget: float = 0.0,
     ) -> Array:
-        if max_noise is not None:
-            self.max_noise = max_noise
-        ts = self.solve_schedule(num_steps, rho)[::-1] + min_noise_nugget
+        ts = self.solve_schedule(num_steps, rho=rho, min_noise=min_noise, max_noise=max_noise)[::-1]
+        print(x.shape, ts.shape, y.shape, context.shape if context is not None else None)
 
         def dx_dt_fn(t, z):
             f_ = self.drift(t, z)
@@ -434,15 +434,13 @@ class EDMSimformer(EDM):
         model_mask: Optional[ArrayLike] = None,
         context: Optional[ArrayLike] = None,
         attention_mask: Optional[ArrayLike] = None,
+        min_noise: Optional[float] = None,
         max_noise: Optional[float] = None,
         num_steps: int = 16,
         rho: float = 7,
-        min_noise_nugget: float = 0.0,
     ) -> Tuple[Array, Array]:
-        if max_noise is not None:
-            self.max_noise = max_noise
         eps = jax.random.normal(rng, dim) * self.marginal_std(self.max_noise)
-        ts = self.solve_schedule(num_steps, rho) + min_noise_nugget
+        ts = self.solve_schedule(num_steps, rho, min_noise=min_noise, max_noise=max_noise)
 
         def dx_dt_fn(t, x):
             t = jnp.atleast_1d(t)

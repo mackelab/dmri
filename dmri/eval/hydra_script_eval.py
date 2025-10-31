@@ -105,7 +105,7 @@ def _main(cfg: DictConfig):
     checkpoint, model, _ = load_checkpoint(path_checkpoint)
     graphdef, params, static, state = nnx.split(model, nnx.Param, nnx.Intermediate, ...)
     params = checkpoint[cfg.params_name]
-    model = nnx.merge(graphdef, params, static, state)
+    model = nnx.merge(graphdef, params, static, state, copy=True)
     model.eval()
     sim_type = model.tokenizer.simulator
 
