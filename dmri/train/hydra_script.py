@@ -4,8 +4,10 @@ import os
 import random
 import socket
 import time
+from dataclasses import dataclass
+from typing import Any, Optional
 
-memory_fraction = 0.98  # Use 98% of available memory
+memory_fraction = 0.9  # Use 98% of available memory
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = str(memory_fraction)
 
 import hydra
@@ -37,8 +39,398 @@ logo = r"""
 """
 
 
+@dataclass
+class TrainState:
+    params: Any
+    model_state: Any
+    opt_state: Any
+    ema_state: Any
+    ema_params: Any
+    rng: Any
+    step: int = 0
+
+
+def tree_copy(pytree: Any) -> Any:
+    """Create a shallow copy of a pytree."""
+    return jax.tree_util.tree_map(lambda x: x, pytree)
+
+
+def configure_environment(cfg: DictConfig) -> tuple[logging.Logger, str, str]:
+    """Configure logging and resolve Hydra output directories."""
+    log = logging.getLogger(__name__)
+    log.info(OmegaConf.to_yaml(cfg))
+
+    hydra_cfg = hydra.core.hydra_config.HydraConfig.get()
+    output_dir = hydra_cfg.runtime.output_dir
+    output_super_dir = os.path.dirname(output_dir)
+    while os.path.basename(output_super_dir) != cfg.name:
+        parent = os.path.dirname(output_super_dir)
+        if parent == output_super_dir:
+            break
+        output_super_dir = parent
+
+    log.info(f"Working directory : {os.getcwd()}")
+    log.info(f"Output directory  : {output_dir}")
+    log.info(f"Output super directory: {output_super_dir}")
+    log.info(f"Hostname: {socket.gethostname()}")
+    log.info(f"Jax devices: {jax.devices()}")
+    return log, output_dir, output_super_dir
+
+
+def init_wandb_if_needed(cfg: DictConfig) -> bool:
+    """Initialise wandb if requested."""
+    if not cfg.use_wandb:
+        return False
+    wandb.config = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
+    wandb.init(entity=cfg.wandb.entity, project=cfg.wandb.project, name=cfg.name)
+    return True
+
+
+def seed_everything(seed: int) -> jax.Array:
+    """Seed Python, numpy and JAX RNGs."""
+    random.seed(seed)
+    np.random.seed(seed)
+    return jax.random.key(seed)
+
+
+def create_dataloaders(cfg: DictConfig, simulator: Any) -> tuple[Any, Any]:
+    """Instantiate training and evaluation dataloaders."""
+    loader_module = importlib.import_module("dmri.train.dataloader")
+    loader_type = getattr(loader_module, cfg.train.dataloader.name)
+    loader_train_params = cfg.train.dataloader.train_params
+    loader_eval_params = cfg.train.dataloader.val_params
+    train_loader = loader_type(simulator, **loader_train_params)
+    eval_loader = loader_type(simulator, **loader_eval_params)
+    return train_loader, eval_loader
+
+
+def align_to_inner_steps(
+    value: Optional[int], inner_steps: int, name: str, log: logging.Logger
+) -> Optional[int]:
+    """Align cadence values to multiples of inner_steps; warn if adjustment is needed."""
+    if value is None:
+        return None
+    if inner_steps <= 0:
+        return value
+    aligned = (value // inner_steps) * inner_steps
+    if aligned == 0 and value > 0:
+        log.warning(
+            f"{name} ({value}) is smaller than inner_steps ({inner_steps}); using inner_steps instead."
+        )
+        aligned = inner_steps
+    return aligned
+
+
+def initialize_ema_state(
+    track_ema: bool, ema_transform: Optional[optax.GradientTransformation], params: Any
+) -> tuple[Any, Any]:
+    """Initialise EMA state and parameters if requested."""
+    if not track_ema or ema_transform is None:
+        return (), None
+    ema_state = ema_transform.init(params)
+    ema_state = ema_state._replace(ema=tree_copy(params))
+    return ema_state, tree_copy(params)
+
+
+def resume_from_checkpoint(
+    cfg: DictConfig,
+    checkpoint_manager: CheckpointManager,
+    optimizer: optax.GradientTransformation,
+    train_state: TrainState,
+    ema_transform: Optional[optax.GradientTransformation],
+    log: logging.Logger,
+) -> TrainState:
+    """Load the latest checkpoint if continue_training is enabled."""
+    if not cfg.train.get("continue_training", False):
+        return train_state
+
+    latest_step = checkpoint_manager.get_latest_step()
+    if latest_step is None or latest_step <= 0:
+        log.warning("No valid checkpoint found. Starting from scratch.")
+        return train_state
+
+    log.info(f"Restoring checkpoint at step {latest_step}")
+    reference_ema = train_state.ema_params if cfg.train.track_ema else None
+    checkpoint = checkpoint_manager.restore(
+        step=latest_step,
+        params=train_state.params,
+        optimizer_state=train_state.opt_state,
+        params_ema=reference_ema,
+    )
+    if checkpoint is None:
+        log.warning("Failed to restore checkpoint. Starting from scratch.")
+        return train_state
+
+    train_state.params = checkpoint["params"]
+    if cfg.train.restart_optimizer:
+        reference = (
+            checkpoint.get("params_ema")
+            if cfg.train.track_ema and "params_ema" in checkpoint
+            else train_state.params
+        )
+        train_state.opt_state = optimizer.init(reference)
+    else:
+        train_state.opt_state = checkpoint["optimizer_state"]
+
+    train_state.step = checkpoint["step"]
+
+    if cfg.train.track_ema:
+        ema_source = checkpoint.get("params_ema", train_state.params)
+        train_state.ema_state, train_state.ema_params = initialize_ema_state(
+            True, ema_transform, ema_source
+        )
+
+    log.info(f"Resumed training from step {train_state.step}")
+    return train_state
+
+
+def build_loss_fn(cfg: DictConfig, graphdef: Any, static: Any):
+    """Create the loss function closure."""
+
+    def loss_fn(params, state, data, rng):
+        if cfg.simulator.with_posterior_score:
+            p_mask, model_mask, thetas, xs, acq, target_score = data
+        else:
+            p_mask, model_mask, thetas, xs, acq = data
+            target_score = None
+
+        model = nnx.merge(graphdef, params, static, state, copy=True)
+        model.train()
+        losses = model.loss_fn(
+            rng,
+            model_mask=model_mask,
+            theta=thetas,
+            x=xs,
+            acq=acq,
+            mask_prior=p_mask,
+            target_score=target_score,
+            weight_by_complexity=cfg.train.weight_by_complexity,
+            cut_off_tsm=cfg.train.cut_off_tsm,
+        )
+        loss1 = cfg.train.model_selection_weight * losses[0]
+        loss2 = cfg.train.model_inference_loss_weight * losses[1]
+        total_loss = loss1 + loss2
+        _, _, _, new_state = nnx.split(model, nnx.Param, nnx.Intermediate, ...)
+        return total_loss, (losses, new_state)
+
+    return loss_fn
+
+
+def build_update_fn(
+    optimizer: optax.GradientTransformation,
+    loss_fn,
+    use_ema: bool,
+    ema_transform: Optional[optax.GradientTransformation],
+):
+    """Create the JIT-compiled update step including optional EMA maintenance."""
+    if use_ema and ema_transform is None:
+        raise ValueError("EMA requested but no ema_transform provided.")
+
+    @jax.jit
+    def update(params, state, opt_state, ema_state, data, rng):
+        (total_loss, (losses, new_state)), grads = jax.value_and_grad(
+            loss_fn, has_aux=True
+        )(params, state, data, rng)
+        updates, opt_state = optimizer.update(grads, opt_state, params=params)
+        new_params = optax.apply_updates(params, updates)
+        ema_params = None
+        if use_ema:
+            ema_params, ema_state = ema_transform.update(new_params, ema_state)
+        return new_params, new_state, opt_state, ema_state, losses, total_loss, ema_params
+
+    return update
+
+
+def get_queue_size(loader: Any) -> int:
+    """Fetch loader queue size if available."""
+    if hasattr(loader, "queue") and hasattr(loader.queue, "qsize"):
+        return int(loader.queue.qsize())
+    return 0
+
+
+def train_loop(
+    cfg: DictConfig,
+    log: logging.Logger,
+    train_state: TrainState,
+    optimizer: optax.GradientTransformation,
+    update_step,
+    checkpoint_manager: CheckpointManager,
+    evaluator,
+    loader: Any,
+    eval_loader: Any,
+    track_ema: bool,
+    ema_transform: Optional[optax.GradientTransformation],
+    checkpoint_freq: Optional[int],
+    eval_freq: Optional[int],
+    restart_every: Optional[int],
+    max_train_hours: float,
+    wandb_active: bool,
+):
+    """Main training loop."""
+    inner_steps = cfg.train.inner_steps
+    datastream = iter(loader)
+    start_time = time.time()
+    log.info(f"Maximum training time: {max_train_hours} hours")
+
+    while True:
+        loss_mask = []
+        loss_theta = []
+        for _ in range(inner_steps):
+            train_state.rng, subkey = jax.random.split(train_state.rng)
+            data = next(datastream)
+            (
+                train_state.params,
+                train_state.model_state,
+                train_state.opt_state,
+                train_state.ema_state,
+                losses,
+                total_loss,
+                ema_params,
+            ) = update_step(
+                train_state.params,
+                train_state.model_state,
+                train_state.opt_state,
+                train_state.ema_state,
+                data,
+                subkey,
+            )
+            train_state.step += 1
+            loss_mask.append(losses[0])
+            loss_theta.append(losses[1])
+            if track_ema and ema_params is not None:
+                train_state.ema_params = ema_params
+        loss_mask = float(sum(loss_mask) / len(loss_mask))
+        loss_theta = float(sum(loss_theta) / len(loss_theta))
+        total_loss_value = float(loss_mask + loss_theta)
+        queue_size = get_queue_size(loader)
+        log.info(
+            f"Step {train_state.step}, Loss mask: {loss_mask}, Loss theta: {loss_theta}, data_queue_size: {queue_size}"
+        )
+
+        if restart_every and train_state.step % restart_every == 0:
+            log.info(f"Restarting optimizer at step {train_state.step}")
+            reference = (
+                train_state.ema_params if track_ema and train_state.ema_params is not None else train_state.params
+            )
+            train_state.opt_state = optimizer.init(reference)
+
+        if wandb_active:
+            wandb.log(
+                {
+                    "loss mask": loss_mask,
+                    "loss theta": loss_theta,
+                    "queue_size": queue_size,
+                    "step": train_state.step,
+                }
+            )
+
+        elapsed_hours = (time.time() - start_time) / 3600
+        if elapsed_hours >= max_train_hours:
+            log.info(
+                f"Reached maximum training time of {max_train_hours} hours. Stopping."
+            )
+            checkpoint_manager.save(
+                step=train_state.step,
+                params=train_state.params,
+                optimizer_state=train_state.opt_state,
+                loss=total_loss_value,
+                params_ema=train_state.ema_params if track_ema else None,
+            )
+            checkpoint_manager.wait_until_finished()
+            break
+
+        if eval_freq and train_state.step > 0 and train_state.step % eval_freq == 0:
+            log.info(f"Evaluating model at step {train_state.step}")
+            params_eval = (
+                train_state.ema_params
+                if track_ema and train_state.ema_params is not None
+                else train_state.params
+            )
+            train_state.rng, eval_key = jax.random.split(train_state.rng)
+            mask_nnl = evaluator.eval_nnl_mask(
+                params_eval,
+                train_state.model_state,
+                eval_loader,
+                iters=cfg.train.eval.nnl_mask.iters,
+            )
+            theta_nnl = evaluator.eval_nnl_theta(
+                params_eval,
+                train_state.model_state,
+                eval_loader,
+                iters=cfg.train.eval.nnl_theta.iters,
+            )
+            sliced_wasserstein = evaluator.eval_sliced_wasserstein_distance(
+                params_eval,
+                train_state.model_state,
+                eval_loader,
+                eval_key,
+                K=cfg.train.eval.ess.K,
+                iters=cfg.train.eval.ess.iters,
+            )
+            log.info(
+                f"Mask NLL: {mask_nnl}, Theta NLL: {theta_nnl}, Sliced Wasserstein: {sliced_wasserstein}"
+            )
+            if wandb_active:
+                wandb.log(
+                    {
+                        "mask_negative_log_likelihood": float(mask_nnl),
+                        "theta_negative_log_likelihood": float(theta_nnl),
+                        "sliced_wasserstein": float(sliced_wasserstein),
+                        "step": train_state.step,
+                    }
+                )
+
+        if checkpoint_freq and train_state.step > 0 and train_state.step % checkpoint_freq == 0:
+            log.info(f"Saving checkpoint at step {train_state.step}")
+            checkpoint_manager.save(
+                step=train_state.step,
+                params=train_state.params,
+                optimizer_state=train_state.opt_state,
+                loss=total_loss_value,
+                params_ema=train_state.ema_params if track_ema else None,
+            )
+
+        if checkpoint_manager.should_recover(total_loss_value):
+            log.warning(
+                f"Recovery triggered at step {train_state.step}. Restoring from checkpoint."
+            )
+            try:
+                latest_step = checkpoint_manager.get_latest_step()
+                if latest_step is None:
+                    log.warning(
+                        "No checkpoints available for recovery. Continuing without recovery."
+                    )
+                else:
+                    checkpoint = checkpoint_manager.restore(
+                        step=latest_step,
+                        params=train_state.params,
+                        optimizer_state=train_state.opt_state,
+                        params_ema=train_state.ema_params if track_ema else None,
+                    )
+                    if checkpoint is None:
+                        log.warning(
+                            "Failed to restore recovery checkpoint. Continuing without recovery."
+                        )
+                    else:
+                        train_state.params = checkpoint["params"]
+                        train_state.opt_state = checkpoint["optimizer_state"]
+                        train_state.step = checkpoint["step"]
+                        if track_ema:
+                            ema_source = checkpoint.get("params_ema", train_state.params)
+                            train_state.ema_state, train_state.ema_params = initialize_ema_state(
+                                True, ema_transform, ema_source
+                            )
+                        log.info(f"Recovered to step {train_state.step}")
+            except Exception as err:  # pragma: no cover - defensive logging
+                log.error(f"Error during recovery: {err}")
+                log.warning("Continuing without recovery.")
+
+    log.info("Training complete")
+    checkpoint_manager.wait_until_finished()
+
+
 def main():
-    """Main script function"""
+    """Main script function."""
     print(logo)
     _main()
 
@@ -67,41 +459,17 @@ def build_optimizer(optimizer_cfg):
     if use_ema:
         grad_transforms.append(optax.ema(optimizer_cfg.get("ema_decay", 0.8)))
 
-    # Initialize optimizer
-    optimizer = optax.chain(*grad_transforms)
-    return optimizer
+    return optax.chain(*grad_transforms)
 
 
 @hydra.main(config_path="../../conf", config_name="config.yaml", version_base=None)
 def _main(cfg: DictConfig):
-    """Evaluate score based inference"""
-    log = logging.getLogger(__name__)
-    log.info(OmegaConf.to_yaml(cfg))
+    log, output_dir, output_super_dir = configure_environment(cfg)
+    wandb_active = init_wandb_if_needed(cfg)
 
-    output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
-    # Go back to the folder named "cfg.name"
-    output_super_dir = os.path.dirname(output_dir)
-    while os.path.basename(output_super_dir) != cfg.name:
-        output_super_dir = os.path.dirname(output_super_dir)
+    rng_key = seed_everything(cfg.seed)
+    log.info(f"Seed: {cfg.seed}")
 
-    log.info(f"Working directory : {os.getcwd()}")
-    log.info(f"Output directory  : {output_dir}")
-    log.info(f"Output super directory: {output_super_dir}")
-    log.info(f"Hostname: {socket.gethostname()}")
-    log.info(f"Jax devices: {jax.devices()}")
-
-    # Init wandb
-    if cfg.use_wandb:
-        wandb.config = OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
-        wandb.init(entity=cfg.wandb.entity, project=cfg.wandb.project, name=cfg.name)
-
-    seed = cfg.seed
-    random.seed(seed)
-    np.random.seed(seed)
-    rng_key = jax.random.key(seed)
-    log.info(f"Seed: {seed}")
-
-    # Build simulator
     log.info("Building simulator")
     log.info(f"Simulator cfg: {cfg.simulator}")
     sim_type, simulator = build_simulator(cfg)
@@ -110,299 +478,80 @@ def _main(cfg: DictConfig):
     model = build_model(cfg, sim_type)
     model.train()
     log.info(f"Model cfg: {model.cfg}")
-    # Split to functional
     graphdef, params, static, state = nnx.split(model, nnx.Param, nnx.Intermediate, ...)
 
-    # Create evaluator for online model performance metrics
     evaluator = build_pure_eval_fns(graphdef, static, sim_type)
 
-    # Train model
-    log.info("Training")
-
-    # Set up checkpoint manager
-    # Make sure checkpoint_dir is in results/{name}/checkpoints
     checkpoint_dir = os.path.join(output_super_dir, "checkpoints")
     os.makedirs(checkpoint_dir, exist_ok=True)
     log.info(f"Checkpoint directory: {checkpoint_dir}")
-
-    continue_training = cfg.train.get("continue_training", False)
     checkpoint_manager = CheckpointManager(
         ckpt_dir=checkpoint_dir,
         max_to_keep=cfg.get("max_checkpoints", 3),
         keep_best=cfg.get("keep_best_checkpoint", True),
         recovery_threshold=cfg.get("recovery_threshold", float("inf")),
-        continue_training=continue_training,
-        use_async=cfg.get(
-            "use_async_checkpointing", True
-        ),  # Enable async checkpointing
+        continue_training=cfg.train.get("continue_training", False),
+        use_async=cfg.get("use_async_checkpointing", True),
     )
 
-    # For resuming training
-    start_step = 0
-
-    # Learning rate scheduler and optimizer
     optimizer = build_optimizer(cfg.train.optimizer)
+    opt_state = optimizer.init(params)
 
-    # Initialize optimizer state if not restored from checkpoint
-    if not continue_training or start_step == 0:
-        opt_state = optimizer.init(params)
-
-    # If restarts are required:
-    restart_every = cfg.train.get("restart_every", None)
-
-    log.info("Building loss function")
-    log.info(f"Simulator with posterior score: {cfg.simulator.with_posterior_score}")
-    log.info(f"Model selection weight: {cfg.train.model_selection_weight}")
-    log.info(f"Model inference loss weight: {cfg.train.model_inference_loss_weight}")
-    log.info(f"Weight by complexity: {cfg.train.weight_by_complexity}")
-
-    def loss_fn(params, state, data, rng):
-        if cfg.simulator.with_posterior_score:
-            p_mask, model_mask, thetas, xs, acq, target_score = data
-        else:
-            p_mask, model_mask, thetas, xs, acq = data
-            target_score = None
-
-        model = nnx.merge(graphdef, params, static, state, copy=True)
-        model.train()
-        losses = model.loss_fn(
-            rng,
-            model_mask=model_mask,
-            theta=thetas,
-            x=xs,
-            acq=acq,
-            mask_prior=p_mask,
-            target_score=target_score,
-            weight_by_complexity=cfg.train.weight_by_complexity,
-            cut_off_tsm=cfg.train.cut_off_tsm,
-        )
-        loss1 = cfg.train.model_selection_weight * losses[0]
-        loss2 = cfg.train.model_inference_loss_weight * losses[1]
-        total_loss = loss1 + loss2
-        _, _, _, new_state = nnx.split(model, nnx.Param, nnx.Intermediate, ...)
-        return total_loss, (losses, new_state)
-
-    @jax.jit
-    def update(params, state, opt_state, data, rng):
-        (_, (losses, new_state)), grads = jax.value_and_grad(loss_fn, has_aux=True)(
-            params, state, data, rng
-        )
-        updates, opt_state = optimizer.update(grads, opt_state, params=params)
-        new_params = optax.apply_updates(params, updates)
-        return new_params, new_state, opt_state, losses
-
-    # Create a data loader
-    loader_name = cfg.train.dataloader.name
-    loader_module = importlib.import_module("dmri.train.dataloader")
-    loader_type = getattr(loader_module, loader_name)
-    loader_train_params = cfg.train.dataloader.train_params
-    loader_eval_params = cfg.train.dataloader.val_params
-
-    loader = loader_type(
-        simulator,
-        **loader_train_params,
+    ema_transform = (
+        optax.ema(cfg.train.ema_decay, debias=False) if cfg.train.track_ema else None
+    )
+    ema_state, ema_params = initialize_ema_state(
+        cfg.train.track_ema, ema_transform, params
     )
 
-    # Create a separate loader for evaluation
-    eval_loader = loader_type(
-        simulator,
-        **loader_eval_params,
+    train_state = TrainState(
+        params=params,
+        model_state=state,
+        opt_state=opt_state,
+        ema_state=ema_state,
+        ema_params=ema_params,
+        rng=rng_key,
+        step=0,
+    )
+    train_state = resume_from_checkpoint(
+        cfg, checkpoint_manager, optimizer, train_state, ema_transform, log
     )
 
-    key = rng_key
+    loss_fn = build_loss_fn(cfg, graphdef, static)
+    update_step = build_update_fn(
+        optimizer, loss_fn, cfg.train.track_ema, ema_transform
+    )
+
+    loader, eval_loader = create_dataloaders(cfg, simulator)
+
     inner_steps = cfg.train.inner_steps
-    checkpoint_freq = (cfg.train.checkpoint_freq // inner_steps) * inner_steps
-    eval_freq = (cfg.train.eval_freq // inner_steps) * inner_steps
-    if restart_every:
-        restart_every = (restart_every // inner_steps) * inner_steps
+    checkpoint_freq = align_to_inner_steps(
+        cfg.train.checkpoint_freq, inner_steps, "checkpoint frequency", log
+    )
+    eval_freq = align_to_inner_steps(
+        cfg.train.eval_freq, inner_steps, "evaluation frequency", log
+    )
+    restart_every = align_to_inner_steps(
+        cfg.train.get("restart_every"), inner_steps, "restart frequency", log
+    )
 
-    step = start_step
-    datastream = iter(loader)
-
-    if continue_training:
-        latest_step = checkpoint_manager.get_latest_step()
-        print(f"latest_step: {latest_step}")
-        if latest_step is not None and latest_step > 0:
-            log.info(f"Restoring checkpoint at step {latest_step}")
-            # Pass existing params as reference structure for parameter matching
-            checkpoint = checkpoint_manager.restore(
-                step=latest_step,
-                params=params,
-                optimizer_state=opt_state,
-                params_ema=None
-                if not cfg.train.track_ema
-                else jax.tree_util.tree_map(lambda x: x, params),
-            )
-            if checkpoint is not None:
-                params = checkpoint["params"]
-                # Restore EMA params if they exist in the checkpoint
-                if "params_ema" in checkpoint and cfg.train.track_ema:
-                    params_ema = checkpoint["params_ema"]
-                if cfg.train.restart_optimizer:
-                    if "params_ema" in checkpoint:
-                        opt_state = optimizer.init(params_ema)
-                    else:
-                        opt_state = optimizer.init(params)
-                else:
-                    opt_state = checkpoint["optimizer_state"]
-                step = checkpoint["step"]  # Update current step
-                start_step = step  # Set start_step to the restored step
-                log.info(f"Resumed training from step {step}")
-            else:
-                log.warning("Failed to restore checkpoint. Starting from scratch.")
-        else:
-            log.warning("No valid checkpoint found. Starting from scratch.")
-
-    # loss_fn(params, state, next(iter(loader)), rng_key)
-
-    # Get maximum training time in hours (default: run forever)
     max_train_hours = cfg.train.get("max_train_hours", float("inf"))
-    log.info(f"Maximum training time: {max_train_hours} hours")
-    start_time = time.time()
 
-    params_ema = jax.tree_util.tree_map(lambda x: x, params) if cfg.train.track_ema else None
-    ema_decay = cfg.train.ema_decay if cfg.train.track_ema else None
-
-    while True:
-        loss_sum = [0, 0]
-        for _ in range(inner_steps):
-            key, subkey = jax.random.split(key)
-            data = next(datastream)
-            params, state, opt_state, loss = update(
-                params, state, opt_state, data, subkey
-            )
-            if params_ema is not None:
-                params_ema = jax.tree_util.tree_map(
-                    lambda x, y: x * ema_decay + y * (1 - ema_decay), params_ema, params
-                )
-            step += 1
-            loss_sum[0] += float(loss[0]) / inner_steps
-            loss_sum[1] += float(loss[1]) / inner_steps
-        total_loss = float(loss_sum[0] + loss_sum[1])
-        queue_size = int(loader.queue.qsize())
-        log.info(
-            f"Step {step}, Loss mask: {loss_sum[0]}, Loss theta: {loss_sum[1]}, data_queue_size: {queue_size}"
-        )
-
-        if restart_every is not None and (step % restart_every == 0):
-            log.info(f"Restarting optimizer at step {step}")
-            opt_state = optimizer.init(params)
-
-        # Log elapsed time
-        elapsed_hours = (time.time() - start_time) / 3600
-        if cfg.use_wandb:
-            wandb.log(
-                {
-                    "loss mask": float(loss[0]),
-                    "loss theta": float(loss[1]),
-                    "queue_size": queue_size,
-                }
-            )
-
-        # Check if we've exceeded maximum training time
-        if elapsed_hours >= max_train_hours:
-            log.info(
-                f"Reached maximum training time of {max_train_hours} hours. Stopping."
-            )
-            # Save final checkpoint
-            checkpoint_manager.save(
-                step=step,
-                params=params,
-                optimizer_state=opt_state,
-                loss=total_loss,
-                params_ema=params_ema,
-            )
-            # Ensure all async checkpoint operations are finished before exiting
-            checkpoint_manager.wait_until_finished()
-            break
-
-        # Evaluate model periodically
-        if step > 0 and step % eval_freq == 0:
-            log.info(f"Evaluating model at step {step}")
-
-            if cfg.train.track_ema:
-                params_eval = params_ema
-            else:
-                params_eval = params
-            # Evaluate negative log-likelihood for masks
-            key, eval_key = jax.random.split(key)
-            mask_nnl = evaluator.eval_nnl_mask(
-                params_eval, state, eval_loader, iters=cfg.train.eval.nnl_mask.iters
-            )
-
-            # Evaluate negative log-likelihood for thetas
-            theta_nnl = evaluator.eval_nnl_theta(
-                params_eval, state, eval_loader, iters=cfg.train.eval.nnl_theta.iters
-            )
-
-            # Evaluate ess
-            ess = evaluator.eval_effective_sample_size(
-                params_eval,
-                state,
-                eval_loader,
-                eval_key,
-                K=cfg.train.eval.ess.K,
-                iters=cfg.train.eval.ess.iters,
-            )
-
-            log.info(f"Mask NLL: {mask_nnl}, Theta NLL: {theta_nnl}, ESS: {ess}")
-            if cfg.use_wandb:
-                wandb.log(
-                    {
-                        "mask_negative_log_likelihood": float(mask_nnl),
-                        "theta_negative_log_likelihood": float(theta_nnl),
-                        "effective_sample_size": float(ess),
-                    }
-                )
-
-        # Save checkpoint periodically
-        if step > 0 and step % checkpoint_freq == 0:
-            log.info(f"Saving checkpoint at step {step}")
-            checkpoint_manager.save(
-                step=step,
-                params=params,
-                optimizer_state=opt_state,
-                loss=total_loss,
-                params_ema=params_ema,
-            )
-
-        # Check if we need to recover from a bad update
-        if checkpoint_manager.should_recover(total_loss):
-            log.warning(
-                f"Recovery triggered at step {step}. Restoring from checkpoint."
-            )
-            try:
-                # Get the latest available checkpoint step
-                latest_step = checkpoint_manager.get_latest_step()
-                if latest_step is not None:
-                    # Pass current params as reference structure for parameter matching
-                    checkpoint = checkpoint_manager.restore(
-                        step=latest_step,
-                        params=params,
-                        optimizer_state=opt_state,
-                        params_ema=params_ema,
-                    )
-                    if checkpoint is not None:
-                        params = checkpoint["params"]
-                        opt_state = checkpoint["optimizer_state"]
-                        # Restore EMA params if they exist in the checkpoint
-                        if "params_ema" in checkpoint and params_ema is not None:
-                            params_ema = checkpoint["params_ema"]
-                        step = checkpoint["step"]
-                        log.info(f"Recovered to step {step}")
-                    else:
-                        log.warning(
-                            "Failed to restore recovery checkpoint. Continuing without recovery."
-                        )
-                else:
-                    log.warning(
-                        "No checkpoints available for recovery. Continuing without recovery."
-                    )
-            except Exception as e:
-                log.error(f"Error during recovery: {e}")
-                log.warning("Continuing without recovery.")
-
-    # Log training completion to wandb
-    log.info("Training complete")
-    # Ensure all async checkpoint operations are finished before exiting
-    checkpoint_manager.wait_until_finished()
+    train_loop(
+        cfg=cfg,
+        log=log,
+        train_state=train_state,
+        optimizer=optimizer,
+        update_step=update_step,
+        checkpoint_manager=checkpoint_manager,
+        evaluator=evaluator,
+        loader=loader,
+        eval_loader=eval_loader,
+        track_ema=cfg.train.track_ema,
+        ema_transform=ema_transform,
+        checkpoint_freq=checkpoint_freq,
+        eval_freq=eval_freq,
+        restart_every=restart_every,
+        max_train_hours=max_train_hours,
+        wandb_active=wandb_active,
+    )

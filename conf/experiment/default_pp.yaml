@@ -1,0 +1,20 @@
+# @package _global_
+name: default_pp
+use_wandb: true
+
+hydra:
+  sweeper:
+    params:
+      wandb.project: new_multishell_ball3stick
+      train.ema_decay: 0.9999
+      train.dataloader.val_params.batch_size: 64
+      train.continue_training: true
+      train.restart_optimizer: true
+
+
+defaults:
+  - _self_
+  - override /partition: h100_long
+  - override /simulator: multishell_ball3stick_shared_with_score
+  - override /simulator/acquisition_scheme: multi
+  - override /model: mask_amortized_pp_v_pred_pp

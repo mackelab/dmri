@@ -105,8 +105,55 @@ def build_pure_eval_fns(graphdef, static, sim_type):
         prior_logprob = jax.scipy.stats.norm.logpdf(thetas).sum(-1)
         return ll + prior_logprob
 
-    @partial(jax.jit, static_argnames=["K"])
-    def smc_ess(params, state, rng, data, K=100):
+    def _normalize_weights(weights):
+        total = jnp.sum(weights)
+        total = jnp.where(total == 0.0, 1.0, total)
+        return weights / total
+
+    def _resample_particles(particles, weights, rng):
+        weights = _normalize_weights(weights)
+        num_particles = particles.shape[0]
+        indices = jax.random.choice(
+            rng,
+            jnp.arange(num_particles),
+            shape=(num_particles,),
+            replace=True,
+            p=weights,
+        )
+        return particles[indices]
+
+    def _sliced_wasserstein_distance(
+        samples, reference, rng, num_projections
+    ):
+        dim = samples.shape[-1]
+        directions = jax.random.normal(rng, (num_projections, dim))
+        directions = directions / jnp.maximum(
+            jnp.linalg.norm(directions, axis=-1, keepdims=True), 1e-12
+        )
+
+        def _distance(direction):
+            proj_samples = jnp.sort(samples @ direction)
+            proj_reference = jnp.sort(reference @ direction)
+            length = min(proj_samples.shape[0], proj_reference.shape[0])
+            proj_samples = proj_samples[:length]
+            proj_reference = proj_reference[:length]
+            return jnp.mean((proj_samples - proj_reference) ** 2)
+
+        distances = jax.vmap(_distance)(directions)
+        return jnp.sqrt(jnp.mean(distances))
+
+    @partial(
+        jax.jit, static_argnames=["K", "num_projections", "num_smc_steps"]
+    )
+    def smc_sliced_wasserstein(
+        params,
+        state,
+        rng,
+        data,
+        K=100,
+        num_projections=64,
+        num_smc_steps=5,
+    ):
         model_mask = data[1]
         acq = data[4]
         xs = data[3]
@@ -114,25 +161,32 @@ def build_pure_eval_fns(graphdef, static, sim_type):
         model = nnx.merge(graphdef, params, static, state, copy=True)
         model.eval()
 
-        key1, key2 = jax.random.split(rng)
-        keys_K = jax.random.split(key1, K)  # noqa: N806
+        key_samples, key_metrics = jax.random.split(rng)
+        keys_K = jax.random.split(key_samples, K)  # noqa: N806
 
         def sample_thetas(rng):
             keys = jax.random.split(rng, xs.shape[0])
-            return jax.vmap(partial(model.sample_theta, num_steps=64, max_noise=80))(
-                keys, acq, xs, model_mask
-            )
+            return jax.vmap(
+                partial(model.sample_theta, num_steps=64, max_noise=80)
+            )(keys, acq, xs, model_mask)
 
         thetas_post = jax.vmap(sample_thetas)(keys_K)
 
+        def smc_swd_single(
+            thetas_post_single, xs_single, acq_single, model_mask_single, rng_single
+        ):
+            rng_smc, rng_resample, rng_direction = jax.random.split(
+                rng_single, 3
+            )
 
-        def smc_ess_single(thetas_post, xs, acq, model_mask):
             def log_prior_fn(thetas):
                 return jax.scipy.stats.norm.logpdf(thetas).sum(-1)
 
             def log_likelihood_fn(thetas):
-                simulator = sim_type.from_theta(thetas, model_mask=model_mask)
-                ll = simulator.log_likelihood(acq, xs)
+                simulator = sim_type.from_theta(
+                    thetas, model_mask=model_mask_single
+                )
+                ll = simulator.log_likelihood(acq_single, xs_single)
                 return ll
 
             hmc_kernel = hmc.build_kernel()
@@ -140,10 +194,8 @@ def build_pure_eval_fns(graphdef, static, sim_type):
                 hmc_kernel,
                 step_size=0.001,
                 num_integration_steps=20,
-                inverse_mass_matrix=jnp.ones(thetas_post.shape[1]),
+                inverse_mass_matrix=jnp.ones(thetas_post_single.shape[1]),
             )
-
-            resampling_fn = systematic
 
             smc = tempered_smc(
                 log_prior_fn,
@@ -151,29 +203,37 @@ def build_pure_eval_fns(graphdef, static, sim_type):
                 hmc_kernel,
                 hmc.init,
                 {},
-                resampling_fn,
+                systematic,
                 2,
             )
-            state = smc.init(thetas_post)
-            state = state._replace(lmbda=0.999)
+            tempered_state = smc.init(thetas_post_single)
+            tempered_state = tempered_state._replace(lmbda=0.999)
 
-            def step(state, rng):
-                state, i = state
-                lmbda = 0.999 + (i + 1) * 0.001 / 1
-                new_state, info = smc.step(rng, state, lmbda)
+            def step(carry, rng_step):
+                current_state, i = carry
+                lmbda = jnp.clip(0.999 + (i + 1) * 0.001, a_max=1.0)
+                new_state, info = smc.step(rng_step, current_state, lmbda)
                 return (new_state, i + 1), info
 
-            rng_keys = jax.random.split(key2, 1)
-            final_state, _ = jax.lax.scan(step, (state, 0), rng_keys)
-            final_weights = final_state[0].weights
-            ess = 1 / jnp.sum(final_weights**2, axis=0)
-            ess /= K
-            return ess
+            keys_scan = jax.random.split(rng_smc, num_smc_steps)
+            (final_state, _), _ = jax.lax.scan(
+                step, (tempered_state, 0), keys_scan
+            )
+            final_state = final_state
+            corrected_particles = final_state.particles
+            corrected_weights = final_state.weights
+            resampled = _resample_particles(
+                corrected_particles, corrected_weights, rng_resample
+            )
+            return _sliced_wasserstein_distance(
+                thetas_post_single, resampled, rng_direction, num_projections
+            )
 
-        ess = jax.vmap(smc_ess_single, in_axes=(1, 0, 0, 0))(
-            thetas_post, xs, acq, model_mask
-        )
-        return jnp.mean(ess)
+        keys_data = jax.random.split(key_metrics, xs.shape[0])
+        distances = jax.vmap(
+            smc_swd_single, in_axes=(1, 0, 0, 0, 0)
+        )(thetas_post, xs, acq, model_mask, keys_data)
+        return jnp.mean(distances)
 
     return Evaluator(
         sample_masks=sample_masks,
@@ -183,7 +243,7 @@ def build_pure_eval_fns(graphdef, static, sim_type):
         sample_and_log_prob_thetas=sample_and_log_prob_thetas,
         true_loglikelihood=true_loglikelihood,
         true_posterior=true_posterior,
-        smc_ess=smc_ess,
+        sliced_wasserstein=smc_sliced_wasserstein,
     )
 
 
@@ -195,7 +255,7 @@ class Evaluator(NamedTuple):
     sample_and_log_prob_thetas: Callable
     true_loglikelihood: Callable
     true_posterior: Callable
-    smc_ess: Callable
+    sliced_wasserstein: Callable
     seed: int = 42
 
     def eval_nnl_mask(self, params, state, loader, iters=10):
@@ -218,38 +278,36 @@ class Evaluator(NamedTuple):
                 break
         return -float(total_log_prob) / iters
 
-    def eval_effective_sample_size(self, params, state, loader, rng, iters=1, K=100):
-        # avg_ess = 0.0
-        # i = 0
-        # for eval_data in loader:
-        #     log_weights = []
-        #     for _ in range(K):
-        #         rng, rng_eval = jax.random.split(rng)
-        #         thetas_q, log_probs_q = self.sample_and_log_prob_thetas(
-        #             params, state, rng_eval, eval_data
-        #         )
-        #         eval_data = list(eval_data)
-        #         eval_data[2] = thetas_q
-        #         log_probs_p = self.true_posterior(eval_data)
-        #         log_weight = log_probs_q - log_probs_p
-        #         log_weights.append(log_weight)
-        #     log_weights = jnp.stack(log_weights, axis=0)
-        #     weights = jax.nn.softmax(log_weights, axis=0)
-        #     ess = 1.0 / jnp.sum(weights**2, axis=0)
-        #     normed_ess = ess / K
-        #     avg_ess += jnp.mean(normed_ess)
-        #     i += 1
-        #     if i == iters:
-        #         break
-        # return float(avg_ess) / iters
-        ess = 0.0
+    def eval_sliced_wasserstein_distance(
+        self,
+        params,
+        state,
+        loader,
+        rng,
+        iters=1,
+        K=100,
+        num_projections=64,
+        num_smc_steps=5,
+    ):
+        distance = 0.0
         i = 0
         for eval_data in loader:
-            ess += float(self.smc_ess(params, state, rng, eval_data, K=K))
+            rng, eval_rng = jax.random.split(rng)
+            distance += float(
+                self.sliced_wasserstein(
+                    params,
+                    state,
+                    eval_rng,
+                    eval_data,
+                    K=K,
+                    num_projections=num_projections,
+                    num_smc_steps=num_smc_steps,
+                )
+            )
             i += 1
             if i == iters:
                 break
-        return ess / iters
+        return distance / max(i, 1)
 
     def eval_tarp_mask():
         pass

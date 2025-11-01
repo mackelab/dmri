@@ -3,8 +3,8 @@ params:
   num_layers: 3
   num_heads: 4
   widening_factor: 4
-  use_flash_attention: false
-  attn_size: 8
+  use_flash_attention: True
+  attn_size: 16
   dropout_rate: 0.0
   bvals_embed_dim: 12
   signals_embed_dim: 12
@@ -14,7 +14,7 @@ params:
   min_signal: 0.0
   max_signal: 1.0
   log_transform_signals: false
-  embed_signals: fourier
+  embed_signals: linear
   embed_bvals: fourier
-  use_global_summary_token: false
+  use_global_summary_token: True
   global_summary_bins: 8

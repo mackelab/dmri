@@ -1,5 +1,5 @@
 # @package _global_
-name: new_new_multishell_ball3stick_simformer6_v_pred
+name: default
 use_wandb: true
 
 hydra:

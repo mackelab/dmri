@@ -26,6 +26,26 @@ def build_model(cfg: DictConfig, sim_type):
     )
     name_model = cfg.model.name
     cfg_class = getattr(module_embed, name_model)
+    precision_keys = (
+        "dtype",
+        "param_dtype",
+        "precision",
+        "preferred_element_type",
+    )
+
+    precision_kwargs = {
+        key: cfg.model.get(key)
+        for key in precision_keys
+        if key in cfg.model and cfg.model.get(key) is not None
+    }
+    # Preserve legacy spelling if present.
+    legacy_preferred = cfg.model.get("prefered_element_type", None)
+    if (
+        "preferred_element_type" not in precision_kwargs
+        and legacy_preferred is not None
+    ):
+        precision_kwargs["preferred_element_type"] = legacy_preferred
+
     cfg_m = cfg_class(
         sim_type,
         model_dim=cfg.model.model_dim,
@@ -33,6 +53,7 @@ def build_model(cfg: DictConfig, sim_type):
         embedding_cfg=cfg_embed,
         model_selection_cfg=cfg_model_selection_net,
         theta_inference_cfg=cfg_inference_net,
+        **precision_kwargs,
     )
     model = DMRIInferenceModel(cfg_m, nnx.Rngs(cfg.model.init_seed))
 
