@@ -7,4 +7,4 @@ hydra:
     gres: gpu
     partition: h100-ferranti
     cpus_per_task: 32
-    mem_gb: 32
+    mem_gb: 64

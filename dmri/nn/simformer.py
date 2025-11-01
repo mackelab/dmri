@@ -404,7 +404,7 @@ class EDMSimformer(EDM):
         def drift(t, state):
             data, logp = state
             dx_dt = dx_dt_fn(t, data)
-            div = jnp.trace(jax.jacfwd(lambda z: dx_dt_fn(t, z))(data))
+            div = jnp.trace(jax.jacrev(lambda z: dx_dt_fn(t, z))(data))
             return (dx_dt, div)
 
         state, _ = odeint(
@@ -461,7 +461,7 @@ class EDMSimformer(EDM):
         def drift(t, state):
             x, logp = state
             dx_dt = dx_dt_fn(t, x)
-            div = jnp.trace(jax.jacfwd(lambda z: dx_dt_fn(t, z))(x))
+            div = jnp.trace(jax.jacrev(lambda z: dx_dt_fn(t, z))(x))
             return (dx_dt, -div)
 
         state, _ = odeint(
