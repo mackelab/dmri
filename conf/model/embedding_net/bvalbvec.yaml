@@ -3,7 +3,7 @@ params:
   num_layers: 3
   num_heads: 4
   widening_factor: 4
-  use_flash_attention: false
+  use_flash_attention: true
   attn_size: 8
   dropout_rate: 0.0
   bvals_embed_dim: 12

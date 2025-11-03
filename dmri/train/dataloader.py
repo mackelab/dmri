@@ -82,6 +82,8 @@ class StreamDataLoader:
         self._simulator_cycle_lock = threading.Lock()
         self._recycle_buffer: list[Any] = []
         self._recycle_lock = threading.Lock()
+        self._ring_initialized = False
+        self._closed = False
 
         # Compile the batch simulator once during initialization
         @partial(jax.jit, device=self.simulation_device, static_argnums=(1,))
@@ -217,16 +219,43 @@ class StreamDataLoader:
         """
         if not self.recycle_batches:
             return
+        maxsize = self.queue.maxsize
+        threshold_size = None
+        available_slots = None
+        if maxsize > 0:
+            threshold_size = max(1, int(maxsize * self.recycle_threshold))
+            current_queue = self.queue.qsize()
+            if current_queue >= threshold_size:
+                return
+            with self._recycle_lock:
+                buffer_len = len(self._recycle_buffer)
+            available_slots = threshold_size - current_queue - buffer_len
+            if available_slots <= 0:
+                return
 
         segments = []
         total_size = self._tree_batch_size(batch)
         start = 0
-        while start < total_size:
+        while start < total_size and (
+            available_slots is None or len(segments) < available_slots
+        ):
             end = min(start + self.simulation_batch_size, total_size)
             segments.append(self._tree_slice(batch, start, end))
             start = end
 
+        if not segments:
+            return
+
         with self._recycle_lock:
+            if available_slots is not None:
+                buffer_len = len(self._recycle_buffer)
+                remaining_slots = threshold_size - self.queue.qsize() - buffer_len
+                if remaining_slots <= 0:
+                    return
+                if len(segments) > remaining_slots:
+                    segments = segments[:remaining_slots]
+                    if not segments:
+                        return
             self._recycle_buffer.extend(segments)
             random.shuffle(self._recycle_buffer)
 
@@ -504,6 +533,9 @@ class StreamDataLoader:
         """
         Signal all producer threads to exit and wait for them to join.
         """
+        if getattr(self, "_closed", False):
+            return
+
         self.event.set()
         for thread in self.producer_threads:
             if thread.is_alive():
@@ -512,6 +544,22 @@ class StreamDataLoader:
                 if thread.is_alive():
                     # Final attempt without timeout to ensure clean shutdown
                     thread.join()
+
+        # Drop any pending data so tensors can be garbage collected promptly
+        if hasattr(self, "queue"):
+            while True:
+                try:
+                    _ = self.queue.get_nowait()
+                except queue.Empty:
+                    break
+
+        with self._recycle_lock:
+            self._recycle_buffer.clear()
+
+        if hasattr(self, "gpu_ring_buffers"):
+            self.gpu_ring_buffers.clear()
+        self._ring_initialized = False
+        self._closed = True
 
     def __del__(self):
         """
@@ -554,8 +602,19 @@ class StreamDataLoader:
         if not self._recycle_buffer:
             return
 
+        maxsize = self.queue.maxsize
+        # Determine the queue size below which we want to start topping up with recycled data
+        if maxsize > 0:
+            threshold_size = max(1, int(maxsize * self.recycle_threshold))
+            if self.queue.qsize() >= threshold_size:
+                return
+        else:
+            threshold_size = None
+
         with self._recycle_lock:
             while self._recycle_buffer and not self.queue.full():
+                if threshold_size is not None and self.queue.qsize() >= threshold_size:
+                    break
                 segment = self._recycle_buffer.pop()
                 try:
                     self.queue.put_nowait(segment)

@@ -6,7 +6,7 @@ params:
   use_flash_attention: false
   use_flash_cross_attention: true
   attn_size: 16
-  time_embed_dim: 64
+  time_embed_dim: 128
   gate_attention: true
   gate_mlp: false
   dropout_rate: 0.0

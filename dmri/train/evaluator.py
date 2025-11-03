@@ -261,6 +261,8 @@ class Evaluator(NamedTuple):
     def eval_nnl_mask(self, params, state, loader, iters=10):
         total_log_prob = 0.0
         i = 0
+        if iters == 0:
+            return 0.0
         for eval_data in loader:
             total_log_prob += jnp.mean(self.log_prob_masks(params, state, eval_data))
             i += 1
@@ -271,6 +273,8 @@ class Evaluator(NamedTuple):
     def eval_nnl_theta(self, params, state, loader, iters=10):
         total_log_prob = 0.0
         i = 0
+        if iters == 0:
+            return 0.0
         for eval_data in loader:
             total_log_prob += jnp.mean(self.log_prob_thetas(params, state, eval_data))
             i += 1
@@ -291,6 +295,8 @@ class Evaluator(NamedTuple):
     ):
         distance = 0.0
         i = 0
+        if iters == 0:
+            return 0.0
         for eval_data in loader:
             rng, eval_rng = jax.random.split(rng)
             distance += float(

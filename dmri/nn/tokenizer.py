@@ -397,16 +397,16 @@ class DMRITokenizer(Tokenizer):
     def theta_mask(
         self,
         model_mask: ArrayLike,
-        model_types: Optional[Sequence[type]] = None,
-        noise_types: Optional[Sequence[type]] = None,
+        model_idx: Optional[Sequence[type]] = None,
+        noise_idx: Optional[Sequence[type]] = None,
     ) -> Array:
-        if model_types is None:
-            model_types = tuple(self.simulator.value.model_types)
-        if noise_types is None:
-            noise_types = tuple(self.simulator.value.noise_types)
+        if model_idx is None:
+            model_idx = self.model_indices
+        if noise_idx is None:
+            noise_idx = self.noise_indices
 
         # First need to find active model fractions
-        model_component_mask = model_mask[..., : len(model_types)]
+        model_component_mask = model_mask[..., : len(model_idx)]
         active_thetas = eps_mask(model_component_mask)
 
         # Next is the shared parameters which are always active

@@ -500,7 +500,7 @@ class MixtureOfFODs(SphericalDistribution):
         return jax.lax.switch(idx, sample_fns, rng2)
 
     @classmethod
-    def to_theta(cls, components) -> ArrayLike:
+    def to_theta(cls, fractions, components) -> ArrayLike:
         raise NotImplementedError()
 
     @classmethod

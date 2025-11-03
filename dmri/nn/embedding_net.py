@@ -164,6 +164,9 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
                 rngs=rngs,
                 **precision_kwargs,
             )
+            self.global_summary_outnorm = nnx.LayerNorm(
+                model_dim,rngs=rngs
+            )
         else:
             self.global_summary_projection = None
 
@@ -312,7 +315,7 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
         if using_summary:
             global_summary = out_tokens[..., 0, :]
             sequence_tokens = out_tokens[..., 1:, :]
-            global_summary = self.output_glob_layer(global_summary)
+            global_summary = self.global_summary_outnorm(self.output_glob_layer(global_summary))
             sequence_tokens = self.output_seq_layer(sequence_tokens)
         else:
             global_summary = None

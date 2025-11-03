@@ -1566,3 +1566,138 @@ def orthoview_ultracompact(
     fig.update_yaxes(showticklabels=False, showgrid=False, zeroline=False)
 
     return fig
+
+
+
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+# ---------------------- helpers ----------------------
+def normalize_rows(X: np.ndarray, eps: float = 1e-12):
+    n = np.linalg.norm(X, axis=1, keepdims=True) + eps
+    return X / n
+
+def fibonacci_sphere(n: int) -> np.ndarray:
+    # quasi-uniform points on S^2
+    i = np.arange(n)
+    phi = (1 + 5**0.5) / 2
+    z = 1 - 2*(i + 0.5)/n
+    r = np.sqrt(1 - z*z)
+    theta = 2*np.pi*i/phi
+    x = r*np.cos(theta); y = r*np.sin(theta)
+    return np.vstack([x, y, z]).T
+
+def spherical_kde(points: np.ndarray, grid: np.ndarray, kappa: float, axial: bool=True) -> np.ndarray:
+    # vMF KDE: sum_i exp(kappa * (μ_i · x)); for axial, also add exp(kappa * (-μ_i · x))
+    # All inputs assumed unit vectors.
+    MU = points  # (N,3)
+    X = grid     # (M,3)
+    dots = X @ MU.T                # (M,N)
+    s = np.exp(kappa * dots)
+    if axial:
+        s = s + np.exp(-kappa * dots)
+    f = s.sum(axis=1)
+    # normalize to [0,1] for display
+    f = (f - f.min()) / (f.max() - f.min() + 1e-12)
+    return f
+
+def orientation_rgb(dirs: np.ndarray) -> np.ndarray:
+    c = np.abs(dirs)
+    c = c / (np.linalg.norm(c, axis=1, keepdims=True) + 1e-12)
+    return c
+
+def nonmax_suppression_on_sphere(values: np.ndarray, dirs: np.ndarray, k_neighbors: int = 12):
+    # crude NMS: keep points whose value is greater than their k nearest angular neighbors
+    # Use dot similarity to approximate neighbor search
+    D = dirs @ dirs.T       # cosine similarity
+    np.fill_diagonal(D, -np.inf)
+    idx = np.argpartition(-D, kth=k_neighbors, axis=1)[:, :k_neighbors]  # neighbors with highest cosine
+    keep = np.ones(len(values), dtype=bool)
+    for i in range(len(values)):
+        if not np.all(values[i] >= values[idx[i]]):
+            keep[i] = False
+    return keep
+
+def _set_view(ax, view):
+    # Accept 'xy','xz','yz' or 3-vector
+    if isinstance(view, str):
+        view = view.lower()
+        if view == "xy":      # look along +z
+            elev, azim = 90, -90  # top-down
+        elif view == "xz":    # look along +y
+            elev, azim = 0, -90
+        elif view == "yz":    # look along +x
+            elev, azim = 0, 180
+        else:
+            # default nice isometric
+            elev, azim = 20, -60
+    else:
+        # view is a direction vector -> compute spherical angles
+        v = np.asarray(view, float)
+        v = v / (np.linalg.norm(v) + 1e-12)
+        # Matplotlib's view is defined by elev (degrees from xy) and azim (degrees CCW from x)
+        elev = np.degrees(np.arcsin(v[2]))           # z component -> elevation
+        azim = np.degrees(np.arctan2(v[1], v[0]))    # y,x -> azimuth
+    ax.view_init(elev=elev, azim=azim)
+
+
+# --------------------- plotting ----------------------
+def plot_glyph_from_sticks(V: np.ndarray, view: str | np.ndarray = "xy", axial: bool=False, kappa: float=20.0,
+                           grid_points: int=4000, r_scale: float=1.0,
+                           peak_nms_neighbors: int=16, show_peaks: bool=False):
+    V = normalize_rows(np.asarray(V, float))
+    # grid on sphere
+    G = fibonacci_sphere(grid_points)
+    # KDE
+    f = spherical_kde(V, G, kappa=kappa, axial=axial)
+    # radius field
+    R = 0.2 + r_scale * f  # small base radius + scaled KDE
+    verts = R[:, None] * G
+    # orientation color
+    colors = orientation_rgb(G)
+
+    # crude triangulation for sphere: use matplotlib trisurf via spherical parameterization indices
+    # We'll parametrize with lon/lat sorted mapping to a Delaunay in 2D for nicer surface.
+    # Convert to spherical coords for triangulation
+    x, y, z = G.T
+    lon = np.arctan2(y, x)
+    lat = np.arcsin(z)
+    # stack as 2D points
+    P2 = np.vstack([lon, lat]).T
+
+    # Use matplotlib.tri for triangulation
+    import matplotlib.tri as mtri
+    tri = mtri.Triangulation(P2[:,0], P2[:,1])
+
+    fig = plt.figure(figsize=(7,7))
+    ax = fig.add_subplot(111, projection="3d")
+
+    # draw surface
+    surf = ax.plot_trisurf(verts[:,0], verts[:,1], verts[:,2],
+                           triangles=tri.triangles, linewidth=0.1, antialiased=True,
+                           shade=True, alpha=1.0, edgecolor='none')
+    # set vertex colors via face colors approximation
+    # Map per-vertex RGB to per-triangle by averaging
+    face_rgb = colors[tri.triangles].mean(axis=1)
+    surf.set_facecolors(face_rgb)
+
+    # optional: show peak sticks
+    if show_peaks:
+        keep = nonmax_suppression_on_sphere(f, G, k_neighbors=peak_nms_neighbors)
+        peaks = G[keep]
+        # keep only top K peaks for cleanliness
+        K = min(6, len(peaks))
+        top_idx = np.argsort(f[keep])[-K:]
+        peaks = peaks[top_idx]
+        for p in peaks:
+            ax.plot([-p[0], p[0]], [-p[1], p[1]], [-p[2], p[2]], linewidth=2)
+
+    # cosmetics
+    lim = 1.25 * (0.2 + r_scale)
+    ax.set_xlim([-lim, lim]); ax.set_ylim([-lim, lim]); ax.set_zlim([-lim, lim])
+    ax.set_box_aspect([1,1,1])
+    ax.set_xticks([]); ax.set_yticks([]); ax.set_zticks([])
+    _set_view(ax, view)
+    plt.axis('off')
+    plt.show()
