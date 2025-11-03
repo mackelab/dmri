@@ -82,6 +82,8 @@ def load_checkpoint(path, which="latest"):
         latest_step = checkpoint_manager.get_latest_step()
     elif which == "best":
         latest_step = 0
+    elif isinstance(which, int):
+        latest_step = which
     else:
         raise ValueError(f"Invalid checkpoint type: {which}")
 

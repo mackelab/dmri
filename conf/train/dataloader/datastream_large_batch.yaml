@@ -1,9 +1,31 @@
 name: StreamDataLoader
 train_params:
   batch_size: 4096
-  max_queue_size: 1_000
+  simulation_batch_size: null
+  max_queue_size: 500
   num_producers: 2
+  queue_timeout: null
+  prefetch_depth: 8
+  recycle_batches: true
+  recycle_threshold: 0.5
+  use_inplace_updates: false
+  ring_size: 2
+  data_device: gpu
+  simulation_device: cpu
+  device_idx: 0
+  daemon: true
 val_params:
   batch_size: 128
+  simulation_batch_size: 128
   max_queue_size: 100
   num_producers: 1
+  queue_timeout: null
+  prefetch_depth: 4
+  recycle_batches: true
+  recycle_threshold: 0.5
+  use_inplace_updates: false
+  ring_size: 2
+  data_device: gpu
+  simulation_device: cpu
+  device_idx: 0
+  daemon: true

@@ -44,6 +44,7 @@ from dmri.simulators.noise_compartments import (
     RicianNoiseSNR1020,
     RicianNoiseSNR2030,
     RicianNoiseSNR3040,
+    BoundedRicianNoise,
 )
 from dmri.simulators.sphereical_distributions import MixtureOfFODs
 from dmri.utils.dmriutils import ssfp_signal_fn
@@ -302,7 +303,7 @@ class MultiCompartment(SignalCompartment):
             return MixtureOfFODs(fractions, fods)
         else:
             fods = [
-                m.to_fod() for m in self.model_compartments if not isinstance(m, Ball)
+                m.to_fod() for m in self.model_compartments if not isinstance(m, Ball) or not isinstance(m, MultiShellStaticBall)
             ]
             fractions = self.model_fractions[1:]
             fractions = fractions / jnp.sum(fractions)
@@ -634,24 +635,18 @@ class AllGaussianAndConvolvedModels(MultiCompartment):
         + 3 * [Stick]
         + 3 * [Zeppelin]
         + 3 * [Dti]
-        + 3 * [WatsonStick]
-        + 3 * [WatsonZeppelin]
-        + 3 * [BinghamStick]
-        + 3 * [BinghamZeppelin]
-        + 3 * [NoddiB]
-        + 3 * [NoddiW]
-        + 3 * [SandiB]
-        + 3 * [SandiW]
+        + 1 * [WatsonStick]
+        + 1 * [WatsonZeppelin]
+        + 1 * [BinghamStick]
+        + 1 * [BinghamZeppelin]
+        + 1 * [NoddiB]
+        + 1 * [NoddiW]
+        + 1 * [SandiB]
+        + 1 * [SandiW]
     )
     noise_types = [
-        GaussianNoiseSNR310,
-        GaussianNoiseSNR1020,
-        GaussianNoiseSNR2030,
-        GaussianNoiseSNR3040,
+        BoundedGaussianNoise,
     ] + [
-        RicianNoiseSNR310,
-        RicianNoiseSNR1020,
-        RicianNoiseSNR2030,
-        RicianNoiseSNR3040,
+        BoundedRicianNoise,
     ]
-    fraction_prior = jnp.ones(1 + 3 + 3 + 3 + 3 + 3 + 3 + 3 + 3 + 3 + 3 + 3)
+    fraction_prior = jnp.ones(1 + 3 + 3 + 3 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1)
