@@ -48,6 +48,131 @@ logo = r"""
 """
 
 
+def _to_int(value):
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    text = str(value).strip()
+    if text in ("", "None", "null"):
+        return None
+    return int(text)
+
+
+def _parse_slice_value(value, axis_length=None):
+    if isinstance(value, slice):
+        return value
+    if value is None:
+        return slice(None, None, None)
+    if isinstance(value, int):
+        idx = value
+        if axis_length is not None and idx < 0:
+            idx = axis_length + idx
+        if axis_length is not None and (idx < 0 or idx >= axis_length):
+            raise ValueError(f"Slice index {value} is out of bounds for axis length {axis_length}.")
+        return slice(idx, idx + 1, None)
+    if isinstance(value, str):
+        text = value.strip()
+        if text in ("", ":"):
+            return slice(None, None, None)
+        if ":" not in text:
+            return _parse_slice_value(_to_int(text), axis_length)
+        parts = text.split(":")
+        if len(parts) > 3:
+            raise ValueError(f"Invalid slice specification '{value}'.")
+        parsed = [_to_int(part) for part in parts]
+        while len(parsed) < 3:
+            parsed.append(None)
+        return slice(parsed[0], parsed[1], parsed[2])
+    if isinstance(value, (list, tuple)):
+        parts = list(value)
+        if len(parts) == 0:
+            return slice(None, None, None)
+        if len(parts) == 1:
+            return _parse_slice_value(parts[0], axis_length)
+        if len(parts) > 3:
+            raise ValueError(f"Invalid slice specification '{value}'.")
+        parsed = [_to_int(part) for part in parts]
+        while len(parsed) < 3:
+            parsed.append(None)
+        return slice(parsed[0], parsed[1], parsed[2])
+    raise TypeError(f"Unsupported slice specification: {value!r}")
+
+
+def _slice_has_effect(spec):
+    return not (spec.start is None and spec.stop is None and spec.step is None)
+
+
+def _slice_to_string(spec):
+    start = "" if spec.start is None else spec.start
+    stop = "" if spec.stop is None else spec.stop
+    step = "" if spec.step is None else spec.step
+    if step != "":
+        return f"{start}:{stop}:{step}"
+    if stop != "":
+        return f"{start}:{stop}"
+    if start != "":
+        return str(start)
+    return ":"
+
+
+def _build_slice_tuple(slice_cfg, volume_shape):
+    if slice_cfg is None:
+        return None
+    if isinstance(slice_cfg, DictConfig):
+        slice_cfg = OmegaConf.to_container(slice_cfg, resolve=True)
+    if not isinstance(slice_cfg, dict):
+        raise TypeError(f"Slice configuration must be a mapping, got {type(slice_cfg)}.")
+    axes = ("x", "y", "z")
+    slices = []
+    any_slice_applied = False
+    for axis_index in range(min(len(volume_shape), len(axes))):
+        axis_name = axes[axis_index]
+        raw_value = slice_cfg.get(axis_name)
+        spec = _parse_slice_value(raw_value, axis_length=volume_shape[axis_index])
+        if _slice_has_effect(spec):
+            any_slice_applied = True
+        slices.append(spec)
+    for _ in range(len(slices), len(volume_shape)):
+        slices.append(slice(None, None, None))
+    if not any_slice_applied:
+        return None
+    return tuple(slices)
+
+
+def _apply_slice_to_brain(slice_cfg, brain_mask, data_norm, logger):
+    slice_tuple = _build_slice_tuple(slice_cfg, brain_mask.shape)
+    if slice_tuple is None:
+        return brain_mask, data_norm
+
+    selection_mask = np.zeros_like(brain_mask, dtype=bool)
+    selection_mask[slice_tuple] = True
+
+    voxels_before = int(np.count_nonzero(brain_mask))
+    brain_mask = np.logical_and(brain_mask, selection_mask)
+    voxels_after = int(np.count_nonzero(brain_mask))
+
+    if voxels_after == 0:
+        raise ValueError("Slice selection resulted in zero voxels inside the brain mask.")
+
+    slice_strings = [_slice_to_string(spec) for spec in slice_tuple[:3]]
+    cfg_for_logging = (
+        OmegaConf.to_container(slice_cfg, resolve=True)
+        if isinstance(slice_cfg, DictConfig)
+        else slice_cfg
+    )
+    logger.info(
+        "Applying slice %s -> axes (%s), keeping %d/%d voxels",
+        cfg_for_logging,
+        ", ".join(slice_strings),
+        voxels_after,
+        voxels_before,
+    )
+
+    data_norm = np.where(brain_mask[..., None], data_norm, 0.0)
+    return brain_mask, data_norm
+
+
 def main():
     """Main script function"""
     print(logo)
@@ -80,6 +205,11 @@ def _main(cfg: DictConfig):
         cfg.bvals_data,
         cfg.bvecs_data,
         cfg.round_bvals,
+    )
+
+    # Optionally restrict processing to a sub-volume
+    brain_mask, data_norm = _apply_slice_to_brain(
+        cfg.get("slice", None), brain_mask, data_norm, log
     )
 
     # Only infer within the brain mask

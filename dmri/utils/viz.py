@@ -1700,4 +1700,77 @@ def plot_glyph_from_sticks(V: np.ndarray, view: str | np.ndarray = "xy", axial: 
     ax.set_xticks([]); ax.set_yticks([]); ax.set_zticks([])
     _set_view(ax, view)
     plt.axis('off')
-    plt.show()
+
+
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.patches import Circle
+
+def _norm_rows(X, eps=1e-12):
+    return X / (np.linalg.norm(X, axis=1, keepdims=True) + eps)
+
+def _stereo_project(X):
+    x, y, z = X.T
+    d = np.clip(1 + z, 1e-9, None)
+    return np.c_[x/d, y/d]
+
+def plot_stereographic_scatter(
+    V, axial=True, angle_step=30, ring_radii=(0.25, 0.5, 0.75, 1.0),
+    s=14, point_alpha=0.9, point_color="orientation", edge=True
+):
+    """
+    Scatter-only stereographic plot with better visibility.
+    point_color:
+      - "orientation" -> color by |x|,|y|,|z| mapped to RGB
+      - any Matplotlib color string/tuple
+    """
+    V = _norm_rows(np.asarray(V, float))
+    if axial:
+        V = np.where(V[:,2:3] < 0, -V, V)
+
+    UV = _stereo_project(V)
+    inside = np.sum(UV**2, axis=1) <= 1.0 + 1e-9
+    UV = UV[inside]
+    C = None
+    if point_color == "orientation":
+        C = np.abs(V[inside])
+        C = C / (np.linalg.norm(C, axis=1, keepdims=True) + 1e-12)
+    else:
+        C = point_color
+
+    fig, ax = plt.subplots(figsize=(5,5))
+
+    # circular frame
+    boundary = Circle((0,0), 1.0, fill=False, lw=1.8, zorder=2, color="white")
+    ax.add_artist(boundary)
+
+    # concentric rings
+    for r in ring_radii:
+        ax.add_artist(Circle((0,0), r, fill=False, lw=0.8, ls="--", alpha=0.6, zorder=1, color="white"))
+        ax.text(r/np.sqrt(2), r/np.sqrt(2), f"{r:.2f}", ha="left", va="bottom", fontsize=9, alpha=0.7, zorder=3)
+
+    # spokes
+    for deg in range(0, 360, angle_step):
+        th = np.deg2rad(deg)
+        ax.plot([0, np.cos(th)], [0, np.sin(th)], lw=0.6, ls="--", alpha=0.6, zorder=1)
+        rlab = 1.1
+        ax.text(rlab*np.cos(th), rlab*np.sin(th), f"{deg}°", ha="center", va="center", fontsize=9, zorder=3)
+
+    # scatter on top
+    zord = 5
+    if edge:
+        ax.scatter(UV[:,0], UV[:,1], s=s, c=C, alpha=point_alpha, linewidths=0.3, edgecolors="white", zorder=zord)
+    else:
+        ax.scatter(UV[:,0], UV[:,1], s=s, c=C, alpha=point_alpha, linewidths=0, zorder=zord)
+
+    # clip to circle
+    clip_circle = Circle((0,0), 1.0, transform=ax.transData)
+    for col in ax.collections:
+        col.set_clip_path(clip_circle)
+
+    # clean look
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.set_frame_on(False)
+    ax.set_xlim(-1,1); ax.set_ylim(-1,1)
+    ax.set_aspect("equal"); ax.set_xticks([]); ax.set_yticks([])
