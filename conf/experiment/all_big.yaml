@@ -8,11 +8,8 @@ hydra:
       wandb.project: all_models
       train.ema_decay: 0.9999
       train.dataloader.val_params.batch_size: 64
-      train.eval.ess.iters: 0
-      train.eval.nnl_theta.iters: 1
       model.model_dim: 256
-      #train.continue_training: true
-      #train.restart_optimizer: true
+      train.continue_training: true
 
 
 defaults:

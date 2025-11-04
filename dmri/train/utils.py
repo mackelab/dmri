@@ -8,7 +8,7 @@ from omegaconf import OmegaConf
 from dmri.train.build_model import build_model
 from dmri.train.build_simulator import build_simulator
 from dmri.train.checkpointing import CheckpointManager
-from dmri.train.hydra_script import build_optimizer, initialize_ema_state
+from dmri.train.hydra_script import build_optimizer, get_ema_params, initialize_ema_state
 
 
 def load_cfg(path):
@@ -81,9 +81,8 @@ def load_checkpoint(path, which="latest"):
     ema_transform = (
         optax.ema(cfg.train.ema_decay, debias=False) if cfg.train.track_ema else None
     )
-    ema_state, ema_params = initialize_ema_state(
-        cfg.train.track_ema, ema_transform, params
-    )
+    ema_state = initialize_ema_state(cfg.train.track_ema, ema_transform, params)
+    ema_params = get_ema_params(ema_state) if ema_state is not None else None
 
     if which == "latest":
         latest_step = checkpoint_manager.get_latest_step()

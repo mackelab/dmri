@@ -1,7 +1,7 @@
 inner_steps: 500
 checkpoint_freq: 20_000
-eval_freq: 20_000
-continue_training: false
+eval_freq: 40_000
+continue_training: true
 max_train_hours: 72
 model_selection_weight: 1.0
 model_inference_loss_weight: 1.0
@@ -16,9 +16,6 @@ eval:
     iters: 5
   nnl_mask:
     iters: 5
-  ess:
-    iters: 5
-    K: 100
 
 defaults:
   - optimizer: radam
