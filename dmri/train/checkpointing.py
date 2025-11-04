@@ -89,6 +89,9 @@ class CheckpointManager:
         optimizer_state: Any,
         loss: float = None,
         params_ema: Any = None,
+        model_state: Any = None,
+        ema_state: Any = None,
+        rng: Any = None,
     ):
         """
         Save a checkpoint.
@@ -99,6 +102,9 @@ class CheckpointManager:
             optimizer_state: State of the optimizer
             loss: Current training loss (optional)
             params_ema: EMA model parameters (optional)
+            model_state: Additional model state (e.g. BatchNorm statistics)
+            ema_state: Full EMA transformation state if tracking EMA
+            rng: RNG key to resume stochastic components deterministically
         """
         # Save regular checkpoint
         if loss is None:
@@ -113,6 +119,12 @@ class CheckpointManager:
         # Include EMA params if provided
         if params_ema is not None:
             ckpt["params_ema"] = params_ema
+        if model_state is not None:
+            ckpt["model_state"] = model_state
+        if ema_state is not None:
+            ckpt["ema_state"] = ema_state
+        if rng is not None:
+            ckpt["rng"] = rng
 
         save_args = orbax_utils.save_args_from_target(ckpt)
 
@@ -133,6 +145,9 @@ class CheckpointManager:
         optimizer_state: Any,
         from_best: bool = False,
         params_ema: Any = None,
+        model_state: Any = None,
+        ema_state: Any = None,
+        rng: Any = None,
     ):
         """
         Restore a checkpoint.
@@ -143,6 +158,9 @@ class CheckpointManager:
             optimizer_state: Existing optimizer state structure to match against
             from_best: Whether to restore from the best checkpoint
             params_ema: Existing EMA parameters structure to match against (optional)
+            model_state: Existing model_state structure to ensure shape compatibility
+            ema_state: Existing ema_state structure for shape compatibility
+            rng: Existing RNG key structure for shape compatibility
 
         Returns:
             The restored checkpoint dict or None if no checkpoint exists
@@ -167,6 +185,12 @@ class CheckpointManager:
         # Include EMA params in the abstract structure if provided
         if params_ema is not None:
             abstract_ckpt["params_ema"] = params_ema
+        if model_state is not None:
+            abstract_ckpt["model_state"] = model_state
+        if ema_state is not None:
+            abstract_ckpt["ema_state"] = ema_state
+        if rng is not None:
+            abstract_ckpt["rng"] = rng
 
         # Construct restore args from the abstract checkpoint structure
         restore_args = orbax_utils.restore_args_from_target(abstract_ckpt)

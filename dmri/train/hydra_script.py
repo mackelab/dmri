@@ -132,6 +132,89 @@ def initialize_ema_state(
     return ema_state, tree_copy(params)
 
 
+def apply_checkpoint_to_state(
+    train_state: TrainState,
+    checkpoint: dict[str, Any],
+    cfg: DictConfig,
+    optimizer: optax.GradientTransformation,
+    ema_transform: Optional[optax.GradientTransformation],
+    log: logging.Logger,
+    rebuild_optimizer: bool,
+) -> TrainState:
+    """Populate the in-memory train_state with data from a checkpoint payload."""
+    train_state.params = checkpoint["params"]
+    train_state.step = checkpoint.get("step", train_state.step)
+
+    if "model_state" in checkpoint:
+        train_state.model_state = checkpoint["model_state"]
+    else:
+        log.warning(
+            "Checkpoint does not include model_state; continuing with existing state."
+        )
+
+    if rebuild_optimizer:
+        reference = (
+            checkpoint.get("params_ema")
+            if cfg.train.track_ema and "params_ema" in checkpoint
+            else train_state.params
+        )
+        train_state.opt_state = optimizer.init(reference)
+    else:
+        train_state.opt_state = checkpoint["optimizer_state"]
+
+    if cfg.train.track_ema:
+        stored_ema_params = checkpoint.get("params_ema")
+        stored_ema_state = checkpoint.get("ema_state")
+
+        if stored_ema_params is not None:
+            train_state.ema_params = stored_ema_params
+        elif train_state.ema_params is None:
+            train_state.ema_params = tree_copy(train_state.params)
+            log.warning(
+                "EMA parameters missing from checkpoint; reinitialising from current params."
+            )
+
+        if stored_ema_state is not None:
+            train_state.ema_state = stored_ema_state
+        elif ema_transform is not None:
+            ema_state, ema_params = initialize_ema_state(
+                True,
+                ema_transform,
+                train_state.ema_params or train_state.params,
+            )
+            train_state.ema_state = ema_state
+            train_state.ema_params = ema_params
+            log.warning(
+                "EMA state missing from checkpoint; reinitialising EMA statistics."
+            )
+
+    if "rng" in checkpoint:
+        train_state.rng = checkpoint["rng"]
+    else:
+        log.warning("Checkpoint missing RNG key; stochastic components will reset.")
+
+    return train_state
+
+
+def save_training_checkpoint(
+    checkpoint_manager: CheckpointManager,
+    train_state: TrainState,
+    loss_value: float,
+    track_ema: bool,
+) -> None:
+    """Persist the full training state via the checkpoint manager."""
+    checkpoint_manager.save(
+        step=train_state.step,
+        params=train_state.params,
+        optimizer_state=train_state.opt_state,
+        loss=loss_value,
+        params_ema=train_state.ema_params if track_ema else None,
+        model_state=train_state.model_state,
+        ema_state=train_state.ema_state if track_ema else None,
+        rng=train_state.rng,
+    )
+
+
 def resume_from_checkpoint(
     cfg: DictConfig,
     checkpoint_manager: CheckpointManager,
@@ -156,30 +239,23 @@ def resume_from_checkpoint(
         params=train_state.params,
         optimizer_state=train_state.opt_state,
         params_ema=reference_ema,
+        model_state=train_state.model_state,
+        ema_state=train_state.ema_state if cfg.train.track_ema else None,
+        rng=train_state.rng,
     )
     if checkpoint is None:
         log.warning("Failed to restore checkpoint. Starting from scratch.")
         return train_state
 
-    train_state.params = checkpoint["params"]
-    if cfg.train.restart_optimizer:
-        reference = (
-            checkpoint.get("params_ema")
-            if cfg.train.track_ema and "params_ema" in checkpoint
-            else train_state.params
-        )
-        train_state.opt_state = optimizer.init(reference)
-    else:
-        train_state.opt_state = checkpoint["optimizer_state"]
-
-    train_state.step = checkpoint["step"]
-
-    if cfg.train.track_ema:
-        ema_source = checkpoint.get("params_ema", train_state.params)
-        train_state.ema_state, train_state.ema_params = initialize_ema_state(
-            True, ema_transform, ema_source
-        )
-
+    train_state = apply_checkpoint_to_state(
+        train_state=train_state,
+        checkpoint=checkpoint,
+        cfg=cfg,
+        optimizer=optimizer,
+        ema_transform=ema_transform,
+        log=log,
+        rebuild_optimizer=cfg.train.restart_optimizer,
+    )
     log.info(f"Resumed training from step {train_state.step}")
     return train_state
 
@@ -329,12 +405,11 @@ def train_loop(
             log.info(
                 f"Reached maximum training time of {max_train_hours} hours. Stopping."
             )
-            checkpoint_manager.save(
-                step=train_state.step,
-                params=train_state.params,
-                optimizer_state=train_state.opt_state,
-                loss=total_loss_value,
-                params_ema=train_state.ema_params if track_ema else None,
+            save_training_checkpoint(
+                checkpoint_manager,
+                train_state,
+                total_loss_value,
+                track_ema,
             )
             checkpoint_manager.wait_until_finished()
             break
@@ -382,12 +457,11 @@ def train_loop(
 
         if checkpoint_freq and train_state.step > 0 and train_state.step % checkpoint_freq == 0:
             log.info(f"Saving checkpoint at step {train_state.step}")
-            checkpoint_manager.save(
-                step=train_state.step,
-                params=train_state.params,
-                optimizer_state=train_state.opt_state,
-                loss=total_loss_value,
-                params_ema=train_state.ema_params if track_ema else None,
+            save_training_checkpoint(
+                checkpoint_manager,
+                train_state,
+                total_loss_value,
+                track_ema,
             )
 
         if checkpoint_manager.should_recover(total_loss_value):
@@ -406,20 +480,24 @@ def train_loop(
                         params=train_state.params,
                         optimizer_state=train_state.opt_state,
                         params_ema=train_state.ema_params if track_ema else None,
+                        model_state=train_state.model_state,
+                        ema_state=train_state.ema_state if track_ema else None,
+                        rng=train_state.rng,
                     )
                     if checkpoint is None:
                         log.warning(
                             "Failed to restore recovery checkpoint. Continuing without recovery."
                         )
                     else:
-                        train_state.params = checkpoint["params"]
-                        train_state.opt_state = checkpoint["optimizer_state"]
-                        train_state.step = checkpoint["step"]
-                        if track_ema:
-                            ema_source = checkpoint.get("params_ema", train_state.params)
-                            train_state.ema_state, train_state.ema_params = initialize_ema_state(
-                                True, ema_transform, ema_source
-                            )
+                        train_state = apply_checkpoint_to_state(
+                            train_state=train_state,
+                            checkpoint=checkpoint,
+                            cfg=cfg,
+                            optimizer=optimizer,
+                            ema_transform=ema_transform,
+                            log=log,
+                            rebuild_optimizer=False,
+                        )
                         log.info(f"Recovered to step {train_state.step}")
             except Exception as err:  # pragma: no cover - defensive logging
                 log.error(f"Error during recovery: {err}")

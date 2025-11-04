@@ -1,13 +1,14 @@
 import os
 from datetime import datetime
 
+import optax
 from flax import nnx
 from omegaconf import OmegaConf
 
 from dmri.train.build_model import build_model
 from dmri.train.build_simulator import build_simulator
 from dmri.train.checkpointing import CheckpointManager
-from dmri.train.hydra_script import build_optimizer
+from dmri.train.hydra_script import build_optimizer, initialize_ema_state
 
 
 def load_cfg(path):
@@ -77,6 +78,12 @@ def load_checkpoint(path, which="latest"):
 
     optimizer = build_optimizer(cfg.train.optimizer)
     opt_state = optimizer.init(params)
+    ema_transform = (
+        optax.ema(cfg.train.ema_decay, debias=False) if cfg.train.track_ema else None
+    )
+    ema_state, ema_params = initialize_ema_state(
+        cfg.train.track_ema, ema_transform, params
+    )
 
     if which == "latest":
         latest_step = checkpoint_manager.get_latest_step()
@@ -87,14 +94,16 @@ def load_checkpoint(path, which="latest"):
     else:
         raise ValueError(f"Invalid checkpoint type: {which}")
 
+    restore_kwargs = dict(
+        step=latest_step,
+        params=params,
+        optimizer_state=opt_state,
+        model_state=state,
+    )
     if cfg.train.track_ema:
-        checkpoint = checkpoint_manager.restore(
-            latest_step, params=params, optimizer_state=opt_state, params_ema=params
-        )
+        restore_kwargs["params_ema"] = ema_params
+        restore_kwargs["ema_state"] = ema_state
 
-    else:
-        checkpoint = checkpoint_manager.restore(
-            latest_step, params=params, optimizer_state=opt_state
-        )
+    checkpoint = checkpoint_manager.restore(**restore_kwargs)
 
     return checkpoint, model, simulator
