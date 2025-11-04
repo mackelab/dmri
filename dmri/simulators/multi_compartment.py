@@ -634,11 +634,6 @@ class AllGaussianAndConvolvedModels(MultiCompartment):
         [Ball]
         + 3 * [Stick]
         + 3 * [Zeppelin]
-        + 3 * [Dti]
-        + 1 * [WatsonStick]
-        + 1 * [WatsonZeppelin]
-        + 1 * [BinghamStick]
-        + 1 * [BinghamZeppelin]
         + 1 * [NoddiB]
         + 1 * [NoddiW]
         + 1 * [SandiB]
@@ -649,4 +644,4 @@ class AllGaussianAndConvolvedModels(MultiCompartment):
     ] + [
         BoundedRicianNoise,
     ]
-    fraction_prior = jnp.ones(1 + 3 + 3 + 3 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1)
+    fraction_prior = jnp.ones(1 + 3 + 3 + 1 + 1 + 1 + 1)

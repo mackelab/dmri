@@ -1,9 +1,9 @@
 name: StreamDataLoader
 train_params:
-  batch_size: 4096
+  batch_size: 1024
   simulation_batch_size: 256
-  max_queue_size: 1000
-  num_producers: 8
+  max_queue_size: 2048
+  num_producers: 4
   queue_timeout: null
   prefetch_depth: 8
   recycle_batches: true

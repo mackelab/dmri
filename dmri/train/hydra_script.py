@@ -45,7 +45,6 @@ class TrainState:
     model_state: Any
     opt_state: Any
     ema_state: Any
-    ema_params: Any
     rng: Any
     step: int = 0
 
@@ -123,13 +122,24 @@ def align_to_inner_steps(
 
 def initialize_ema_state(
     track_ema: bool, ema_transform: Optional[optax.GradientTransformation], params: Any
-) -> tuple[Any, Any]:
-    """Initialise EMA state and parameters if requested."""
+) -> Optional[Any]:
+    """Initialise EMA state if requested."""
     if not track_ema or ema_transform is None:
-        return (), None
+        return None
     ema_state = ema_transform.init(params)
-    ema_state = ema_state._replace(ema=tree_copy(params))
-    return ema_state, tree_copy(params)
+    if hasattr(ema_state, "_replace"):
+        ema_state = ema_state._replace(ema=tree_copy(params))
+    return ema_state
+
+
+def get_ema_params(ema_state: Optional[Any]) -> Optional[Any]:
+    """Extract EMA parameters from the EMA state."""
+    if ema_state is None:
+        return None
+    ema_value = getattr(ema_state, "ema", None)
+    if ema_value is None:
+        return None
+    return ema_value
 
 
 def apply_checkpoint_to_state(
@@ -163,29 +173,28 @@ def apply_checkpoint_to_state(
         train_state.opt_state = checkpoint["optimizer_state"]
 
     if cfg.train.track_ema:
-        stored_ema_params = checkpoint.get("params_ema")
         stored_ema_state = checkpoint.get("ema_state")
-
-        if stored_ema_params is not None:
-            train_state.ema_params = stored_ema_params
-        elif train_state.ema_params is None:
-            train_state.ema_params = tree_copy(train_state.params)
-            log.warning(
-                "EMA parameters missing from checkpoint; reinitialising from current params."
-            )
+        stored_ema_params = checkpoint.get("params_ema")
 
         if stored_ema_state is not None:
             train_state.ema_state = stored_ema_state
-        elif ema_transform is not None:
-            ema_state, ema_params = initialize_ema_state(
+        elif stored_ema_params is not None and ema_transform is not None:
+            train_state.ema_state = initialize_ema_state(
                 True,
                 ema_transform,
-                train_state.ema_params or train_state.params,
+                stored_ema_params,
             )
-            train_state.ema_state = ema_state
-            train_state.ema_params = ema_params
             log.warning(
-                "EMA state missing from checkpoint; reinitialising EMA statistics."
+                "EMA state missing from checkpoint; reinitialising EMA statistics from stored EMA params."
+            )
+        elif train_state.ema_state is None and ema_transform is not None:
+            train_state.ema_state = initialize_ema_state(
+                True,
+                ema_transform,
+                train_state.params,
+            )
+            log.warning(
+                "EMA information missing from checkpoint; reinitialising EMA statistics from current params."
             )
 
     if "rng" in checkpoint:
@@ -208,7 +217,7 @@ def save_training_checkpoint(
         params=train_state.params,
         optimizer_state=train_state.opt_state,
         loss=loss_value,
-        params_ema=train_state.ema_params if track_ema else None,
+        params_ema=get_ema_params(train_state.ema_state) if track_ema else None,
         model_state=train_state.model_state,
         ema_state=train_state.ema_state if track_ema else None,
         rng=train_state.rng,
@@ -233,7 +242,9 @@ def resume_from_checkpoint(
         return train_state
 
     log.info(f"Restoring checkpoint at step {latest_step}")
-    reference_ema = train_state.ema_params if cfg.train.track_ema else None
+    reference_ema = (
+        get_ema_params(train_state.ema_state) if cfg.train.track_ema else None
+    )
     checkpoint = checkpoint_manager.restore(
         step=latest_step,
         params=train_state.params,
@@ -309,10 +320,9 @@ def build_update_fn(
         )(params, state, data, rng)
         updates, opt_state = optimizer.update(grads, opt_state, params=params)
         new_params = optax.apply_updates(params, updates)
-        ema_params = None
         if use_ema:
-            ema_params, ema_state = ema_transform.update(new_params, ema_state)
-        return new_params, new_state, opt_state, ema_state, losses, total_loss, ema_params
+            _, ema_state = ema_transform.update(new_params, ema_state)
+        return new_params, new_state, opt_state, ema_state, losses, total_loss
 
     return update
 
@@ -361,7 +371,6 @@ def train_loop(
                 train_state.ema_state,
                 losses,
                 total_loss,
-                ema_params,
             ) = update_step(
                 train_state.params,
                 train_state.model_state,
@@ -373,8 +382,6 @@ def train_loop(
             train_state.step += 1
             loss_mask.append(losses[0])
             loss_theta.append(losses[1])
-            if track_ema and ema_params is not None:
-                train_state.ema_params = ema_params
         loss_mask = float(sum(loss_mask) / len(loss_mask))
         loss_theta = float(sum(loss_theta) / len(loss_theta))
         total_loss_value = float(loss_mask + loss_theta)
@@ -385,9 +392,9 @@ def train_loop(
 
         if restart_every and train_state.step % restart_every == 0:
             log.info(f"Restarting optimizer at step {train_state.step}")
-            reference = (
-                train_state.ema_params if track_ema and train_state.ema_params is not None else train_state.params
-            )
+            reference = get_ema_params(train_state.ema_state) if track_ema else None
+            if reference is None:
+                reference = train_state.params
             train_state.opt_state = optimizer.init(reference)
 
         if wandb_active:
@@ -416,12 +423,9 @@ def train_loop(
 
         if eval_freq and train_state.step > 0 and train_state.step % eval_freq == 0:
             log.info(f"Evaluating model at step {train_state.step}")
-            params_eval = (
-                train_state.ema_params
-                if track_ema and train_state.ema_params is not None
-                else train_state.params
-            )
-            train_state.rng, eval_key = jax.random.split(train_state.rng)
+            params_eval = get_ema_params(train_state.ema_state) if track_ema else None
+            if params_eval is None:
+                params_eval = train_state.params
             mask_nnl = evaluator.eval_nnl_mask(
                 params_eval,
                 train_state.model_state,
@@ -434,23 +438,14 @@ def train_loop(
                 eval_loader,
                 iters=cfg.train.eval.nnl_theta.iters,
             )
-            sliced_wasserstein = evaluator.eval_sliced_wasserstein_distance(
-                params_eval,
-                train_state.model_state,
-                eval_loader,
-                eval_key,
-                K=cfg.train.eval.ess.K,
-                iters=cfg.train.eval.ess.iters,
-            )
             log.info(
-                f"Mask NLL: {mask_nnl}, Theta NLL: {theta_nnl}, Sliced Wasserstein: {sliced_wasserstein}"
+                f"Mask NLL: {mask_nnl}, Theta NLL: {theta_nnl}"
             )
             if wandb_active:
                 wandb.log(
                     {
                         "mask_negative_log_likelihood": float(mask_nnl),
                         "theta_negative_log_likelihood": float(theta_nnl),
-                        "sliced_wasserstein": float(sliced_wasserstein),
                         "step": train_state.step,
                     }
                 )
@@ -479,7 +474,7 @@ def train_loop(
                         step=latest_step,
                         params=train_state.params,
                         optimizer_state=train_state.opt_state,
-                        params_ema=train_state.ema_params if track_ema else None,
+                        params_ema=get_ema_params(train_state.ema_state) if track_ema else None,
                         model_state=train_state.model_state,
                         ema_state=train_state.ema_state if track_ema else None,
                         rng=train_state.rng,
@@ -578,16 +573,13 @@ def _main(cfg: DictConfig):
     ema_transform = (
         optax.ema(cfg.train.ema_decay, debias=False) if cfg.train.track_ema else None
     )
-    ema_state, ema_params = initialize_ema_state(
-        cfg.train.track_ema, ema_transform, params
-    )
+    ema_state = initialize_ema_state(cfg.train.track_ema, ema_transform, params)
 
     train_state = TrainState(
         params=params,
         model_state=state,
         opt_state=opt_state,
         ema_state=ema_state,
-        ema_params=ema_params,
         rng=rng_key,
         step=0,
     )
