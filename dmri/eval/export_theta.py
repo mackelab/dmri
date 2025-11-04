@@ -34,6 +34,12 @@ def export_thetas_to_files_ball3stick(
     if not os.path.exists(out_path):
         os.makedirs(out_path)
 
+    # Export raw samples
+    full_thetas = embed_in_full_brain_array(
+        thetas, brain_mask_flat, brain_shape
+    ).astype(np.float32)
+    export_nifti(full_thetas, orig_data, out_path, "raw_thetas.nii.gz")
+
     def to_fractions(theta):
         return sim_type.from_theta(theta, model_mask=model_mask).model_fractions
 

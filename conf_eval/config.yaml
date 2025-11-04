@@ -6,6 +6,10 @@ bvals_data: "bvals"
 bvecs_data: "bvecs"
 round_bvals: true
 clip_outliers: true
+slice:
+  x: null
+  y: null
+  z: null
 
 # Loading model
 path_checkpoint: "/home/macke/mgloeckler90/dmri/results"
