@@ -71,9 +71,6 @@ def load_checkpoint(path, which="latest"):
         keep_best=cfg.get("keep_best_checkpoint", True),
         recovery_threshold=cfg.get("recovery_threshold", float("inf")),
         continue_training=continue_training,
-        use_async=cfg.get(
-            "use_async_checkpointing", True
-        ),  # Enable async checkpointing
     )
 
     optimizer = build_optimizer(cfg.train.optimizer)
@@ -84,10 +81,12 @@ def load_checkpoint(path, which="latest"):
     ema_state = initialize_ema_state(cfg.train.track_ema, ema_transform, params)
     ema_params = get_ema_params(ema_state) if ema_state is not None else None
 
+    from_best = False
     if which == "latest":
         latest_step = checkpoint_manager.get_latest_step()
     elif which == "best":
-        latest_step = 0
+        latest_step = None
+        from_best = True
     elif isinstance(which, int):
         latest_step = which
     else:
@@ -102,6 +101,8 @@ def load_checkpoint(path, which="latest"):
     if cfg.train.track_ema:
         restore_kwargs["params_ema"] = ema_params
         restore_kwargs["ema_state"] = ema_state
+
+    restore_kwargs["from_best"] = from_best
 
     checkpoint = checkpoint_manager.restore(**restore_kwargs)
 

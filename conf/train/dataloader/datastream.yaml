@@ -1,31 +1,33 @@
 name: StreamDataLoader
 train_params:
   batch_size: 256
-  simulation_batch_size: 256
-  max_queue_size: 500
-  num_producers: 2
-  queue_timeout: null
-  prefetch_depth: 8
-  recycle_batches: true
-  recycle_threshold: 0.5
-  use_inplace_updates: false
-  ring_size: 2
-  data_device: gpu
+  seed: 0
+  num_batches: null
   simulation_device: cpu
-  device_idx: 0
-  daemon: true
+  data_device: gpu
+  device_index: 0
+  jit_simulator: true
+  return_numpy: true
+  dataloader_kwargs:
+    shuffle: false
+    drop_last: false
+    loop: true
+    num_prefetch_host: 8
+    num_prefetch_device: 2
+    num_async_workers: 2
 val_params:
   batch_size: 128
-  simulation_batch_size: 128
-  max_queue_size: 500
-  num_producers: 1
-  queue_timeout: null
-  prefetch_depth: 4
-  recycle_batches: true
-  recycle_threshold: 0.5
-  use_inplace_updates: false
-  ring_size: 2
-  data_device: gpu
+  seed: 123
+  num_batches: null
   simulation_device: cpu
-  device_idx: 0
-  daemon: true
+  data_device: gpu
+  device_index: 0
+  jit_simulator: true
+  return_numpy: true
+  dataloader_kwargs:
+    shuffle: false
+    drop_last: false
+    loop: true
+    num_prefetch_host: 4
+    num_prefetch_device: 2
+    num_async_workers: 1
