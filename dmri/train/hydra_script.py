@@ -5,7 +5,7 @@ import random
 import socket
 import time
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 memory_fraction = 0.9  # Use 98% of available memory
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = str(memory_fraction)
@@ -92,15 +92,52 @@ def seed_everything(seed: int) -> jax.Array:
     return jax.random.key(seed)
 
 
-def create_dataloaders(cfg: DictConfig, simulator: Any) -> tuple[Any, Any]:
+def _normalise_loader_params(params_cfg: Any, count: int) -> list[dict[str, Any]]:
+    """Convert Hydra loader params into a list of dictionaries."""
+    container = OmegaConf.to_container(params_cfg, resolve=True)
+    if isinstance(container, list):
+        entries = [dict(entry) for entry in container]
+        if len(entries) < count:
+            last_entry = entries[-1] if entries else {}
+            for _ in range(count - len(entries)):
+                entries.append(dict(last_entry))
+        return entries[:count]
+    if isinstance(container, dict):
+        return [dict(container) for _ in range(count)]
+    raise TypeError(f"Unsupported loader parameter type: {type(container)}")
+
+
+def _instantiate_loader(loader_type: Any, simulator_fn: Any, params: dict[str, Any]) -> Any:
+    params = dict(params)  # shallow copy
+    dataloader_kwargs = params.pop("dataloader_kwargs", None)
+    if dataloader_kwargs:
+        params.update(dataloader_kwargs)
+    loader = loader_type(simulator_fn=simulator_fn, **params)
+    if hasattr(loader, "reset"):
+        loader.reset()
+    return loader
+
+
+def create_dataloaders(cfg: DictConfig, simulators: Sequence[Any]) -> tuple[list[Any], Any]:
     """Instantiate training and evaluation dataloaders."""
     loader_module = importlib.import_module("dmri.train.dataloader")
     loader_type = getattr(loader_module, cfg.train.dataloader.name)
-    loader_train_params = cfg.train.dataloader.train_params
-    loader_eval_params = cfg.train.dataloader.val_params
-    train_loader = loader_type(simulator, **loader_train_params)
-    eval_loader = loader_type(simulator, **loader_eval_params)
-    return train_loader, eval_loader
+    simulators = list(simulators)
+    if not simulators:
+        raise ValueError("Expected at least one simulator callable.")
+
+    train_loader_params_list = _normalise_loader_params(
+        cfg.train.dataloader.train_params, max(1, len(simulators))
+    )
+    train_simulators = simulators[: len(train_loader_params_list)]
+    train_loaders = [
+        _instantiate_loader(loader_type, sim_fn, params)
+        for sim_fn, params in zip(train_simulators, train_loader_params_list)
+    ]
+
+    eval_params = _normalise_loader_params(cfg.train.dataloader.val_params, 1)[0]
+    eval_loader = _instantiate_loader(loader_type, simulators[0], eval_params)
+    return train_loaders, eval_loader
 
 
 def align_to_inner_steps(
@@ -274,31 +311,58 @@ def resume_from_checkpoint(
 def build_loss_fn(cfg: DictConfig, graphdef: Any, static: Any):
     """Create the loss function closure."""
 
-    def loss_fn(params, state, data, rng):
+    def _unpack_batch(batch):
         if cfg.simulator.with_posterior_score:
-            p_mask, model_mask, thetas, xs, acq, target_score = data
+            p_mask, model_mask, thetas, xs, acq, target_score = batch
         else:
-            p_mask, model_mask, thetas, xs, acq = data
+            p_mask, model_mask, thetas, xs, acq = batch
             target_score = None
+        return p_mask, model_mask, thetas, xs, acq, target_score
 
+    def loss_fn(params, state, data, rng):
+        if isinstance(data, (tuple, list)):
+            batches = tuple(data)
+        else:
+            batches = (data,)
+        num_batches = len(batches)
+        if num_batches == 0:
+            raise ValueError("Expected at least one batch for loss computation.")
+
+        rngs = jax.random.split(rng, num_batches)
         model = nnx.merge(graphdef, params, static, state, copy=True)
         model.train()
-        losses = model.loss_fn(
-            rng,
-            model_mask=model_mask,
-            theta=thetas,
-            x=xs,
-            acq=acq,
-            mask_prior=p_mask,
-            target_score=target_score,
-            weight_by_complexity=cfg.train.weight_by_complexity,
-            cut_off_tsm=cfg.train.cut_off_tsm,
-        )
-        loss1 = cfg.train.model_selection_weight * losses[0]
-        loss2 = cfg.train.model_inference_loss_weight * losses[1]
-        total_loss = loss1 + loss2
+
+        total_loss = 0.0
+        accumulated_losses = None
+
+        for batch, subkey in zip(batches, rngs):
+            p_mask, model_mask, thetas, xs, acq, target_score = _unpack_batch(batch)
+            losses = tuple(
+                model.loss_fn(
+                    subkey,
+                    model_mask=model_mask,
+                    theta=thetas,
+                    x=xs,
+                    acq=acq,
+                    mask_prior=p_mask,
+                    target_score=target_score,
+                    weight_by_complexity=cfg.train.weight_by_complexity,
+                    cut_off_tsm=cfg.train.cut_off_tsm,
+                )
+            )
+            if accumulated_losses is None:
+                accumulated_losses = losses
+            else:
+                accumulated_losses = tuple(acc + loss for acc, loss in zip(accumulated_losses, losses))
+            loss1 = cfg.train.model_selection_weight * losses[0]
+            loss2 = cfg.train.model_inference_loss_weight * losses[1]
+            total_loss = total_loss + loss1 + loss2
+
+        normaliser = 1.0 / num_batches
+        total_loss = total_loss * normaliser
+        averaged_losses = tuple(loss * normaliser for loss in accumulated_losses)
         _, _, _, new_state = nnx.split(model, nnx.Param, nnx.Intermediate, ...)
-        return total_loss, (losses, new_state)
+        return total_loss, (averaged_losses, new_state)
 
     return loss_fn
 
@@ -342,7 +406,7 @@ def train_loop(
     update_step,
     checkpoint_manager: CheckpointManager,
     evaluator,
-    loader: Any,
+    loaders: Sequence[Any],
     eval_loader: Any,
     track_ema: bool,
     ema_transform: Optional[optax.GradientTransformation],
@@ -353,8 +417,11 @@ def train_loop(
     wandb_active: bool,
 ):
     """Main training loop."""
+    loaders = list(loaders)
+    if not loaders:
+        raise ValueError("At least one training dataloader is required.")
     inner_steps = cfg.train.inner_steps
-    datastream = iter(loader)
+    datastreams = [iter(loader) for loader in loaders]
     start_time = time.time()
     log.info(f"Maximum training time: {max_train_hours} hours")
 
@@ -363,7 +430,8 @@ def train_loop(
         loss_theta = []
         for _ in range(inner_steps):
             train_state.rng, subkey = jax.random.split(train_state.rng)
-            data = next(datastream)
+            batches = tuple(next(stream) for stream in datastreams)
+            data = batches if len(batches) > 1 else batches[0]
             (
                 train_state.params,
                 train_state.model_state,
@@ -385,7 +453,7 @@ def train_loop(
         loss_mask = float(sum(loss_mask) / len(loss_mask))
         loss_theta = float(sum(loss_theta) / len(loss_theta))
         total_loss_value = float(loss_mask + loss_theta)
-        queue_size = get_queue_size(loader)
+        queue_size = sum(get_queue_size(loader) for loader in loaders)
         log.info(
             f"Step {train_state.step}, Loss mask: {loss_mask}, Loss theta: {loss_theta}, data_queue_size: {queue_size}"
         )
@@ -494,6 +562,7 @@ def train_loop(
                             rebuild_optimizer=False,
                         )
                         log.info(f"Recovered to step {train_state.step}")
+                        datastreams = [iter(loader) for loader in loaders]
             except Exception as err:  # pragma: no cover - defensive logging
                 log.error(f"Error during recovery: {err}")
                 log.warning("Continuing without recovery.")
@@ -545,7 +614,7 @@ def _main(cfg: DictConfig):
 
     log.info("Building simulator")
     log.info(f"Simulator cfg: {cfg.simulator}")
-    sim_type, simulator = build_simulator(cfg)
+    sim_type, simulators = build_simulator(cfg)
     log.info(f"Simulator type: {sim_type}")
 
     model = build_model(cfg, sim_type)
@@ -564,7 +633,6 @@ def _main(cfg: DictConfig):
         keep_best=cfg.get("keep_best_checkpoint", True),
         recovery_threshold=cfg.get("recovery_threshold", float("inf")),
         continue_training=cfg.train.get("continue_training", False),
-        use_async=cfg.get("use_async_checkpointing", True),
     )
 
     optimizer = build_optimizer(cfg.train.optimizer)
@@ -592,7 +660,7 @@ def _main(cfg: DictConfig):
         optimizer, loss_fn, cfg.train.track_ema, ema_transform
     )
 
-    loader, eval_loader = create_dataloaders(cfg, simulator)
+    train_loaders, eval_loader = create_dataloaders(cfg, simulators)
 
     inner_steps = cfg.train.inner_steps
     checkpoint_freq = align_to_inner_steps(
@@ -615,7 +683,7 @@ def _main(cfg: DictConfig):
         update_step=update_step,
         checkpoint_manager=checkpoint_manager,
         evaluator=evaluator,
-        loader=loader,
+        loaders=train_loaders,
         eval_loader=eval_loader,
         track_ema=cfg.train.track_ema,
         ema_transform=ema_transform,
