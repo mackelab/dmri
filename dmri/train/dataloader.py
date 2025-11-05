@@ -138,47 +138,42 @@ class _SimulationDataset:
 
     def _initialise_buffer(self) -> None:
         self._stop_event.clear()
+        self._write_ptr = 0
 
-        new_buffer: Optional[Any] = None
-        new_leaves: Sequence[np.ndarray] = ()
-        new_tree_def = None
-        write_ptr = 0
+        batch, duration = self._produce_batch()
+        batch_host = self._to_host(batch)
+        batch_leaves = jax.tree_util.tree_leaves(batch_host)
 
-        for _ in range(self._buffer_batches):
-            batch, duration = self._produce_batch()
-            batch_host = self._to_host(batch)
-            batch_leaves = jax.tree_util.tree_leaves(batch_host)
+        tree_def = jax.tree_util.tree_structure(batch_host)
+        buffer = jax.tree_util.tree_map(
+            lambda x: np.empty(
+                (self._dataset_size,) + np.asarray(x).shape[1:], dtype=np.asarray(x).dtype
+            ),
+            batch_host,
+        )
+        buffer_leaves = jax.tree_util.tree_leaves(buffer)
 
-            if new_buffer is None:
-                new_tree_def = jax.tree_util.tree_structure(batch_host)
-                new_buffer = jax.tree_util.tree_map(
-                    lambda x: np.empty(
-                        (self._dataset_size,) + np.asarray(x).shape[1:], dtype=np.asarray(x).dtype
-                    ),
-                    batch_host,
-                )
-                new_leaves = jax.tree_util.tree_leaves(new_buffer)
+        if not buffer_leaves:
+            raise RuntimeError("Simulator returned an empty batch.")
 
-            indices = np.arange(
-                write_ptr, write_ptr + self._batch_size, dtype=np.int64
-            ) % self._dataset_size
-            for buf_leaf, data_leaf in zip(new_leaves, batch_leaves, strict=True):
-                buf_leaf[indices] = data_leaf
-            write_ptr = (write_ptr + self._batch_size) % self._dataset_size
-
-            with self._lock:
-                self._stats["batches_produced"] += 1
-                self._stats["production_time"] += duration
-                self._stats["samples_written"] += len(indices)
-
-        if new_buffer is None or new_tree_def is None:
-            raise RuntimeError("Simulator did not produce any data during initial fill.")
+        for buf_leaf, data_leaf in zip(buffer_leaves, batch_leaves, strict=True):
+            reshaped = buf_leaf.reshape(
+                (self._buffer_batches, self._batch_size) + data_leaf.shape[1:]
+            )
+            reshaped[:] = data_leaf
 
         with self._lock:
-            self._buffer = new_buffer
-            self._buffer_leaves = new_leaves
-            self._tree_def = new_tree_def
-            self._write_ptr = 0
+            self._buffer = buffer
+            self._buffer_leaves = buffer_leaves
+            self._tree_def = tree_def
+            self._stats["batches_produced"] += 1
+            self._stats["production_time"] += duration
+            self._stats["samples_written"] += self._batch_size
+            self._stats["batches_recycled"] += max(0, self._buffer_batches - 1)
+            self._pending_refresh = max(0, self._buffer_batches - 1) * self._batch_size
+
+        with self._condition:
+            self._condition.notify_all()
 
     def _start_producer(self) -> None:
         if self._producer is not None and self._producer.is_alive():
