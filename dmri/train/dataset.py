@@ -10,10 +10,11 @@ to integrate with the rest of the probjax tooling.
 
 from __future__ import annotations
 
+import math
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import jax
 import jax.numpy as jnp
@@ -32,28 +33,20 @@ class SimulationDataset:
         self,
         simulator_fn: Callable[..., SimOutput],
         *,
-        batch_size: int = 128,
+        simulation_batch_size: int = 128,
         rng: RngKey,
         simulation_device: Device,
-        data_device: Optional[Device],
-        jit_simulator: bool,
-        simulator_args: tuple[Any, ...],
-        simulator_kwargs: Dict[str, Any],
+        jit_simulator: bool = True,
         return_numpy: bool = False,
-        buffer_size: int = 100_000,
-        queue_timeout: Optional[float],
+        buffer_size: int = 4096,
     ) -> None:
-        del queue_timeout  # API compatibility; no longer used.
-
         self._simulator_fn = simulator_fn
-        self._simulator_args = simulator_args
-        self._simulator_kwargs = simulator_kwargs
-        self._batch_size = int(batch_size)
+        self._batch_size = int(simulation_batch_size)
         self._simulation_device = simulation_device
-        self._data_device = data_device
         self._return_numpy = return_numpy
 
-        self._buffer_batches = max(1, int(buffer_size))
+        # Round buffer up to a whole number of batches for clean ring writes.
+        self._buffer_batches = max(1, math.ceil(int(buffer_size) / self._batch_size))
         self._dataset_size = self._buffer_batches * self._batch_size
 
         self._initial_rng = rng
@@ -64,9 +57,9 @@ class SimulationDataset:
         self._condition = threading.Condition(self._lock)
 
         self._batched_simulator = self._build_batched_simulator(jit_simulator)
-        self._producer: Optional[threading.Thread] = None
+        self._producer: threading.Thread | None = None
 
-        self._buffer: Optional[Any] = None
+        self._buffer: Any | None = None
         self._buffer_leaves: Sequence[np.ndarray] = ()
         self._tree_def = None
         self._write_ptr = 0
@@ -74,11 +67,8 @@ class SimulationDataset:
 
         self._stats = {
             "batches_produced": 0,
-            "batches_consumed": 0,
             "production_time": 0.0,
-            "queue_wait_time": 0.0,
             "batches_recycled": 0,
-            "samples_served": 0,
             "samples_written": 0,
             "batches_requested": 0,
             "samples_requested": 0,
@@ -105,13 +95,11 @@ class SimulationDataset:
         self._request_refresh(idxs.shape[0])
         return batch
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         with self._lock:
             return dict(self._stats)
 
-    def reset(
-        self, *, seed: Optional[int] = None, rng: Optional[RngKey] = None
-    ) -> None:
+    def reset(self, *, seed: int | None = None, rng: RngKey | None = None) -> None:
         if rng is not None and seed is not None:
             raise ValueError("Provide either rng or seed, not both.")
         if rng is None:
@@ -168,8 +156,6 @@ class SimulationDataset:
             self._stats["batches_produced"] += 1
             self._stats["production_time"] += duration
             self._stats["samples_written"] += self._batch_size
-            self._stats["batches_recycled"] += max(0, self._buffer_batches - 1)
-            self._pending_refresh = max(0, self._buffer_batches - 1) * self._batch_size
 
         with self._condition:
             self._condition.notify_all()
@@ -226,9 +212,7 @@ class SimulationDataset:
         self, jit_simulator: bool
     ) -> Callable[[RngKey], SimOutput]:
         def single_call(key: RngKey) -> SimOutput:
-            return self._simulator_fn(
-                key, *self._simulator_args, **self._simulator_kwargs
-            )
+            return self._simulator_fn(key)
 
         batched = jax.vmap(single_call)
         if jit_simulator:
@@ -264,11 +248,9 @@ class SimulationDataset:
     def _convert_for_consumer(self, batch: Any) -> Any:
         if self._return_numpy:
             return batch
-        if self._data_device is not None:
-            return jax.tree_util.tree_map(
-                lambda x: jax.device_put(x, self._data_device), batch
-            )
-        return jax.tree_util.tree_map(jnp.asarray, batch)
+        return jax.tree_util.tree_map(
+            lambda x: jnp.asarray(x, device=self._simulation_device), batch
+        )
 
     def _normalise_indices(self, index: Any) -> tuple[np.ndarray, bool]:
         if isinstance(index, slice):

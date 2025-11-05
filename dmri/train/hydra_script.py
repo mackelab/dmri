@@ -22,8 +22,8 @@ from omegaconf import DictConfig, ListConfig, OmegaConf
 from dmri.train.build_model import build_model
 from dmri.train.build_simulator import build_simulator
 from dmri.train.checkpointing import CheckpointManager
-from dmri.train.evaluator import build_pure_eval_fns
 from dmri.train.dataset import instantiate_dataloader
+from dmri.train.evaluator import build_pure_eval_fns
 
 # Backends
 
@@ -129,9 +129,7 @@ def _resolve_device_spec(
         kind = device_spec.get("kind")
         index = device_spec.get("index", 0)
     else:
-        raise TypeError(
-            f"Unsupported device specification type: {type(device_spec)}"
-        )
+        raise TypeError(f"Unsupported device specification type: {type(device_spec)}")
     devices = jax.devices(kind) if kind else jax.devices()
     if not devices:
         raise ValueError(f"No devices available for specification {device_spec!r}")
@@ -219,38 +217,31 @@ def create_dataloaders(
         else {}
     )
 
-    def build_dataset_params(base: dict[str, Any], override: dict[str, Any], rng) -> dict[str, Any]:
+    def build_dataset_params(
+        base: dict[str, Any], override: dict[str, Any], rng
+    ) -> dict[str, Any]:
         params = dict(base)
         params.update(override)
 
-        batch_size = params.get("batch_size")
+        batch_size = params.get("simulation_batch_size")
         if batch_size is None:
             raise ValueError(
                 "cfg.train.dataloader.dataset.batch_size must be specified."
             )
-        buffer_size = params.get("buffer_size", 1)
+        buffer_size = params.get("buffer_size", 4096)
         jit_simulator = params.get("jit_simulator", True)
 
-        params["batch_size"] = int(batch_size)
+        params["simulation_batch_size"] = int(batch_size)
         params["buffer_size"] = max(1, int(buffer_size))
         params["jit_simulator"] = bool(jit_simulator)
 
-        simulator_args = params.pop("simulator_args", ())
-        simulator_kwargs = params.pop("simulator_kwargs", {})
-        params["simulator_args"] = tuple(simulator_args or ())
-        params["simulator_kwargs"] = dict(simulator_kwargs or {})
-
-        queue_timeout = params.pop("queue_timeout", None)
-        params["queue_timeout"] = queue_timeout
         params["return_numpy"] = bool(params.get("return_numpy", False))
 
         simulation_device_spec = params.pop("simulation_device", None)
-        data_device_spec = params.pop("data_device", None)
         default_device = jax.devices()[0]
         params["simulation_device"] = _resolve_device_spec(
             simulation_device_spec, default=default_device
         )
-        params["data_device"] = _resolve_device_spec(data_device_spec)
 
         provided_rng = params.pop("rng", None)
         provided_seed = params.pop("seed", None)
@@ -262,9 +253,7 @@ def create_dataloaders(
             params["rng"] = rng
         return params
 
-    def build_loader_params(
-        base_cfg: dict[str, Any], *, seed: int
-    ) -> dict[str, Any]:
+    def build_loader_params(base_cfg: dict[str, Any], *, seed: int) -> dict[str, Any]:
         params = dict(base_cfg)
         batch_size = params.get("batch_size")
         if batch_size is None:
@@ -286,16 +275,16 @@ def create_dataloaders(
         dataset_params = build_dataset_params(dataset_base_cfg, override, rng)
         train_datasets.append(dataset_type(simulator, **dataset_params))
 
-    val_dataset_params = build_dataset_params(dataset_base_cfg, val_dataset_override, val_rng)
+    val_dataset_params = build_dataset_params(
+        dataset_base_cfg, val_dataset_override, val_rng
+    )
     val_dataset = dataset_type(simulators[0], **val_dataset_params)
 
     train_loaders = []
     for index, (dataset, loader_cfg) in enumerate(
         zip(train_datasets, train_loader_overrides)
     ):
-        loader_params = build_loader_params(
-            loader_cfg, seed=base_seed + index
-        )
+        loader_params = build_loader_params(loader_cfg, seed=base_seed + index)
         train_loaders.append(
             instantiate_dataloader(
                 dataset,

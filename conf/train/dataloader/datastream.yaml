@@ -1,17 +1,13 @@
 name: SimulationDataset
 
 dataset:
-  batch_size: 512
+  simulation_batch_size: 512
   buffer_size: 131072
   jit_simulator: true
-  simulator_args: []
-  simulator_kwargs: {}
-  queue_timeout: null
   return_numpy: false
   simulation_device:
     kind: cpu
     index: 0
-  data_device: null
 
 train_loader:
   batch_size: 4096
