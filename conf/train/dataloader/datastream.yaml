@@ -2,7 +2,7 @@ name: SimulationDataset
 
 dataset:
   batch_size: 512
-  buffer_size: 256
+  buffer_size: 131072
   jit_simulator: true
   simulator_args: []
   simulator_kwargs: {}
@@ -23,10 +23,10 @@ train_loader:
   num_async_workers: 1
 
 val_dataset:
-  buffer_size: 64
+  buffer_size: 512
 
 val_loader:
-  batch_size: 512
+  batch_size: 128
   shuffle: false
   drop_last: false
   loop: true
