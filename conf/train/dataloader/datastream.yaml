@@ -1,3 +1,34 @@
 name: SimulationDataset
-batch_size: 4096
-shuffle: true
+
+dataset:
+  batch_size: 512
+  buffer_size: 256
+  jit_simulator: true
+  simulator_args: []
+  simulator_kwargs: {}
+  queue_timeout: null
+  return_numpy: false
+  simulation_device:
+    kind: cpu
+    index: 0
+  data_device: null
+
+train_loader:
+  batch_size: 4096
+  shuffle: true
+  drop_last: true
+  loop: true
+  num_prefetch_host: 16
+  num_prefetch_device: 2
+  num_async_workers: 1
+
+val_dataset:
+  buffer_size: 64
+
+val_loader:
+  batch_size: 512
+  shuffle: false
+  drop_last: false
+  loop: true
+  num_prefetch_host: 16
+  num_prefetch_device: 2

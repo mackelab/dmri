@@ -7,7 +7,7 @@ hydra:
     params:
       wandb.project: new_multishell_ball3stick
       train.ema_decay: 0.9999
-      train.dataloader.val_params.batch_size: 64
+      train.dataloader.val_loader.batch_size: 64
       train.continue_training: true
       train.restart_optimizer: true
 

@@ -9,7 +9,7 @@ hydra:
       model.model_dim: 128
       model.inference_net.params.num_layers: 8
       model.model_selection_net.params.num_layers: 6
-      train.dataloader.val_params.batch_size: 128
+      train.dataloader.val_loader.batch_size: 128
       train.optimizer.scheduler_params.transition_steps: 500_000
       train.optimizer.ema_decay: 0.99
 

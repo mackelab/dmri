@@ -7,7 +7,7 @@ hydra:
     params:
       wandb.project: all_models
       train.ema_decay: 0.9999
-      train.dataloader.val_params.batch_size: 64
+      train.dataloader.val_loader.batch_size: 64
       model.model_dim: 512
       train.continue_training: true
 
