@@ -4,20 +4,21 @@ import os
 import random
 import socket
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Optional, Sequence
+from typing import Any, Optional
 
-memory_fraction = 0.9  # Use 98% of available memory
-os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = str(memory_fraction)
-
+# memory_fraction = 0.9  # Use 98% of available memory
+# os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = str(memory_fraction)
 import hydra
 import jax
 import numpy as np
 import optax
+import wandb
 from flax import nnx
+from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
 
-import wandb
 from dmri.train.build_model import build_model
 from dmri.train.build_simulator import build_simulator
 from dmri.train.checkpointing import CheckpointManager
@@ -59,7 +60,7 @@ def configure_environment(cfg: DictConfig) -> tuple[logging.Logger, str, str]:
     log = logging.getLogger(__name__)
     log.info(OmegaConf.to_yaml(cfg))
 
-    hydra_cfg = hydra.core.hydra_config.HydraConfig.get()
+    hydra_cfg = HydraConfig.get()
     output_dir = hydra_cfg.runtime.output_dir
     output_super_dir = os.path.dirname(output_dir)
     while os.path.basename(output_super_dir) != cfg.name:
@@ -67,7 +68,6 @@ def configure_environment(cfg: DictConfig) -> tuple[logging.Logger, str, str]:
         if parent == output_super_dir:
             break
         output_super_dir = parent
-
     log.info(f"Working directory : {os.getcwd()}")
     log.info(f"Output directory  : {output_dir}")
     log.info(f"Output super directory: {output_super_dir}")
@@ -92,7 +92,7 @@ def seed_everything(seed: int) -> jax.Array:
     return jax.random.key(seed)
 
 
-def _normalise_loader_params(params_cfg: Any, count: int) -> list[dict[str, Any]]:
+def _normalise_loader_params(params_cfg: Any, count: int) -> list[dict[Any, Any]]:
     """Convert Hydra loader params into a list of dictionaries."""
     container = OmegaConf.to_container(params_cfg, resolve=True)
     if isinstance(container, list):
@@ -107,37 +107,27 @@ def _normalise_loader_params(params_cfg: Any, count: int) -> list[dict[str, Any]
     raise TypeError(f"Unsupported loader parameter type: {type(container)}")
 
 
-def _instantiate_loader(loader_type: Any, simulator_fn: Any, params: dict[str, Any]) -> Any:
-    params = dict(params)  # shallow copy
-    dataloader_kwargs = params.pop("dataloader_kwargs", None)
-    if dataloader_kwargs:
-        params.update(dataloader_kwargs)
-    loader = loader_type(simulator_fn=simulator_fn, **params)
-    if hasattr(loader, "reset"):
-        loader.reset()
-    return loader
-
-
-def create_dataloaders(cfg: DictConfig, simulators: Sequence[Any]) -> tuple[list[Any], Any]:
+def create_dataloaders(
+    cfg: DictConfig, simulators: Sequence[Any]
+) -> tuple[list[Any], Any]:
     """Instantiate training and evaluation dataloaders."""
-    loader_module = importlib.import_module("dmri.train.dataloader")
-    loader_type = getattr(loader_module, cfg.train.dataloader.name)
+    dataset_module = importlib.import_module("dmri.train.dataset")
+    dataset_type = getattr(dataset_module, cfg.train.dataloader.name)
     simulators = list(simulators)
     if not simulators:
         raise ValueError("Expected at least one simulator callable.")
+    train_datasets = []
+    for simulator in simulators:
+        dataset = dataset_type(simulator)
+        train_datasets.append(dataset)
+    val_dataset = dataset_type(simulators[0])
+    from probjax.nn.io_util import DataLoader
 
-    train_loader_params_list = _normalise_loader_params(
-        cfg.train.dataloader.train_params, max(1, len(simulators))
-    )
-    train_simulators = simulators[: len(train_loader_params_list)]
     train_loaders = [
-        _instantiate_loader(loader_type, sim_fn, params)
-        for sim_fn, params in zip(train_simulators, train_loader_params_list)
+        DataLoader(train_dataset, batch_size=256) for train_dataset in train_datasets
     ]
-
-    eval_params = _normalise_loader_params(cfg.train.dataloader.val_params, 1)[0]
-    eval_loader = _instantiate_loader(loader_type, simulators[0], eval_params)
-    return train_loaders, eval_loader
+    val_loader = DataLoader(val_dataset, batch_size=256)
+    return train_loaders, val_loader
 
 
 def align_to_inner_steps(
@@ -164,8 +154,6 @@ def initialize_ema_state(
     if not track_ema or ema_transform is None:
         return None
     ema_state = ema_transform.init(params)
-    if hasattr(ema_state, "_replace"):
-        ema_state = ema_state._replace(ema=tree_copy(params))
     return ema_state
 
 
@@ -181,7 +169,7 @@ def get_ema_params(ema_state: Optional[Any]) -> Optional[Any]:
 
 def apply_checkpoint_to_state(
     train_state: TrainState,
-    checkpoint: dict[str, Any],
+    checkpoint: Any | dict[str, Any],
     cfg: DictConfig,
     optimizer: optax.GradientTransformation,
     ema_transform: Optional[optax.GradientTransformation],
@@ -205,7 +193,7 @@ def apply_checkpoint_to_state(
             if cfg.train.track_ema and "params_ema" in checkpoint
             else train_state.params
         )
-        train_state.opt_state = optimizer.init(reference)
+        train_state.opt_state = optimizer.init(reference)  # type: ignore
     else:
         train_state.opt_state = checkpoint["optimizer_state"]
 
@@ -311,14 +299,6 @@ def resume_from_checkpoint(
 def build_loss_fn(cfg: DictConfig, graphdef: Any, static: Any):
     """Create the loss function closure."""
 
-    def _unpack_batch(batch):
-        if cfg.simulator.with_posterior_score:
-            p_mask, model_mask, thetas, xs, acq, target_score = batch
-        else:
-            p_mask, model_mask, thetas, xs, acq = batch
-            target_score = None
-        return p_mask, model_mask, thetas, xs, acq, target_score
-
     def loss_fn(params, state, data, rng):
         if isinstance(data, (tuple, list)):
             batches = tuple(data)
@@ -332,37 +312,25 @@ def build_loss_fn(cfg: DictConfig, graphdef: Any, static: Any):
         model = nnx.merge(graphdef, params, static, state, copy=True)
         model.train()
 
-        total_loss = 0.0
-        accumulated_losses = None
+        loss1 = []
+        loss2 = []
 
         for batch, subkey in zip(batches, rngs):
-            p_mask, model_mask, thetas, xs, acq, target_score = _unpack_batch(batch)
-            losses = tuple(
-                model.loss_fn(
-                    subkey,
-                    model_mask=model_mask,
-                    theta=thetas,
-                    x=xs,
-                    acq=acq,
-                    mask_prior=p_mask,
-                    target_score=target_score,
-                    weight_by_complexity=cfg.train.weight_by_complexity,
-                    cut_off_tsm=cfg.train.cut_off_tsm,
-                )
+            losses = model.loss_fn(
+                subkey,
+                **batch,
+                weight_by_complexity=cfg.train.weight_by_complexity,
+                cut_off_tsm=cfg.train.cut_off_tsm,
             )
-            if accumulated_losses is None:
-                accumulated_losses = losses
-            else:
-                accumulated_losses = tuple(acc + loss for acc, loss in zip(accumulated_losses, losses))
-            loss1 = cfg.train.model_selection_weight * losses[0]
-            loss2 = cfg.train.model_inference_loss_weight * losses[1]
-            total_loss = total_loss + loss1 + loss2
+            loss1.append(losses[0])
+            loss2.append(losses[1])
 
         normaliser = 1.0 / num_batches
-        total_loss = total_loss * normaliser
-        averaged_losses = tuple(loss * normaliser for loss in accumulated_losses)
+        loss1 = cfg.train.model_selection_weight * normaliser * sum(loss1)
+        loss2 = cfg.train.model_inference_loss_weight * normaliser * sum(loss2)
+        total_loss = loss1 + loss2
         _, _, _, new_state = nnx.split(model, nnx.Param, nnx.Intermediate, ...)
-        return total_loss, (averaged_losses, new_state)
+        return total_loss, (loss1, loss2, new_state)
 
     return loss_fn
 
@@ -379,14 +347,14 @@ def build_update_fn(
 
     @jax.jit
     def update(params, state, opt_state, ema_state, data, rng):
-        (total_loss, (losses, new_state)), grads = jax.value_and_grad(
+        (total_loss, (loss1, loss2, new_state)), grads = jax.value_and_grad(
             loss_fn, has_aux=True
         )(params, state, data, rng)
         updates, opt_state = optimizer.update(grads, opt_state, params=params)
         new_params = optax.apply_updates(params, updates)
         if use_ema:
-            _, ema_state = ema_transform.update(new_params, ema_state)
-        return new_params, new_state, opt_state, ema_state, losses, total_loss
+            _, ema_state = ema_transform.update(new_params, ema_state)  # type: ignore
+        return new_params, new_state, opt_state, ema_state, (loss1, loss2), total_loss
 
     return update
 
@@ -438,7 +406,7 @@ def train_loop(
                 train_state.opt_state,
                 train_state.ema_state,
                 losses,
-                total_loss,
+                _,
             ) = update_step(
                 train_state.params,
                 train_state.model_state,
@@ -466,14 +434,12 @@ def train_loop(
             train_state.opt_state = optimizer.init(reference)
 
         if wandb_active:
-            wandb.log(
-                {
-                    "loss mask": loss_mask,
-                    "loss theta": loss_theta,
-                    "queue_size": queue_size,
-                    "step": train_state.step,
-                }
-            )
+            wandb.log({
+                "loss mask": loss_mask,
+                "loss theta": loss_theta,
+                "queue_size": queue_size,
+                "step": train_state.step,
+            })
 
         elapsed_hours = (time.time() - start_time) / 3600
         if elapsed_hours >= max_train_hours:
@@ -506,19 +472,19 @@ def train_loop(
                 eval_loader,
                 iters=cfg.train.eval.nnl_theta.iters,
             )
-            log.info(
-                f"Mask NLL: {mask_nnl}, Theta NLL: {theta_nnl}"
-            )
+            log.info(f"Mask NLL: {mask_nnl}, Theta NLL: {theta_nnl}")
             if wandb_active:
-                wandb.log(
-                    {
-                        "mask_negative_log_likelihood": float(mask_nnl),
-                        "theta_negative_log_likelihood": float(theta_nnl),
-                        "step": train_state.step,
-                    }
-                )
+                wandb.log({
+                    "mask_negative_log_likelihood": float(mask_nnl),
+                    "theta_negative_log_likelihood": float(theta_nnl),
+                    "step": train_state.step,
+                })
 
-        if checkpoint_freq and train_state.step > 0 and train_state.step % checkpoint_freq == 0:
+        if (
+            checkpoint_freq
+            and train_state.step > 0
+            and train_state.step % checkpoint_freq == 0
+        ):
             log.info(f"Saving checkpoint at step {train_state.step}")
             save_training_checkpoint(
                 checkpoint_manager,
@@ -542,7 +508,9 @@ def train_loop(
                         step=latest_step,
                         params=train_state.params,
                         optimizer_state=train_state.opt_state,
-                        params_ema=get_ema_params(train_state.ema_state) if track_ema else None,
+                        params_ema=get_ema_params(train_state.ema_state)
+                        if track_ema
+                        else None,
                         model_state=train_state.model_state,
                         ema_state=train_state.ema_state if track_ema else None,
                         rng=train_state.rng,

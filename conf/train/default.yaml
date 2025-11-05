@@ -19,4 +19,4 @@ eval:
 
 defaults:
   - optimizer: radam
-  - dataloader: datastream_large_batch
+  - dataloader: datastream
