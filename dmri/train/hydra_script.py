@@ -17,12 +17,13 @@ import optax
 import wandb
 from flax import nnx
 from hydra.core.hydra_config import HydraConfig
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, ListConfig, OmegaConf
 
 from dmri.train.build_model import build_model
 from dmri.train.build_simulator import build_simulator
 from dmri.train.checkpointing import CheckpointManager
 from dmri.train.evaluator import build_pure_eval_fns
+from dmri.train.dataset import instantiate_dataloader
 
 # Backends
 
@@ -94,7 +95,14 @@ def seed_everything(seed: int) -> jax.Array:
 
 def _normalise_loader_params(params_cfg: Any, count: int) -> list[dict[Any, Any]]:
     """Convert Hydra loader params into a list of dictionaries."""
-    container = OmegaConf.to_container(params_cfg, resolve=True)
+    if params_cfg is None:
+        return [dict() for _ in range(count)]
+    if isinstance(params_cfg, (DictConfig, ListConfig)):
+        container = OmegaConf.to_container(params_cfg, resolve=True)
+    else:
+        container = params_cfg
+    if container is None:
+        return [dict() for _ in range(count)]
     if isinstance(container, list):
         entries = [dict(entry) for entry in container]
         if len(entries) < count:
@@ -107,26 +115,207 @@ def _normalise_loader_params(params_cfg: Any, count: int) -> list[dict[Any, Any]
     raise TypeError(f"Unsupported loader parameter type: {type(container)}")
 
 
+def _resolve_device_spec(
+    device_spec: Any, *, default: Optional[jax.Device] = None
+) -> Optional[jax.Device]:
+    """Resolve a device specification into a concrete ``jax.Device``."""
+    if device_spec is None:
+        return default
+    if isinstance(device_spec, str):
+        kind_part, _, index_part = device_spec.strip().partition(":")
+        kind = kind_part or None
+        index = int(index_part) if index_part else 0
+    elif isinstance(device_spec, dict):
+        kind = device_spec.get("kind")
+        index = device_spec.get("index", 0)
+    else:
+        raise TypeError(
+            f"Unsupported device specification type: {type(device_spec)}"
+        )
+    devices = jax.devices(kind) if kind else jax.devices()
+    if not devices:
+        raise ValueError(f"No devices available for specification {device_spec!r}")
+    index = int(index)
+    if index < 0 or index >= len(devices):
+        raise ValueError(
+            f"Device index {index} out of range for specification {device_spec!r}"
+        )
+    return devices[index]
+
+
+def _ensure_prng_key(value: Any) -> jax.Array:
+    """Normalise user-provided RNG representations to a JAX PRNGKey."""
+    if isinstance(value, jax.Array):
+        return value
+    if isinstance(value, (np.ndarray, list, tuple)):
+        raise TypeError(
+            "Provide integer seeds for RNG configuration, not array-like values."
+        )
+    return jax.random.PRNGKey(int(value))
+
+
 def create_dataloaders(
     cfg: DictConfig, simulators: Sequence[Any]
 ) -> tuple[list[Any], Any]:
     """Instantiate training and evaluation dataloaders."""
     dataset_module = importlib.import_module("dmri.train.dataset")
-    dataset_type = getattr(dataset_module, cfg.train.dataloader.name)
+    loader_name = cfg.train.dataloader.name
+    dataset_type = getattr(dataset_module, loader_name)
     simulators = list(simulators)
     if not simulators:
         raise ValueError("Expected at least one simulator callable.")
-    train_datasets = []
-    for simulator in simulators:
-        dataset = dataset_type(simulator)
-        train_datasets.append(dataset)
-    val_dataset = dataset_type(simulators[0])
-    from probjax.nn.io_util import DataLoader
 
-    train_loaders = [
-        DataLoader(train_dataset, batch_size=256) for train_dataset in train_datasets
-    ]
-    val_loader = DataLoader(val_dataset, batch_size=256)
+    loader_cfg_dict = OmegaConf.to_container(cfg.train.dataloader, resolve=True)
+    if not isinstance(loader_cfg_dict, dict):
+        raise TypeError("cfg.train.dataloader must resolve to a mapping.")
+
+    dataset_base_cfg = loader_cfg_dict.get("dataset")
+    if not isinstance(dataset_base_cfg, dict):
+        raise ValueError(
+            "cfg.train.dataloader.dataset must be defined and resolve to a mapping."
+        )
+
+    train_dataset_overrides = _normalise_loader_params(
+        loader_cfg_dict.get("train_dataset"), len(simulators)
+    )
+    val_dataset_override = _normalise_loader_params(
+        loader_cfg_dict.get("val_dataset"), 1
+    )[0]
+
+    train_loader_section = loader_cfg_dict.get("train_loader")
+    if train_loader_section is None:
+        train_loader_section = loader_cfg_dict.get("train_params")
+    val_loader_section = loader_cfg_dict.get("val_loader")
+    if val_loader_section is None:
+        val_loader_section = loader_cfg_dict.get("val_params")
+
+    train_loader_overrides = _normalise_loader_params(
+        train_loader_section, len(simulators)
+    )
+
+    if not any(train_loader_overrides):
+        default_train_loader = {
+            key: loader_cfg_dict[key]
+            for key in ("batch_size", "shuffle", "drop_last")
+            if key in loader_cfg_dict
+        }
+        if not default_train_loader:
+            raise ValueError(
+                "cfg.train.dataloader.train_loader.batch_size (or legacy keys) must be provided."
+            )
+        train_loader_overrides = [
+            dict(default_train_loader) for _ in range(len(simulators))
+        ]
+
+    for override in train_loader_overrides:
+        if override.get("batch_size") is None:
+            raise ValueError(
+                "Each train dataloader configuration must specify batch_size."
+            )
+
+    val_loader_override = (
+        _normalise_loader_params(val_loader_section, 1)[0]
+        if val_loader_section is not None
+        else {}
+    )
+
+    def build_dataset_params(base: dict[str, Any], override: dict[str, Any], rng) -> dict[str, Any]:
+        params = dict(base)
+        params.update(override)
+
+        batch_size = params.get("batch_size")
+        if batch_size is None:
+            raise ValueError(
+                "cfg.train.dataloader.dataset.batch_size must be specified."
+            )
+        buffer_size = params.get("buffer_size", 1)
+        jit_simulator = params.get("jit_simulator", True)
+
+        params["batch_size"] = int(batch_size)
+        params["buffer_size"] = max(1, int(buffer_size))
+        params["jit_simulator"] = bool(jit_simulator)
+
+        simulator_args = params.pop("simulator_args", ())
+        simulator_kwargs = params.pop("simulator_kwargs", {})
+        params["simulator_args"] = tuple(simulator_args or ())
+        params["simulator_kwargs"] = dict(simulator_kwargs or {})
+
+        queue_timeout = params.pop("queue_timeout", None)
+        params["queue_timeout"] = queue_timeout
+        params["return_numpy"] = bool(params.get("return_numpy", False))
+
+        simulation_device_spec = params.pop("simulation_device", None)
+        data_device_spec = params.pop("data_device", None)
+        default_device = jax.devices()[0]
+        params["simulation_device"] = _resolve_device_spec(
+            simulation_device_spec, default=default_device
+        )
+        params["data_device"] = _resolve_device_spec(data_device_spec)
+
+        provided_rng = params.pop("rng", None)
+        provided_seed = params.pop("seed", None)
+        if provided_rng is not None:
+            params["rng"] = _ensure_prng_key(provided_rng)
+        elif provided_seed is not None:
+            params["rng"] = jax.random.PRNGKey(int(provided_seed))
+        else:
+            params["rng"] = rng
+        return params
+
+    def build_loader_params(
+        base_cfg: dict[str, Any], *, seed: int
+    ) -> dict[str, Any]:
+        params = dict(base_cfg)
+        batch_size = params.get("batch_size")
+        if batch_size is None:
+            raise ValueError("Each dataloader configuration must specify batch_size.")
+        params["batch_size"] = int(batch_size)
+        if params.get("seed") is None:
+            params["seed"] = seed
+        return params
+
+    base_seed = int(cfg.seed)
+    rngs = jax.random.split(jax.random.PRNGKey(base_seed), len(simulators) + 1)
+    train_rngs = rngs[: len(simulators)]
+    val_rng = rngs[-1]
+
+    train_datasets = []
+    for simulator, override, rng in zip(
+        simulators, train_dataset_overrides, train_rngs
+    ):
+        dataset_params = build_dataset_params(dataset_base_cfg, override, rng)
+        train_datasets.append(dataset_type(simulator, **dataset_params))
+
+    val_dataset_params = build_dataset_params(dataset_base_cfg, val_dataset_override, val_rng)
+    val_dataset = dataset_type(simulators[0], **val_dataset_params)
+
+    train_loaders = []
+    for index, (dataset, loader_cfg) in enumerate(
+        zip(train_datasets, train_loader_overrides)
+    ):
+        loader_params = build_loader_params(
+            loader_cfg, seed=base_seed + index
+        )
+        train_loaders.append(
+            instantiate_dataloader(
+                dataset,
+                loader_params,
+                seed=base_seed + index,
+            )
+        )
+
+    if val_loader_override.get("batch_size") is None:
+        val_loader_override["batch_size"] = train_loader_overrides[0]["batch_size"]
+    val_loader_params = build_loader_params(
+        val_loader_override, seed=base_seed + len(simulators)
+    )
+    val_loader = instantiate_dataloader(
+        val_dataset,
+        val_loader_params,
+        seed=base_seed + len(simulators),
+        default_shuffle=False,
+        default_drop_last=False,
+    )
     return train_loaders, val_loader
 
 

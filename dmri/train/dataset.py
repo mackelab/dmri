@@ -12,12 +12,14 @@ from __future__ import annotations
 
 import threading
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Dict, Optional
 
 import jax
 import jax.numpy as jnp
 import numpy as np
+from omegaconf import DictConfig, ListConfig, OmegaConf
+from probjax.nn.io_util import DataLoader
 from probjax.utils.typing import Device, RngKey
 
 SimOutput = Any
@@ -294,3 +296,45 @@ class SimulationDataset:
         with self._lock:
             self._stats["batches_consumed"] += 1
             self._stats["samples_served"] += int(sample_count)
+
+
+def _config_to_mapping(config: Any) -> dict[str, Any]:
+    """Convert OmegaConf/Mapping configs into a plain dictionary."""
+    if config is None:
+        return {}
+    if isinstance(config, (DictConfig, ListConfig)):
+        container = OmegaConf.to_container(config, resolve=True)
+    else:
+        container = config
+    if container is None:
+        return {}
+    if isinstance(container, Mapping):
+        return dict(container)
+    raise TypeError(f"Unsupported dataloader config type {type(config)}")
+
+
+def instantiate_dataloader(
+    dataset: Any,
+    loader_cfg: Any,
+    *,
+    seed: Optional[int] = None,
+    default_shuffle: Optional[bool] = None,
+    default_drop_last: Optional[bool] = None,
+) -> DataLoader:
+    """Instantiate a probjax DataLoader with normalised parameters."""
+    params = _config_to_mapping(loader_cfg)
+
+    batch_size = params.get("batch_size")
+    if batch_size is None:
+        raise ValueError("Dataloader configuration must include batch_size.")
+    params["batch_size"] = int(batch_size)
+
+    if default_shuffle is not None and "shuffle" not in params:
+        params["shuffle"] = bool(default_shuffle)
+    if default_drop_last is not None and "drop_last" not in params:
+        params["drop_last"] = bool(default_drop_last)
+
+    if seed is not None and params.get("seed") is None:
+        params["seed"] = int(seed)
+
+    return DataLoader(dataset, **params)
