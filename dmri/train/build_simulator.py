@@ -24,11 +24,6 @@ def build_simulator(cfg: DictConfig):
     acq_params = cfg.simulator.acquisition_scheme.params
     acq_schemes = acq_params.schemes
 
-    # if acq_scheme_name == "multi":
-    #     acq_schemes = acq_params.schemes
-    # else:
-    #     acq_schemes = [{"name": acq_scheme_name, "params": acq_params}]
-
     simulators = []
 
     for acq_scheme in acq_schemes:
@@ -82,10 +77,17 @@ def build_simulator(cfg: DictConfig):
                 model_noise_mask = model_noise_mask.at[model_noise_idx].set(True)
                 model_mask = jnp.concatenate([model_mask, model_noise_mask], axis=-1)
 
+                output = {
+                    "mask_prior": p_mask,
+                    "model_mask": model_mask,
+                    "theta": theta,
+                    "acq": acq,
+                }
+
                 if not with_posterior_score:
                     dmri_simulator = sim_type.from_theta(theta, model_mask=model_mask)
-                    x_o = dmri_simulator.signal(acq, rng=rng5)
-                    return p_mask, model_mask, theta, x_o, acq
+                    x = dmri_simulator.signal(acq, rng=rng5)
+                    output["x"] = x
                 else:
 
                     def posterior_potential(theta):
@@ -100,7 +102,9 @@ def build_simulator(cfg: DictConfig):
                         ).sum() + jax.scipy.stats.norm.logpdf(theta, 0, 1).sum(-1), x_o
 
                     score, x_o = jax.grad(posterior_potential, has_aux=True)(theta)
-                    return p_mask, model_mask, theta, x_o, acq, score
+                    output["x"] = x_o
+                    output["target_score"] = score
+                return output
 
             return simulator
 
