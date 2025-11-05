@@ -108,7 +108,7 @@ def test_gpu_dataloader(single_simulator):
     loader = create_loader(
         single_simulator,
         data_device="gpu",
-        simulation_device="cpu",
+        simulation_device="gpu",
         num_batches=1,
     )
 
