@@ -10,10 +10,10 @@ def build_pure_eval_fns(graphdef, static, sim_type):
     def sample_masks(params, state, rng, data):
         model = nnx.merge(graphdef, params, static, state, copy=True)
         model.eval()
-        p_mask = data[0]
-        thetas = data[2]
-        xs = data[3]
-        acq = data[4]
+        p_mask = data['mask_prior']
+        thetas = data['theta']
+        xs = data['x']
+        acq = data['acq']
         sample_fn = jax.vmap(model.sample_mask)
         rngs = jax.random.split(rng, len(thetas))
         masks_sampled = sample_fn(rngs, acq, xs, p_mask)
@@ -24,10 +24,10 @@ def build_pure_eval_fns(graphdef, static, sim_type):
         model = nnx.merge(graphdef, params, static, state, copy=True)
         model.eval()
 
-        p_mask = data[0]
-        model_mask = data[1]
-        xs = data[3]
-        acq = data[4]
+        p_mask = data['mask_prior']
+        model_mask = data['model_mask']
+        xs = data['x']
+        acq = data['acq']
         return jax.vmap(model.log_prob_mask)(model_mask, acq, xs, p_mask)
 
     @jax.jit
@@ -35,10 +35,10 @@ def build_pure_eval_fns(graphdef, static, sim_type):
         model = nnx.merge(graphdef, params, static, state, copy=True)
         model.eval()
 
-        model_mask = data[1]
-        xs = data[3]
-        acq = data[4]
-        thetas = data[2]
+        model_mask = data['model_mask']
+        xs = data['x']
+        acq = data['acq']
+        thetas = data['theta']
         sample_fn = jax.vmap(model.sample_theta)
         rngs = jax.random.split(rng, len(thetas))
         sample_fn = jax.vmap(
@@ -51,10 +51,10 @@ def build_pure_eval_fns(graphdef, static, sim_type):
         model = nnx.merge(graphdef, params, static, state, copy=True)
         model.eval()
 
-        model_mask = data[1]
-        xs = data[3]
-        acq = data[4]
-        thetas = data[2]
+        model_mask = data['model_mask']
+        xs = data['x']
+        acq = data['acq']
+        thetas = data['theta']
         sample_fn = partial(
             model.log_prob_theta, num_steps=num_steps, max_noise=max_noise, min_noise=min_noise, rho=rho
         )
@@ -67,10 +67,10 @@ def build_pure_eval_fns(graphdef, static, sim_type):
         model = nnx.merge(graphdef, params, static, state, copy=True)
         model.eval()
 
-        model_mask = data[1]
-        xs = data[3]
-        acq = data[4]
-        thetas = data[2]
+        model_mask = data['model_mask']
+        xs = data['x']
+        acq = data['acq']
+        thetas = data['theta']
         rngs = jax.random.split(rng, xs.shape[0])
         thetas, log_probs = jax.vmap(
             partial(
@@ -85,10 +85,10 @@ def build_pure_eval_fns(graphdef, static, sim_type):
 
     @jax.jit
     def true_loglikelihood(data):
-        model_mask = data[1]
-        thetas = data[2]
-        xs = data[3]
-        acq = data[4]
+        model_mask = data['model_mask']
+        thetas = data['theta']
+        xs = data['x']
+        acq = data['acq']
 
         def single_ll(theta, model_mask, acq, x):
             simulator = sim_type.from_theta(theta, model_mask=model_mask)
@@ -99,8 +99,8 @@ def build_pure_eval_fns(graphdef, static, sim_type):
 
     @jax.jit
     def true_posterior(data):
-        _, _, thetas, _, _ = data
         ll = true_loglikelihood(data)
+        thetas = data['theta']
         prior_logprob = jax.scipy.stats.norm.logpdf(thetas).sum(-1)
         return ll + prior_logprob
 

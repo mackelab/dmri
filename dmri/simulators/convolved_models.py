@@ -15,7 +15,7 @@ from dmri.simulators.sphereical_distributions import (
 
 
 class SignalKernel(Compartment):
-    vmap_on_sphere: bool = False
+    vmap_on_sphere: bool = True
 
     @classmethod
     @abstractmethod
@@ -30,8 +30,8 @@ class SignalKernel(Compartment):
         kernel = partial(self.kernel_fn, **self.params)
         # This her can be quite memory intensive so might be better to use a for loop
         if type(self).vmap_on_sphere:
-            signal = jax.vmap(kernel, in_axes=(0, None))(
-                hemisphere_default.vertices, acq
+            signal = jax.vmap(partial(kernel, acq))(
+                hemisphere_default.vertices
             )
             sh_coeff = inverse_real_sh @ signal.squeeze()
         else:

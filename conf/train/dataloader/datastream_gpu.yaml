@@ -1,12 +1,12 @@
 name: SimulationDataset
 
 dataset:
-  simulation_batch_size: 256
+  simulation_batch_size: 1024
   buffer_size: 131072
   jit_simulator: true
   return_numpy: false
   simulation_device:
-    kind: cpu
+    kind: gpu
     index: 0
 
 train_loader:
