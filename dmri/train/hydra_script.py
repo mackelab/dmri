@@ -273,7 +273,10 @@ def create_dataloaders(
         simulators, train_dataset_overrides, train_rngs
     ):
         dataset_params = build_dataset_params(dataset_base_cfg, override, rng)
-        train_datasets.append(dataset_type(simulator, **dataset_params))
+        init = jax.vmap(simulator)(jax.random.split(rng, 2**14))
+        dataset = dataset_type(simulator, **dataset_params)
+        dataset.set_data(init)
+        train_datasets.append(dataset)
 
     val_dataset_params = build_dataset_params(
         dataset_base_cfg, val_dataset_override, val_rng
@@ -569,8 +572,30 @@ def train_loop(
     inner_steps = cfg.train.inner_steps
     datastreams = [iter(loader) for loader in loaders]
     start_time = time.time()
-    log.info(f"Maximum training time: {max_train_hours} hours")
 
+    log.info("Compiling training and evaluation step...")
+    _ = update_step(
+        train_state.params,
+        train_state.model_state,
+        train_state.opt_state,
+        train_state.ema_state,
+        next(datastreams[0]),
+        train_state.rng,
+    )
+    _ = evaluator.eval_nnl_mask(
+                train_state.params,
+                train_state.model_state,
+                eval_loader,
+                iters=cfg.train.eval.nnl_mask.iters,
+            )
+    _ = evaluator.eval_nnl_theta(
+                train_state.params,
+                train_state.model_state,
+                eval_loader,
+                iters=cfg.train.eval.nnl_theta.iters,
+            )
+
+    log.info(f"Maximum training time: {max_train_hours} hours")
     while True:
         loss_mask = []
         loss_theta = []

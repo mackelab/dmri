@@ -38,7 +38,7 @@ class SimulationDataset:
         simulation_device: Device,
         jit_simulator: bool = True,
         return_numpy: bool = False,
-        buffer_size: int = 4096,
+        buffer_size: int = 8192,
     ) -> None:
         self._simulator_fn = simulator_fn
         self._batch_size = int(simulation_batch_size)
@@ -76,6 +76,14 @@ class SimulationDataset:
 
         self._initialise_buffer()
         self._start_producer()
+
+    def __del__(self) -> None:
+        """Cleanup: stop producer thread when object is deleted."""
+        try:
+            self.close()
+        except Exception:
+            # Suppress exceptions during cleanup to avoid errors in __del__
+            pass
 
     def __len__(self) -> int:
         return self._dataset_size
@@ -118,9 +126,109 @@ class SimulationDataset:
         self._start_producer()
 
     def close(self) -> None:
+        """Stop the producer thread and clean up resources."""
+        self._stop_producer()
+        with self._lock:
+            self._buffer = None
+            self._buffer_leaves = ()
+            self._tree_def = None
+
+    def set_data(self, data: Any) -> None:
+        """Replace the internal buffer with user-provided data.
+
+        Parameters
+        ----------
+        data : Any
+            A PyTree of arrays with a leading sample dimension. Leaves must be
+            array-like and broadcast-consistent in their first dimension.
+        start_producer : bool, default False
+            If True, (re)start the background producer after setting the buffer.
+            By default we keep the dataset static and the producer stopped.
+        """
+        # Stop producer while we mutate the buffer
         self._stop_producer()
 
+        # Convert to host NumPy, validate tree & batch dimension
+        data_host = jax.tree_util.tree_map(lambda x: np.asarray(jax.device_get(x)), data)
+        leaves = jax.tree_util.tree_leaves(data_host)
+        if not leaves:
+            raise ValueError("set_data: Provided data has no leaves.")
+
+        # Infer N (samples) and validate consistent leading dim
+        try:
+            N = int(leaves[0].shape[0])
+        except Exception as e:
+            raise ValueError("set_data: Could not infer leading dimension.") from e
+        for i, lf in enumerate(leaves[1:], start=1):
+            if lf.shape[0] != N:
+                raise ValueError(
+                    f"set_data: Leaf 0 has N={N} but leaf {i} has N={lf.shape[0]}."
+                )
+
+        if N <= 0:
+            raise ValueError("set_data: Need at least one sample.")
+
+        # Round up to a whole number of batches
+        batch_size = self._batch_size
+        buffer_batches = max(1, math.ceil(N / batch_size))
+        dataset_size = buffer_batches * batch_size
+
+        # Build new buffer with rounded size and copy data (pad by wrap if needed)
+        tree_def = jax.tree_util.tree_structure(data_host)
+        new_buffer = jax.tree_util.tree_map(
+            lambda x: np.empty((dataset_size,) + x.shape[1:], dtype=x.dtype),
+            data_host,
+        )
+        new_buffer_leaves = jax.tree_util.tree_leaves(new_buffer)
+
+        if N == dataset_size:
+            # Exact fit
+            for buf_leaf, data_leaf in zip(new_buffer_leaves, leaves, strict=True):
+                buf_leaf[:] = data_leaf
+        else:
+            # Copy the N samples, then pad by wrapping from the start
+            for buf_leaf, data_leaf in zip(new_buffer_leaves, leaves, strict=True):
+                buf_leaf[:N] = data_leaf
+                remaining = dataset_size - N
+                if remaining > 0:
+                    # Wrap (repeat from the start) to fill the last partial batch
+                    wrap_src = data_leaf[:remaining % N if N != 0 else 0] if remaining > N else data_leaf[:remaining]
+                    # If remaining > N, tile then slice (avoids large loops)
+                    if remaining > N:
+                        reps = (remaining + N - 1) // N
+                        tiled = np.concatenate([data_leaf] * reps, axis=0)
+                        buf_leaf[N:] = tiled[:remaining]
+                    else:
+                        buf_leaf[N:] = wrap_src
+
+        # Reset internal state and stats
+        with self._lock:
+            self._buffer = new_buffer
+            self._buffer_leaves = new_buffer_leaves
+            self._tree_def = tree_def
+            self._write_ptr = 0
+            self._pending_refresh = 0
+
+            # Update size bookkeeping to match the new buffer
+            self._buffer_batches = buffer_batches
+            self._dataset_size = dataset_size
+
+            # Reset (only) counters that logically depend on production
+            self._stats.update({
+                "batches_produced": 0,
+                "production_time": 0.0,
+                "batches_recycled": 0,
+                "samples_written": dataset_size,
+                "batches_requested": 0,
+                "samples_requested": 0,
+            })
+
+        # Optionally restart the producer (kept off by default for a fixed dataset)
+        self._start_producer()
+
+
     # --- internal helpers ------------------------------------------------------------
+
 
     def _initialise_buffer(self) -> None:
         self._stop_event.clear()
@@ -156,6 +264,8 @@ class SimulationDataset:
             self._stats["batches_produced"] += 1
             self._stats["production_time"] += duration
             self._stats["samples_written"] += self._batch_size
+            # Request refresh of entire buffer so producer starts working immediately
+            self._pending_refresh = self._dataset_size
 
         with self._condition:
             self._condition.notify_all()
@@ -201,6 +311,7 @@ class SimulationDataset:
                 self._stats["production_time"] += duration
 
     def _produce_batch(self) -> tuple[Any, float]:
+        # Split keeps arrays on same device as input (simulation_device)
         self._sim_rng, key = jax.random.split(self._sim_rng)
         keys = jax.random.split(key, self._batch_size)
         start = time.perf_counter()

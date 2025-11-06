@@ -69,7 +69,7 @@ class CheckpointManager:
         if ema_state is not None:
             items["ema_state"] = ocp.args.StandardSave(ema_state)
         if rng is not None:
-            items["rng"] = ocp.args.StandardSave(rng)
+            items["rng"] = ocp.args.ArraySave(rng)
         return ocp.args.Composite(**items)
 
     def _build_restore_args(
@@ -95,7 +95,7 @@ class CheckpointManager:
         if ema_state is not None:
             items["ema_state"] = ocp.args.StandardRestore(ema_state)
         if rng is not None:
-            items["rng"] = ocp.args.StandardRestore(rng)
+            items["rng"] = ocp.args.ArrayRestore(rng)
         return ocp.args.Composite(**items)
 
     def save(

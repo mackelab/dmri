@@ -7,15 +7,13 @@ hydra:
     params:
       wandb.project: all_models
       train.ema_decay: 0.9999
-      train.dataloader.val_loader.batch_size: 64
       model.model_dim: 512
-      train.continue_training: true
 
 
 defaults:
   - _self_
   - override /partition: h100_long
   - override /simulator: all_models
-  - override /train/dataloader: datastream_large_batch_small_sim
+  - override /train/dataloader: datastream_gpu
   #- override /simulator/acquisition_scheme: multi
   - override /model: mask_amortized_pp_global_ctx
