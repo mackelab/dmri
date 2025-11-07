@@ -1,4 +1,5 @@
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -53,6 +54,7 @@ class FiberField(VoxelizedCurve):
             rng=rng,
         )
 
+
 class FiberPrior:
     r"""
     A class for generating fiber prior distributions in 3D space.
@@ -81,14 +83,13 @@ class FiberPrior:
         else:
             probs = jnp.asarray(degree_probs, dtype=jnp.float32)
             if probs.shape != (self.max_degree,):
-                raise ValueError(
-                    "degree_probs must have length equal to max_degree"
-                )
+                raise ValueError("degree_probs must have length equal to max_degree")
         probs = jnp.clip(probs, 1e-8, None)
         return probs / jnp.sum(probs)
 
     def sample(
-        self, rng: Any,
+        self,
+        rng: Any,
     ) -> VoxelizedCurve | tuple[VoxelizedCurve, Any]:
         """Sample from the fiber prior distribution and voxelize the result."""
         rng1, rng2, rng3 = jax.random.split(rng, 3)
@@ -159,7 +160,12 @@ def plot_voxelized_fiber_field(
     indices = np.argwhere(vf > threshold)
     fig = ax if isinstance(ax, go.Figure) else go.Figure()
 
-    def add_grid_wireframe(target_fig: go.Figure, *, line_color: str = "rgba(160,160,160,0.6)", line_width: float = 1.0) -> None:
+    def add_grid_wireframe(
+        target_fig: go.Figure,
+        *,
+        line_color: str = "rgba(160,160,160,0.6)",
+        line_width: float = 1.0,
+    ) -> None:
         x_edges = np.linspace(grid.x_min, grid.x_max, grid.n_voxels_x + 1)
         y_edges = np.linspace(grid.y_min, grid.y_max, grid.n_voxels_y + 1)
         z_edges = np.linspace(grid.z_min, grid.z_max, grid.n_voxels_z + 1)
@@ -210,9 +216,9 @@ def plot_voxelized_fiber_field(
         )
         return fig, fig
 
-    centers = np.array(
-        [grid.get_voxel_center(int(ix), int(iy), int(iz)) for ix, iy, iz in indices]
-    )
+    centers = np.array([
+        grid.get_voxel_center(int(ix), int(iy), int(iz)) for ix, iy, iz in indices
+    ])
     strengths = vf[indices[:, 0], indices[:, 1], indices[:, 2]]
 
     if not show_tangents_only:
@@ -297,9 +303,7 @@ def plot_voxelized_fiber_field(
             raise ValueError(
                 "tangents must have the same spatial shape as volume_fractions"
             )
-        tangent_vectors = tangents_arr[
-            indices[:, 0], indices[:, 1], indices[:, 2], :
-        ]
+        tangent_vectors = tangents_arr[indices[:, 0], indices[:, 1], indices[:, 2], :]
         norms = np.linalg.norm(tangent_vectors, axis=1, keepdims=True)
         safe_norms = np.where(norms > 0, norms, 1.0)
         tangent_vectors = tangent_vectors / safe_norms
@@ -326,7 +330,9 @@ def plot_voxelized_fiber_field(
         )
 
     if curves is not None:
-        if not isinstance(curves, Sequence) or isinstance(curves, (Curve3D, VoxelizedCurve)):
+        if not isinstance(curves, Sequence) or isinstance(
+            curves, (Curve3D, VoxelizedCurve)
+        ):
             curve_list = [curves]
         else:
             curve_list = list(curves)
@@ -361,7 +367,9 @@ def plot_voxelized_fiber_field(
                 )
             )
 
-    title = "Fiber tangents" if show_tangents_only else "Voxelized fiber volume fractions"
+    title = (
+        "Fiber tangents" if show_tangents_only else "Voxelized fiber volume fractions"
+    )
     fig.update_layout(
         title=title,
         scene=dict(

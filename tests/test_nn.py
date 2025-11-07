@@ -20,8 +20,6 @@ from dmri.nn.embedding_net import (
 )
 from dmri.nn.simformer import (
     DMRIThetaInferenceConfig,
-    EDMSimformer,
-    GaussianFourierEmbedding,
 )
 from dmri.nn.tokenizer import DMRITokenizer
 from dmri.simulators import Ball2Stick, Ball3Stick, BallStickZeppelinNoise

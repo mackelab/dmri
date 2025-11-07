@@ -17,9 +17,7 @@ from dmri.simulators.local_signal_models import (
     Ball,
     Dti,
     NoddiB,
-    NoddiW,
     SandiB,
-    SandiW,
     SSFPStaticBall,
     SSFPStaticStick,
     StaticBall,
@@ -37,8 +35,6 @@ from dmri.simulators.noise_compartments import (
     BoundedRicianNoise,
     RicianNoiseSNR310,
     RicianNoiseSNR1020,
-    RicianNoiseSNR2030,
-    RicianNoiseSNR3040,
 )
 from dmri.simulators.sphereical_distributions import MixtureOfFODs
 from dmri.utils.dmriutils import ssfp_signal_fn
@@ -91,9 +87,7 @@ class MultiCompartment(SignalCompartment):
         split_dims.extend(n.theta_dim for n in cls.noise_types)
         cls._split_dims = tuple(split_dims)
         if len(split_dims) > 1:
-            cls._split_indices = tuple(
-                np.cumsum(split_dims, dtype=int)[:-1].tolist()
-            )
+            cls._split_indices = tuple(np.cumsum(split_dims, dtype=int)[:-1].tolist())
         else:
             cls._split_indices = ()
 
@@ -181,9 +175,7 @@ class MultiCompartment(SignalCompartment):
         # Add noise
         num_noise = len(noise_compartments)
         if rng is not None and num_noise > 0:
-            noise_mask = cls._noise_mask(
-                model_mask, len(model_compartments), num_noise
-            )
+            noise_mask = cls._noise_mask(model_mask, len(model_compartments), num_noise)
             noise_outputs = [
                 noise_compartments[i].noise(base_signal, rng) for i in range(num_noise)
             ]
@@ -375,9 +367,7 @@ class MultiCompartment(SignalCompartment):
             for i in range(num_noise)
         ]
         stacked_ll = jnp.stack(ll_values, axis=0)
-        mask_weights = self._mask_weights(
-            noise_mask, stacked_ll.ndim, stacked_ll.dtype
-        )
+        mask_weights = self._mask_weights(noise_mask, stacked_ll.ndim, stacked_ll.dtype)
         return jnp.sum(stacked_ll * mask_weights, axis=0)
 
 
@@ -669,13 +659,13 @@ class AllGaussianAndConvolvedModels(MultiCompartment):
         + 3 * [Stick]
         + 3 * [Zeppelin]
         + 1 * [NoddiB]
-        #+ 1 * [NoddiW]
+        # + 1 * [NoddiW]
         + 1 * [SandiB]
-        #+ 1 * [SandiW]
+        # + 1 * [SandiW]
     )
     noise_types = [
         BoundedGaussianNoise,
     ] + [
         BoundedRicianNoise,
     ]
-    fraction_prior = jnp.ones(1 + 3 + 3 + 1 + 1 )
+    fraction_prior = jnp.ones(1 + 3 + 3 + 1 + 1)

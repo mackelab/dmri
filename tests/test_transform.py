@@ -1,13 +1,14 @@
+from typing import Callable, Optional
+
 import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from typing import Callable, Optional, Tuple
 
 from dmri.utils.transform import (
     dirichlet_to_normal,
-    normal_to_dirichlet,
     eps_mask,
+    normal_to_dirichlet,
 )
 
 # Test configurations
@@ -208,8 +209,10 @@ ROUNDTRIP_TEST_CONFIGS = [
         id="random_15d_masked_bernoulli",
     ),
     pytest.param(
-        jax.random.uniform(jax.random.key(0), shape=(32,))*2 + 0.1,  # alpha
-        np.random.dirichlet(jax.random.uniform(jax.random.key(0), shape=(32,))*2 + 0.1),
+        jax.random.uniform(jax.random.key(0), shape=(32,)) * 2 + 0.1,  # alpha
+        np.random.dirichlet(
+            jax.random.uniform(jax.random.key(0), shape=(32,)) * 2 + 0.1
+        ),
         jnp.array(np.random.uniform(size=32) > 0.5).at[0].set(True),
         id="random_32d_masked_bernoulli",
     ),
@@ -287,7 +290,7 @@ def test_normal_dirichlet_invertibility(
 
     # The recovered pi should match the original pi
     assert jnp.allclose(pi, pi_recovered, rtol=1e-4, atol=1e-4), (
-        "normal_to_dirichlet should be the inverse of dirichlet_to_normal, error is {}, with mask {}".format(jnp.abs(pi - pi_recovered), mask)
+        f"normal_to_dirichlet should be the inverse of dirichlet_to_normal, error is {jnp.abs(pi - pi_recovered)}, with mask {mask}"
     )
 
     # Test direction 2: eps -> pi -> eps_recovered
@@ -295,7 +298,7 @@ def test_normal_dirichlet_invertibility(
 
     # The recovered eps should match the original eps
     assert jnp.allclose(eps, eps_recovered, rtol=1e-4, atol=1e-4), (
-        "dirichlet_to_normal should be the inverse of normal_to_dirichlet, error is {}, with mask {}".format(jnp.abs(eps - eps_recovered), mask)
+        f"dirichlet_to_normal should be the inverse of normal_to_dirichlet, error is {jnp.abs(eps - eps_recovered)}, with mask {mask}"
     )
 
     # Additional checks for numerical stability
@@ -331,4 +334,6 @@ def test_eps_mask(d, seed):
     pi = mask.astype(jnp.float32) / jnp.sum(mask)
     eps = dirichlet_to_normal(alpha, pi, mask)
     mask_pred = eps_mask(mask)
-    assert (~mask_pred == jnp.isclose(eps, 0.0)).all(), 'eps_mask did not identify zero eps correctly'
+    assert (~mask_pred == jnp.isclose(eps, 0.0)).all(), (
+        "eps_mask did not identify zero eps correctly"
+    )

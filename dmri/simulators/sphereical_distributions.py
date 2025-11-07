@@ -228,9 +228,15 @@ def odi2kappa(odi):
 
 def get_sh_order_from_odi(odi):
     "Returns minimum sh_order to estimate spherical harmonics for given odi."
-    odis = np.array(
-        [0.80606061, 0.46666667, 0.25333333, 0.15636364, 0.09818182, 0.06909091, 0.0]
-    )
+    odis = np.array([
+        0.80606061,
+        0.46666667,
+        0.25333333,
+        0.15636364,
+        0.09818182,
+        0.06909091,
+        0.0,
+    ])
     sh_orders = np.arange(2, 15, 2)
     return sh_orders[np.argmax(odis < odi)]
 
@@ -586,9 +592,10 @@ class Watson(SphericalDistribution):
         # Map theta -> [0,1]
         u1 = theta / (jnp.pi / 2.0)
 
-        mu_theta = jnp.array(
-            [jax.scipy.stats.norm.ppf(u0), jax.scipy.stats.norm.ppf(u1)]
-        )
+        mu_theta = jnp.array([
+            jax.scipy.stats.norm.ppf(u0),
+            jax.scipy.stats.norm.ppf(u1),
+        ])
 
         # Map odi -> uniform in [odi_min, odi_max]
         odi_unif = (odi - cls.odi_min) / (cls.odi_max - cls.odi_min)

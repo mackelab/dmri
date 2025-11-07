@@ -58,12 +58,16 @@ def orthoview_quiver_plotly(
         y0 = Y - V * scale
         y1 = Y + V * scale
 
-        x_lines = np.vstack(
-            [x0.flatten(), x1.flatten(), np.full(X.size, np.nan)]
-        ).T.flatten()
-        y_lines = np.vstack(
-            [y0.flatten(), y1.flatten(), np.full(X.size, np.nan)]
-        ).T.flatten()
+        x_lines = np.vstack([
+            x0.flatten(),
+            x1.flatten(),
+            np.full(X.size, np.nan),
+        ]).T.flatten()
+        y_lines = np.vstack([
+            y0.flatten(),
+            y1.flatten(),
+            np.full(X.size, np.nan),
+        ]).T.flatten()
 
         return [
             go.Scatter(
@@ -106,9 +110,9 @@ def orthoview_quiver_plotly(
             traces = plot_func(idx)
             for trace in traces:
                 fig.add_trace(trace, row=row, col=col)
-            trace_groups.append(
-                [len(fig.data) - len(traces) + i for i in range(len(traces))]
-            )
+            trace_groups.append([
+                len(fig.data) - len(traces) + i for i in range(len(traces))
+            ])
         all_trace_groups[axis_name] = trace_groups
 
         if len(slice_list) > 1:
@@ -122,13 +126,11 @@ def orthoview_quiver_plotly(
                 # Turn on selected group
                 for idx_ in group:
                     vis[idx_] = True
-                steps.append(
-                    {
-                        "method": "update",
-                        "label": f"{slice_list[i]}",
-                        "args": [{"visible": vis}],
-                    }
-                )
+                steps.append({
+                    "method": "update",
+                    "label": f"{slice_list[i]}",
+                    "args": [{"visible": vis}],
+                })
             fig.update_layout(
                 sliders=list(fig.layout.sliders)
                 + [
@@ -342,6 +344,7 @@ def orthoview_quiver_ultracompact(
             stride_x = max(1, slice_data.shape[1] // target_width)
 
             return slice_data[::stride_y, ::stride_x]
+
     else:
         # No downsampling function
         def downsample_slice(slice_data, quality):
@@ -606,25 +609,21 @@ def orthoview_quiver_ultracompact(
                 step_data["y"].append(quiver.y)
 
         # Create a single step for this slice
-        x_steps.append(
-            {
-                "method": "restyle",
-                "label": str(x_idx),
-                "args": [step_data, step_indices],
-            }
-        )
+        x_steps.append({
+            "method": "restyle",
+            "label": str(x_idx),
+            "args": [step_data, step_indices],
+        })
 
-    sliders.append(
-        {
-            "active": x_indices.index(x_slice) if x_slice in x_indices else 0,
-            "currentvalue": {"prefix": "X: " if simplified_ui else "X Slice: "},
-            "steps": x_steps,
-            "x": 0.05,
-            "y": 0.0,
-            "len": 0.25,
-            "pad": {"t": 50},
-        }
-    )
+    sliders.append({
+        "active": x_indices.index(x_slice) if x_slice in x_indices else 0,
+        "currentvalue": {"prefix": "X: " if simplified_ui else "X Slice: "},
+        "steps": x_steps,
+        "x": 0.05,
+        "y": 0.0,
+        "len": 0.25,
+        "pad": {"t": 50},
+    })
 
     # Y slider
     y_steps = []
@@ -672,25 +671,21 @@ def orthoview_quiver_ultracompact(
                 step_data["y"].append(quiver.y)
 
         # Create a single step for this slice
-        y_steps.append(
-            {
-                "method": "restyle",
-                "label": str(y_idx),
-                "args": [step_data, step_indices],
-            }
-        )
+        y_steps.append({
+            "method": "restyle",
+            "label": str(y_idx),
+            "args": [step_data, step_indices],
+        })
 
-    sliders.append(
-        {
-            "active": y_indices.index(y_slice) if y_slice in y_indices else 0,
-            "currentvalue": {"prefix": "Y: " if simplified_ui else "Y Slice: "},
-            "steps": y_steps,
-            "x": 0.35,
-            "y": 0.0,
-            "len": 0.25,
-            "pad": {"t": 50},
-        }
-    )
+    sliders.append({
+        "active": y_indices.index(y_slice) if y_slice in y_indices else 0,
+        "currentvalue": {"prefix": "Y: " if simplified_ui else "Y Slice: "},
+        "steps": y_steps,
+        "x": 0.35,
+        "y": 0.0,
+        "len": 0.25,
+        "pad": {"t": 50},
+    })
 
     # Z slider
     z_steps = []
@@ -738,25 +733,21 @@ def orthoview_quiver_ultracompact(
                 step_data["y"].append(quiver.y)
 
         # Create a single step for this slice
-        z_steps.append(
-            {
-                "method": "restyle",
-                "label": str(z_idx),
-                "args": [step_data, step_indices],
-            }
-        )
+        z_steps.append({
+            "method": "restyle",
+            "label": str(z_idx),
+            "args": [step_data, step_indices],
+        })
 
-    sliders.append(
-        {
-            "active": z_indices.index(z_slice) if z_slice in z_indices else 0,
-            "currentvalue": {"prefix": "Z: " if simplified_ui else "Z Slice: "},
-            "steps": z_steps,
-            "x": 0.65,
-            "y": 0.0,
-            "len": 0.25,
-            "pad": {"t": 50},
-        }
-    )
+    sliders.append({
+        "active": z_indices.index(z_slice) if z_slice in z_indices else 0,
+        "currentvalue": {"prefix": "Z: " if simplified_ui else "Z Slice: "},
+        "steps": z_steps,
+        "x": 0.65,
+        "y": 0.0,
+        "len": 0.25,
+        "pad": {"t": 50},
+    })
 
     # Channel dropdown - simplified if requested
     updatemenus = []
@@ -785,22 +776,22 @@ def orthoview_quiver_ultracompact(
                 else:
                     visibility.append(False)
 
-            buttons.append(
-                {"method": "update", "label": str(c), "args": [{"visible": visibility}]}
-            )
+            buttons.append({
+                "method": "update",
+                "label": str(c),
+                "args": [{"visible": visibility}],
+            })
 
-        updatemenus.append(
-            {
-                "buttons": buttons,
-                "direction": "right" if simplified_ui else "up",
-                "showactive": True,
-                "active": 0,
-                "x": 0.85,
-                "y": 0.05,
-                "xanchor": "left",
-                "yanchor": "bottom",
-            }
-        )
+        updatemenus.append({
+            "buttons": buttons,
+            "direction": "right" if simplified_ui else "up",
+            "showactive": True,
+            "active": 0,
+            "x": 0.85,
+            "y": 0.05,
+            "xanchor": "left",
+            "yanchor": "bottom",
+        })
 
     # Update layout with all sliders and dropdown
     fig.update_layout(
@@ -1340,6 +1331,7 @@ def orthoview_ultracompact(
             stride_x = max(1, slice_data.shape[1] // target_width)
 
             return slice_data[::stride_y, ::stride_x]
+
     else:
         # No downsampling function
         def downsample_slice(slice_data, quality):
@@ -1568,32 +1560,36 @@ def orthoview_ultracompact(
     return fig
 
 
-
 import numpy as np
-import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
 
 # ---------------------- helpers ----------------------
 def normalize_rows(X: np.ndarray, eps: float = 1e-12):
     n = np.linalg.norm(X, axis=1, keepdims=True) + eps
     return X / n
 
+
 def fibonacci_sphere(n: int) -> np.ndarray:
     # quasi-uniform points on S^2
     i = np.arange(n)
     phi = (1 + 5**0.5) / 2
-    z = 1 - 2*(i + 0.5)/n
-    r = np.sqrt(1 - z*z)
-    theta = 2*np.pi*i/phi
-    x = r*np.cos(theta); y = r*np.sin(theta)
+    z = 1 - 2 * (i + 0.5) / n
+    r = np.sqrt(1 - z * z)
+    theta = 2 * np.pi * i / phi
+    x = r * np.cos(theta)
+    y = r * np.sin(theta)
     return np.vstack([x, y, z]).T
 
-def spherical_kde(points: np.ndarray, grid: np.ndarray, kappa: float, axial: bool=True) -> np.ndarray:
+
+def spherical_kde(
+    points: np.ndarray, grid: np.ndarray, kappa: float, axial: bool = True
+) -> np.ndarray:
     # vMF KDE: sum_i exp(kappa * (μ_i · x)); for axial, also add exp(kappa * (-μ_i · x))
     # All inputs assumed unit vectors.
     MU = points  # (N,3)
-    X = grid     # (M,3)
-    dots = X @ MU.T                # (M,N)
+    X = grid  # (M,3)
+    dots = X @ MU.T  # (M,N)
     s = np.exp(kappa * dots)
     if axial:
         s = s + np.exp(-kappa * dots)
@@ -1602,32 +1598,39 @@ def spherical_kde(points: np.ndarray, grid: np.ndarray, kappa: float, axial: boo
     f = (f - f.min()) / (f.max() - f.min() + 1e-12)
     return f
 
+
 def orientation_rgb(dirs: np.ndarray) -> np.ndarray:
     c = np.abs(dirs)
     c = c / (np.linalg.norm(c, axis=1, keepdims=True) + 1e-12)
     return c
 
-def nonmax_suppression_on_sphere(values: np.ndarray, dirs: np.ndarray, k_neighbors: int = 12):
+
+def nonmax_suppression_on_sphere(
+    values: np.ndarray, dirs: np.ndarray, k_neighbors: int = 12
+):
     # crude NMS: keep points whose value is greater than their k nearest angular neighbors
     # Use dot similarity to approximate neighbor search
-    D = dirs @ dirs.T       # cosine similarity
+    D = dirs @ dirs.T  # cosine similarity
     np.fill_diagonal(D, -np.inf)
-    idx = np.argpartition(-D, kth=k_neighbors, axis=1)[:, :k_neighbors]  # neighbors with highest cosine
+    idx = np.argpartition(-D, kth=k_neighbors, axis=1)[
+        :, :k_neighbors
+    ]  # neighbors with highest cosine
     keep = np.ones(len(values), dtype=bool)
     for i in range(len(values)):
         if not np.all(values[i] >= values[idx[i]]):
             keep[i] = False
     return keep
 
+
 def _set_view(ax, view):
     # Accept 'xy','xz','yz' or 3-vector
     if isinstance(view, str):
         view = view.lower()
-        if view == "xy":      # look along +z
+        if view == "xy":  # look along +z
             elev, azim = 90, -90  # top-down
-        elif view == "xz":    # look along +y
+        elif view == "xz":  # look along +y
             elev, azim = 0, -90
-        elif view == "yz":    # look along +x
+        elif view == "yz":  # look along +x
             elev, azim = 0, 180
         else:
             # default nice isometric
@@ -1637,15 +1640,22 @@ def _set_view(ax, view):
         v = np.asarray(view, float)
         v = v / (np.linalg.norm(v) + 1e-12)
         # Matplotlib's view is defined by elev (degrees from xy) and azim (degrees CCW from x)
-        elev = np.degrees(np.arcsin(v[2]))           # z component -> elevation
-        azim = np.degrees(np.arctan2(v[1], v[0]))    # y,x -> azimuth
+        elev = np.degrees(np.arcsin(v[2]))  # z component -> elevation
+        azim = np.degrees(np.arctan2(v[1], v[0]))  # y,x -> azimuth
     ax.view_init(elev=elev, azim=azim)
 
 
 # --------------------- plotting ----------------------
-def plot_glyph_from_sticks(V: np.ndarray, view: str | np.ndarray = "xy", axial: bool=False, kappa: float=20.0,
-                           grid_points: int=4000, r_scale: float=1.0,
-                           peak_nms_neighbors: int=16, show_peaks: bool=False):
+def plot_glyph_from_sticks(
+    V: np.ndarray,
+    view: str | np.ndarray = "xy",
+    axial: bool = False,
+    kappa: float = 20.0,
+    grid_points: int = 4000,
+    r_scale: float = 1.0,
+    peak_nms_neighbors: int = 16,
+    show_peaks: bool = False,
+):
     V = normalize_rows(np.asarray(V, float))
     # grid on sphere
     G = fibonacci_sphere(grid_points)
@@ -1668,15 +1678,24 @@ def plot_glyph_from_sticks(V: np.ndarray, view: str | np.ndarray = "xy", axial: 
 
     # Use matplotlib.tri for triangulation
     import matplotlib.tri as mtri
-    tri = mtri.Triangulation(P2[:,0], P2[:,1])
 
-    fig = plt.figure(figsize=(7,7))
+    tri = mtri.Triangulation(P2[:, 0], P2[:, 1])
+
+    fig = plt.figure(figsize=(7, 7))
     ax = fig.add_subplot(111, projection="3d")
 
     # draw surface
-    surf = ax.plot_trisurf(verts[:,0], verts[:,1], verts[:,2],
-                           triangles=tri.triangles, linewidth=0.1, antialiased=True,
-                           shade=True, alpha=1.0, edgecolor='none')
+    surf = ax.plot_trisurf(
+        verts[:, 0],
+        verts[:, 1],
+        verts[:, 2],
+        triangles=tri.triangles,
+        linewidth=0.1,
+        antialiased=True,
+        shade=True,
+        alpha=1.0,
+        edgecolor="none",
+    )
     # set vertex colors via face colors approximation
     # Map per-vertex RGB to per-triangle by averaging
     face_rgb = colors[tri.triangles].mean(axis=1)
@@ -1695,28 +1714,40 @@ def plot_glyph_from_sticks(V: np.ndarray, view: str | np.ndarray = "xy", axial: 
 
     # cosmetics
     lim = 1.25 * (0.2 + r_scale)
-    ax.set_xlim([-lim, lim]); ax.set_ylim([-lim, lim]); ax.set_zlim([-lim, lim])
-    ax.set_box_aspect([1,1,1])
-    ax.set_xticks([]); ax.set_yticks([]); ax.set_zticks([])
+    ax.set_xlim([-lim, lim])
+    ax.set_ylim([-lim, lim])
+    ax.set_zlim([-lim, lim])
+    ax.set_box_aspect([1, 1, 1])
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_zticks([])
     _set_view(ax, view)
-    plt.axis('off')
+    plt.axis("off")
 
 
 import numpy as np
-import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
+
 
 def _norm_rows(X, eps=1e-12):
     return X / (np.linalg.norm(X, axis=1, keepdims=True) + eps)
 
+
 def _stereo_project(X):
     x, y, z = X.T
     d = np.clip(1 + z, 1e-9, None)
-    return np.c_[x/d, y/d]
+    return np.c_[x / d, y / d]
+
 
 def plot_stereographic_scatter(
-    V, axial=True, angle_step=30, ring_radii=(0.25, 0.5, 0.75, 1.0),
-    s=14, point_alpha=0.9, point_color="orientation", edge=True
+    V,
+    axial=True,
+    angle_step=30,
+    ring_radii=(0.25, 0.5, 0.75, 1.0),
+    s=14,
+    point_alpha=0.9,
+    point_color="orientation",
+    edge=True,
 ):
     """
     Scatter-only stereographic plot with better visibility.
@@ -1726,7 +1757,7 @@ def plot_stereographic_scatter(
     """
     V = _norm_rows(np.asarray(V, float))
     if axial:
-        V = np.where(V[:,2:3] < 0, -V, V)
+        V = np.where(V[:, 2:3] < 0, -V, V)
 
     UV = _stereo_project(V)
     inside = np.sum(UV**2, axis=1) <= 1.0 + 1e-9
@@ -1738,33 +1769,72 @@ def plot_stereographic_scatter(
     else:
         C = point_color
 
-    fig, ax = plt.subplots(figsize=(5,5))
+    fig, ax = plt.subplots(figsize=(5, 5))
 
     # circular frame
-    boundary = Circle((0,0), 1.0, fill=False, lw=1.8, zorder=2, color="white")
+    boundary = Circle((0, 0), 1.0, fill=False, lw=1.8, zorder=2, color="white")
     ax.add_artist(boundary)
 
     # concentric rings
     for r in ring_radii:
-        ax.add_artist(Circle((0,0), r, fill=False, lw=0.8, ls="--", alpha=0.6, zorder=1, color="white"))
-        ax.text(r/np.sqrt(2), r/np.sqrt(2), f"{r:.2f}", ha="left", va="bottom", fontsize=9, alpha=0.7, zorder=3)
+        ax.add_artist(
+            Circle(
+                (0, 0),
+                r,
+                fill=False,
+                lw=0.8,
+                ls="--",
+                alpha=0.6,
+                zorder=1,
+                color="white",
+            )
+        )
+        ax.text(
+            r / np.sqrt(2),
+            r / np.sqrt(2),
+            f"{r:.2f}",
+            ha="left",
+            va="bottom",
+            fontsize=9,
+            alpha=0.7,
+            zorder=3,
+        )
 
     # spokes
     for deg in range(0, 360, angle_step):
         th = np.deg2rad(deg)
         ax.plot([0, np.cos(th)], [0, np.sin(th)], lw=0.6, ls="--", alpha=0.6, zorder=1)
         rlab = 1.1
-        ax.text(rlab*np.cos(th), rlab*np.sin(th), f"{deg}°", ha="center", va="center", fontsize=9, zorder=3)
+        ax.text(
+            rlab * np.cos(th),
+            rlab * np.sin(th),
+            f"{deg}°",
+            ha="center",
+            va="center",
+            fontsize=9,
+            zorder=3,
+        )
 
     # scatter on top
     zord = 5
     if edge:
-        ax.scatter(UV[:,0], UV[:,1], s=s, c=C, alpha=point_alpha, linewidths=0.3, edgecolors="white", zorder=zord)
+        ax.scatter(
+            UV[:, 0],
+            UV[:, 1],
+            s=s,
+            c=C,
+            alpha=point_alpha,
+            linewidths=0.3,
+            edgecolors="white",
+            zorder=zord,
+        )
     else:
-        ax.scatter(UV[:,0], UV[:,1], s=s, c=C, alpha=point_alpha, linewidths=0, zorder=zord)
+        ax.scatter(
+            UV[:, 0], UV[:, 1], s=s, c=C, alpha=point_alpha, linewidths=0, zorder=zord
+        )
 
     # clip to circle
-    clip_circle = Circle((0,0), 1.0, transform=ax.transData)
+    clip_circle = Circle((0, 0), 1.0, transform=ax.transData)
     for col in ax.collections:
         col.set_clip_path(clip_circle)
 
@@ -1772,5 +1842,8 @@ def plot_stereographic_scatter(
     for spine in ax.spines.values():
         spine.set_visible(False)
     ax.set_frame_on(False)
-    ax.set_xlim(-1,1); ax.set_ylim(-1,1)
-    ax.set_aspect("equal"); ax.set_xticks([]); ax.set_yticks([])
+    ax.set_xlim(-1, 1)
+    ax.set_ylim(-1, 1)
+    ax.set_aspect("equal")
+    ax.set_xticks([])
+    ax.set_yticks([])

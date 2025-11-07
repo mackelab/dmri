@@ -69,7 +69,9 @@ def _parse_slice_value(value, axis_length=None):
         if axis_length is not None and idx < 0:
             idx = axis_length + idx
         if axis_length is not None and (idx < 0 or idx >= axis_length):
-            raise ValueError(f"Slice index {value} is out of bounds for axis length {axis_length}.")
+            raise ValueError(
+                f"Slice index {value} is out of bounds for axis length {axis_length}."
+            )
         return slice(idx, idx + 1, None)
     if isinstance(value, str):
         text = value.strip()
@@ -122,7 +124,9 @@ def _build_slice_tuple(slice_cfg, volume_shape):
     if isinstance(slice_cfg, DictConfig):
         slice_cfg = OmegaConf.to_container(slice_cfg, resolve=True)
     if not isinstance(slice_cfg, dict):
-        raise TypeError(f"Slice configuration must be a mapping, got {type(slice_cfg)}.")
+        raise TypeError(
+            f"Slice configuration must be a mapping, got {type(slice_cfg)}."
+        )
     axes = ("x", "y", "z")
     slices = []
     any_slice_applied = False
@@ -153,7 +157,9 @@ def _apply_slice_to_brain(slice_cfg, brain_mask, data_norm, logger):
     voxels_after = int(np.count_nonzero(brain_mask))
 
     if voxels_after == 0:
-        raise ValueError("Slice selection resulted in zero voxels inside the brain mask.")
+        raise ValueError(
+            "Slice selection resulted in zero voxels inside the brain mask."
+        )
 
     slice_strings = [_slice_to_string(spec) for spec in slice_tuple[:3]]
     cfg_for_logging = (

@@ -1,29 +1,29 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from functools import partial
-from typing import Any, Sequence
+from collections.abc import Sequence
 
-from dmri.utils.transform import dirichlet_to_normal, normal_to_dirichlet
 import jax
 import jax.numpy as jnp
 import numpy as np
 from jax.typing import ArrayLike
 
-from dmri.simulators import Ball, BallStick, Stick, MultiCompartment
+from dmri.simulators import Ball, Stick
 from dmri.simulators.acquisition_scheme import (
     acquisition_scheme,
-    random_hcp_acquisition,
 )
 from dmri.simulators.base import SharedParameterState, SignalCompartment
-from dmri.utils.dmriutils import cartesian_to_unitsphere, unitsphere_to_cartesian
-
 from dmri.simulators.semi_global_signal_models.fiber_prior import (
     FiberField,
 )
+from dmri.utils.dmriutils import cartesian_to_unitsphere
+from dmri.utils.transform import dirichlet_to_normal, normal_to_dirichlet
+
 
 def vmap3d(f, in_axes=0):
-    return jax.vmap(jax.vmap(jax.vmap(f, in_axes=in_axes), in_axes=in_axes), in_axes=in_axes)
+    return jax.vmap(
+        jax.vmap(jax.vmap(f, in_axes=in_axes), in_axes=in_axes), in_axes=in_axes
+    )
+
 
 class FiberConditionedFractionPrior:
     """Deterministic Ball/Stick fractions conditioned on fiber presence."""
@@ -76,9 +76,7 @@ class FiberConditionedFractionPrior:
         if component_mask is not None:
             mask_arr = jnp.asarray(component_mask, dtype=jnp.bool_).reshape(-1)
             if mask_arr.shape[0] != alpha_arr.shape[0]:
-                raise ValueError(
-                    "component_mask must have the same length as alpha"
-                )
+                raise ValueError("component_mask must have the same length as alpha")
             mask_bool = np.asarray(mask_arr, dtype=bool)
         else:
             mask_bool = np.ones(alpha_arr.shape[0], dtype=bool)
@@ -98,12 +96,12 @@ class FiberConditionedFractionPrior:
                 volume_fields.append(None)
 
         if voxel_shape is None:
-            raise ValueError("At least one FiberField is required to infer the voxel grid")
+            raise ValueError(
+                "At least one FiberField is required to infer the voxel grid"
+            )
 
         zero_volume = jnp.zeros(voxel_shape, dtype=jnp.float32)
-        resolved_volumes = [
-            zero_volume if vf is None else vf for vf in volume_fields
-        ]
+        resolved_volumes = [zero_volume if vf is None else vf for vf in volume_fields]
 
         active_fiber_volumes = [
             resolved_volumes[idx]
@@ -142,7 +140,9 @@ class FiberConditionedFractionPrior:
         concentrations = jnp.moveaxis(alpha_updated, 0, -1)
         fractions = jax.random.dirichlet(rng, concentrations)
 
-        mask_broadcast = mask_arr.reshape((1,) * (fractions.ndim - 1) + (mask_arr.shape[0],))
+        mask_broadcast = mask_arr.reshape(
+            (1,) * (fractions.ndim - 1) + (mask_arr.shape[0],)
+        )
         fractions = jnp.where(mask_broadcast, fractions, 0.0)
         denom = fractions.sum(axis=-1, keepdims=True)
         denom_safe = jnp.where(denom > 0, denom, jnp.ones_like(denom))
@@ -155,59 +155,78 @@ class GlobalBall(Ball):
     """Samples Ball compartment parameters conditioned on fiber representation."""
 
     @classmethod
-    def log_signal_fn(cls, acq: acquisition_scheme, lam: ArrayLike, rng=None) -> ArrayLike:
+    def log_signal_fn(
+        cls, acq: acquisition_scheme, lam: ArrayLike, rng=None
+    ) -> ArrayLike:
         in_axes = (None, 0, None if rng is None else 0)
         return vmap3d(super().log_signal_fn, in_axes=in_axes)(acq, lam, rng)
 
     @classmethod
-    def to_theta(cls, lam: ArrayLike, fiber_field: FiberField | None = None) -> jnp.ndarray:
+    def to_theta(
+        cls, lam: ArrayLike, fiber_field: FiberField | None = None
+    ) -> jnp.ndarray:
         del fiber_field
         return vmap3d(super().to_theta)(lam)
 
     @classmethod
-    def to_params(cls, theta: ArrayLike, fiber_field: FiberField | None = None) -> float:
+    def to_params(
+        cls, theta: ArrayLike, fiber_field: FiberField | None = None
+    ) -> float:
         del fiber_field
         return vmap3d(super().to_params)(theta)
 
 
 class GlobalStick(Stick):
-
     @classmethod
-    def log_signal_fn(cls, acq: acquisition_scheme, mu: ArrayLike, lam_par: float, rng=None) -> ArrayLike:
+    def log_signal_fn(
+        cls, acq: acquisition_scheme, mu: ArrayLike, lam_par: float, rng=None
+    ) -> ArrayLike:
         in_axes = (None, 0, 0, None if rng is None else 0)
         return vmap3d(super().log_signal_fn, in_axes=in_axes)(acq, mu, lam_par, rng)
 
     @classmethod
-    def to_theta(cls, mu: ArrayLike, lam_par: ArrayLike, fiber_field: FiberField | None = None) -> jnp.ndarray:
+    def to_theta(
+        cls, mu: ArrayLike, lam_par: ArrayLike, fiber_field: FiberField | None = None
+    ) -> jnp.ndarray:
         if fiber_field is not None:
             theta = vmap3d(super().to_theta)(mu, lam_par)
             theta_lam, theta_mu = theta[..., :1], theta[..., 1:]
             mu_cart_override = fiber_field.tangents
             no_fiber_mask = jnp.all(mu_cart_override == 0, axis=-1)
             # Project to upper hemisphere
-            need_to_flip = mu_cart_override[...,2] < 0
-            mu_cart_override = jnp.where(need_to_flip[..., None], -mu_cart_override, mu_cart_override)
+            need_to_flip = mu_cart_override[..., 2] < 0
+            mu_cart_override = jnp.where(
+                need_to_flip[..., None], -mu_cart_override, mu_cart_override
+            )
             mu_override = vmap3d(cartesian_to_unitsphere)(mu_cart_override)
             # Convert to normalized theta
             mu0_normalized = 1 - jnp.cos(
-                mu_override[...,0]
+                mu_override[..., 0]
             )  # Ensures uniform distribution on upper hemisphere
-            mu0_normalized = jnp.where(no_fiber_mask, theta_mu[...,0], mu0_normalized)
-            mu1_normalized = (mu_override[...,1] + jnp.pi) / (2 * jnp.pi)
-            mu1_normalized = jnp.where(no_fiber_mask, theta_mu[...,1], mu1_normalized)
-            return jnp.concatenate([mu0_normalized[..., None], mu1_normalized[..., None], theta_lam], axis=-1)
+            mu0_normalized = jnp.where(no_fiber_mask, theta_mu[..., 0], mu0_normalized)
+            mu1_normalized = (mu_override[..., 1] + jnp.pi) / (2 * jnp.pi)
+            mu1_normalized = jnp.where(no_fiber_mask, theta_mu[..., 1], mu1_normalized)
+            return jnp.concatenate(
+                [mu0_normalized[..., None], mu1_normalized[..., None], theta_lam],
+                axis=-1,
+            )
         else:
             return vmap3d(super().to_theta)(mu, lam_par)
+
     @classmethod
-    def to_params(cls, theta: ArrayLike, fiber_field: FiberField | None = None) -> tuple[jnp.ndarray, float]:
+    def to_params(
+        cls, theta: ArrayLike, fiber_field: FiberField | None = None
+    ) -> tuple[jnp.ndarray, float]:
         if fiber_field is not None:
             # If we get a fiber representation we have to replace the theta responsible for the directions
             # with the fiber tangent
             mu_uncond, lam_par = vmap3d(super().to_params)(theta)
             mu_cart_override = fiber_field.tangents
             # Project to upper hemisphere
-            need_to_flip = mu_cart_override[...,2] < 0
-            mu_cart_override = jnp.where(need_to_flip[..., None], -mu_cart_override, mu_cart_override)
+            need_to_flip = mu_cart_override[..., 2] < 0
+            mu_cart_override = jnp.where(
+                need_to_flip[..., None], -mu_cart_override, mu_cart_override
+            )
             mu_override = vmap3d(cartesian_to_unitsphere)(mu_cart_override)
             no_fiber_mask = jnp.all(mu_cart_override == 0, axis=-1)
 
@@ -217,13 +236,16 @@ class GlobalStick(Stick):
         else:
             return vmap3d(super().to_params)(theta)
 
+
 class GlobalMultiCompartment(SignalCompartment):
     """MultiCompartment model with Ball and Stick compartments conditioned on fiber representation."""
 
     model_types: list
     noise_types: list
     fraction_prior: ArrayLike  # Dirichelt alpha values
-    fiber_conditioned_fraction: type[FiberConditionedFractionPrior] = FiberConditionedFractionPrior
+    fiber_conditioned_fraction: type[FiberConditionedFractionPrior] = (
+        FiberConditionedFractionPrior
+    )
     shared_parameter_type: type[SharedParameterState] | None = None
     normalizing_fn: Callable | None = None
     pre_normalizing_fn: Callable | None = None
@@ -312,7 +334,6 @@ class GlobalMultiCompartment(SignalCompartment):
     def log_signal_fn(cls, acq, **kwargs):
         return jnp.log(cls.signal_fn(acq, **kwargs))
 
-
     @classmethod
     def split_idx(cls):
         theta_dims_fractions = [len(cls.model_types) - 1]
@@ -374,7 +395,9 @@ class GlobalMultiCompartment(SignalCompartment):
         if fiber_field is not None:
             fractions = fiber_cond_prior.sample(fiber_field, component_mask)
         else:
-            fractions = vmap3d(normal_to_dirichlet,in_axes=(None,0,None))(cls.fraction_prior, fractions, component_mask)
+            fractions = vmap3d(normal_to_dirichlet, in_axes=(None, 0, None))(
+                cls.fraction_prior, fractions, component_mask
+            )
 
         # Apply shared parameter
         if shared_parameter is not None:
@@ -389,7 +412,8 @@ class GlobalMultiCompartment(SignalCompartment):
         if fiber_field is None:
             fiber_field = [None] * len(model_types)
         model_compartments = [
-            m.from_theta(t, fiber_field=f) for m, t, f in zip(model_types, model_thetas, fiber_field)
+            m.from_theta(t, fiber_field=f)
+            for m, t, f in zip(model_types, model_thetas, fiber_field)
         ]
         noise_compartments = [
             m.from_theta(t) for m, t in zip(cls.noise_types, noise_thetas)
@@ -426,7 +450,12 @@ class GlobalMultiCompartment(SignalCompartment):
             theta_parts.append(theta_shared)
 
         if len(model_compartments) > 0:
-            thetas = [m.to_theta(**m.params, fiber_field=f) for m, f in zip(model_compartments, fiber_field or [None]*len(model_compartments))]
+            thetas = [
+                m.to_theta(**m.params, fiber_field=f)
+                for m, f in zip(
+                    model_compartments, fiber_field or [None] * len(model_compartments)
+                )
+            ]
             theta_model = jnp.concatenate(thetas, axis=-1)
             theta_parts.append(theta_model)
 
@@ -435,6 +464,7 @@ class GlobalMultiCompartment(SignalCompartment):
             theta_parts.append(theta_noise)
 
         return jnp.concatenate(theta_parts, axis=-1)
+
 
 class GlobalBallStick(GlobalMultiCompartment):
     """MultiCompartment model with Ball and Stick compartments conditioned on fiber representation."""

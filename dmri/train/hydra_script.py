@@ -583,17 +583,17 @@ def train_loop(
         train_state.rng,
     )
     _ = evaluator.eval_nnl_mask(
-                train_state.params,
-                train_state.model_state,
-                eval_loader,
-                iters=cfg.train.eval.nnl_mask.iters,
-            )
+        train_state.params,
+        train_state.model_state,
+        eval_loader,
+        iters=cfg.train.eval.nnl_mask.iters,
+    )
     _ = evaluator.eval_nnl_theta(
-                train_state.params,
-                train_state.model_state,
-                eval_loader,
-                iters=cfg.train.eval.nnl_theta.iters,
-            )
+        train_state.params,
+        train_state.model_state,
+        eval_loader,
+        iters=cfg.train.eval.nnl_theta.iters,
+    )
 
     log.info(f"Maximum training time: {max_train_hours} hours")
     while True:
@@ -628,27 +628,35 @@ def train_loop(
 
         # Collect and average dataset stats from training loaders
         dataset_stats = {}
-        train_datasets = [loader._ds for loader in loaders if hasattr(loader, '_ds')]
+        train_datasets = [loader._ds for loader in loaders if hasattr(loader, "_ds")]
         if train_datasets:
             # Collect stats from all training datasets
             all_stats = []
             for dataset in train_datasets:
-                if hasattr(dataset, 'get_stats'):
+                if hasattr(dataset, "get_stats"):
                     all_stats.append(dataset.get_stats())
 
             # Compute averaged production_time and samples_written/samples_requested ratio
             if all_stats:
-                production_times = [stats.get('production_time', 0) for stats in all_stats]
-                samples_written = [stats.get('samples_written', 0) for stats in all_stats]
-                samples_requested = [stats.get('samples_requested', 1) for stats in all_stats]
+                production_times = [
+                    stats.get("production_time", 0) for stats in all_stats
+                ]
+                samples_written = [
+                    stats.get("samples_written", 0) for stats in all_stats
+                ]
+                samples_requested = [
+                    stats.get("samples_requested", 1) for stats in all_stats
+                ]
 
                 avg_production_time = sum(production_times) / len(production_times)
                 total_written = sum(samples_written)
                 total_requested = sum(samples_requested)
 
-                dataset_stats['train_dataset/production_time'] = avg_production_time
+                dataset_stats["train_dataset/production_time"] = avg_production_time
                 if total_requested > 0:
-                    dataset_stats['train_dataset/samples_written_requested_ratio'] = total_written / total_requested
+                    dataset_stats["train_dataset/samples_written_requested_ratio"] = (
+                        total_written / total_requested
+                    )
 
         # Log dataset stats locally
         if dataset_stats:

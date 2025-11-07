@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass
-from functools import partial
-from typing import Any, Sequence
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -113,14 +113,12 @@ class VoxelGrid:
         self.z_max = z_max
 
     def get_voxel_indices(self):
-        return jnp.array(
-            [
-                (ix, iy, iz)
-                for ix in range(self.n_voxels_x)
-                for iy in range(self.n_voxels_y)
-                for iz in range(self.n_voxels_z)
-            ]
-        )
+        return jnp.array([
+            (ix, iy, iz)
+            for ix in range(self.n_voxels_x)
+            for iy in range(self.n_voxels_y)
+            for iz in range(self.n_voxels_z)
+        ])
 
     def get_voxel_size(self):
         return (
@@ -151,9 +149,11 @@ class VoxelGrid:
         """
         voxel_size_x, voxel_size_y, voxel_size_z = self.get_voxel_size()
         shifted_point = point - jnp.array([self.x_min, self.y_min, self.z_min])
-        voxel_coords = shifted_point / jnp.array(
-            [voxel_size_x, voxel_size_y, voxel_size_z]
-        )
+        voxel_coords = shifted_point / jnp.array([
+            voxel_size_x,
+            voxel_size_y,
+            voxel_size_z,
+        ])
         voxel_indices = jnp.floor(voxel_coords).astype(int)
         return voxel_indices
 
@@ -194,7 +194,10 @@ class VoxelizedCurve:
 
     def tree_flatten(self):
         curve_flat, curve_tree = jax.tree_util.tree_flatten(self.curve)
-        children =   (curve_flat, self.diameter,)
+        children = (
+            curve_flat,
+            self.diameter,
+        )
         aux_data = (curve_tree, self.metadata, self.grid)
         return children, aux_data
 
@@ -218,10 +221,10 @@ class VoxelizedCurve:
     def volume_fraction(self) -> jnp.ndarray:
         """Lazily compute and return the volume fraction in each voxel."""
         volume_fraction = get_curve_volume_fraction_in_voxels(
-                self.curve,
-                self.grid,
-                self.diameter,
-            )
+            self.curve,
+            self.grid,
+            self.diameter,
+        )
         return volume_fraction
 
     @property
@@ -367,7 +370,9 @@ def random_surface_point_for_face(
     return pick_vals(face)
 
 
-def _fit_polynomial_coeffs(ts: ArrayLike, values: ArrayLike, degree: int) -> jnp.ndarray:
+def _fit_polynomial_coeffs(
+    ts: ArrayLike, values: ArrayLike, degree: int
+) -> jnp.ndarray:
     """Solve for polynomial coefficients interpolating ``values`` at ``ts``."""
     ts_arr = jnp.asarray(ts)
     values_arr = jnp.asarray(values, dtype=ts_arr.dtype)
@@ -476,9 +481,15 @@ def sample_splines(
             y_mid = y_ctrl[..., :deg_internal]
             z_mid = z_ctrl[..., :deg_internal]
 
-            x_points = jnp.concatenate((s_xyz[..., 0:1], x_mid, e_xyz[..., 0:1]), axis=-1)
-            y_points = jnp.concatenate((s_xyz[..., 1:2], y_mid, e_xyz[..., 1:2]), axis=-1)
-            z_points = jnp.concatenate((s_xyz[..., 2:3], z_mid, e_xyz[..., 2:3]), axis=-1)
+            x_points = jnp.concatenate(
+                (s_xyz[..., 0:1], x_mid, e_xyz[..., 0:1]), axis=-1
+            )
+            y_points = jnp.concatenate(
+                (s_xyz[..., 1:2], y_mid, e_xyz[..., 1:2]), axis=-1
+            )
+            z_points = jnp.concatenate(
+                (s_xyz[..., 2:3], z_mid, e_xyz[..., 2:3]), axis=-1
+            )
 
             ts = jnp.linspace(t0, t1, deg + 1)
             coeffs_x = _fit_polynomial_coeffs(ts, x_points, deg)
@@ -507,7 +518,9 @@ def sample_splines(
         t_bounds,
     )
 
-    coeffs_x, coeffs_y, coeffs_z = jax.lax.switch(degree_index, branches, branch_operand)
+    coeffs_x, coeffs_y, coeffs_z = jax.lax.switch(
+        degree_index, branches, branch_operand
+    )
     return Spline3D(coeffs_x, coeffs_y, coeffs_z)
 
 
@@ -606,7 +619,9 @@ def get_curve_volume_fraction_in_voxels(
         offsets_arr = np.zeros((0, 2), dtype=float)
     else:
         ox_grid, oy_grid = np.meshgrid(coords, coords, indexing="xy")
-        mask = ox_grid * ox_grid + oy_grid * oy_grid <= radius * radius + (step * step * 0.25)
+        mask = ox_grid * ox_grid + oy_grid * oy_grid <= radius * radius + (
+            step * step * 0.25
+        )
         offsets_arr = np.stack([ox_grid[mask], oy_grid[mask]], axis=-1)
 
     if offsets_arr.size == 0:
@@ -679,6 +694,7 @@ def get_curve_volume_fraction_in_voxels(
     fraction = np.clip(fraction, 0.0, 1.0)
     return jnp.asarray(fraction, dtype=jnp.float32)
 
+
 def curve_points(
     curve: Curve3D,
     *,
@@ -723,9 +739,7 @@ def plot_curves(
     # Extract commonly used matplotlib-style arguments for compatibility.
     opacity = plot_kwargs.pop("alpha", None)
     color_override = (
-        plot_kwargs.pop("color", None)
-        or plot_kwargs.pop("line_color", None)
-        or None
+        plot_kwargs.pop("color", None) or plot_kwargs.pop("line_color", None) or None
     )
     width_override = (
         plot_kwargs.pop("linewidth", None)
@@ -735,9 +749,7 @@ def plot_curves(
     line_kwargs = plot_kwargs.pop("line", {})
 
     for idx, curve in enumerate(curves):
-        pts = curve_points(
-            curve, num_points=num_points, t_min=t_min, t_max=t_max
-        )
+        pts = curve_points(curve, num_points=num_points, t_min=t_min, t_max=t_max)
         label = labels[idx] if labels is not None else None
         line_dict = {k: v for k, v in line_kwargs.items()}
         if color_override is not None:
@@ -847,18 +859,16 @@ def _add_grid_box(
     x0, x1 = grid.x_min, grid.x_max
     y0, y1 = grid.y_min, grid.y_max
     z0, z1 = grid.z_min, grid.z_max
-    corners = np.array(
-        [
-            [x0, y0, z0],
-            [x0, y0, z1],
-            [x0, y1, z0],
-            [x0, y1, z1],
-            [x1, y0, z0],
-            [x1, y0, z1],
-            [x1, y1, z0],
-            [x1, y1, z1],
-        ]
-    )
+    corners = np.array([
+        [x0, y0, z0],
+        [x0, y0, z1],
+        [x0, y1, z0],
+        [x0, y1, z1],
+        [x1, y0, z0],
+        [x1, y0, z1],
+        [x1, y1, z0],
+        [x1, y1, z1],
+    ])
     edges = [
         (0, 1),
         (0, 2),

@@ -1,5 +1,3 @@
-from dmri.simulators.local_signal_models.ball import MultiShellBall
-from dmri.simulators.local_signal_models.stick import MultiShellStick
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -7,6 +5,7 @@ import pytest
 
 from dmri.simulators import (
     Ball,
+    BallStickSharedDiffusivity,
     BinghamStick,
     BinghamZeppelin,
     Cylinder,
@@ -22,17 +21,16 @@ from dmri.simulators import (
     WatsonStick,
     WatsonZeppelin,
     Zeppelin,
-    SSFPBall,
-    SSFPStick,
     acquisition_scheme,
-    BallStickSharedDiffusivity,
 )
+from dmri.simulators.local_signal_models.ball import MultiShellBall
+from dmri.simulators.local_signal_models.stick import MultiShellStick
 from dmri.simulators.multi_compartment import (
     Ball2Stick,
     Ball3Stick,
-    BallStick,
     Ball3StickSharedDiffusivity,
     Ball3StickSharedDiffusivityUniformFraction,
+    BallStick,
     MultiShellBall3StickSharedDiffusivity,
     MultiShellBall3StickSharedDiffusivityGammaPrior,
     MultiShellBall3StickSharedDiffusivityUniformFraction,

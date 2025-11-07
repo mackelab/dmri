@@ -44,9 +44,10 @@ class TemporalZeppelin(SignalCompartment):
     def to_theta(cls, lam_parallel, D_inf, A, eigenvecs):
         lam_parallel = (lam_parallel - cls.min_lam) / (cls.max_lam - cls.min_lam)
         D_inf = (D_inf - cls.min_lam) / (cls.max_lam - cls.min_lam)
-        theta = jnp.concatenate(
-            [jnp.array([lam_parallel, D_inf, A]), eigenvecs.flatten()]
-        )
+        theta = jnp.concatenate([
+            jnp.array([lam_parallel, D_inf, A]),
+            eigenvecs.flatten(),
+        ])
         theta = jax.scipy.stats.norm.ppf(theta)
         return theta
 

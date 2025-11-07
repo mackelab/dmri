@@ -5,6 +5,7 @@ import jax
 import jax.numpy as jnp
 from jax import tree_util as jtu
 from jax.typing import ArrayLike
+from probjax.utils.typing import Array
 
 from dmri.simulators.acquisition_scheme import acquisition_scheme
 from dmri.simulators.base import Compartment, SignalCompartment
@@ -12,7 +13,6 @@ from dmri.simulators.sphereical_distributions import (
     hemisphere_default,
     inverse_sh_matrix,
 )
-
 
 HEMISPHERE_VERTICES = jnp.array(hemisphere_default.vertices)
 
@@ -22,7 +22,7 @@ class SignalKernel(Compartment):
 
     @classmethod
     @abstractmethod
-    def kernel_fn(cls, mu: ArrayLike, acq: acquisition_scheme, **kwargs) -> ArrayLike:
+    def kernel_fn(cls, mu: ArrayLike, acq: acquisition_scheme, **kwargs) -> Array:
         pass
 
     def sh_coeff(self, acq: acquisition_scheme, sh_order: int) -> ArrayLike:

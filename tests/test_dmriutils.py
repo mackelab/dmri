@@ -1,18 +1,18 @@
-import pytest
 import jax.numpy as jnp
-import numpy as np
+import pytest
+
 from dmri.utils.dmriutils import (
-    fit_diffusion_tensor_linearized,
+    cart2sph,
     cartesian_to_unitsphere,
-    unitsphere_to_cartesian,
-    normalize_bvecs,
+    compute_ad,
     compute_fa,
     compute_md,
     compute_rd,
-    compute_ad,
+    fit_diffusion_tensor_linearized,
     make_dyads,
-    cart2sph,
+    normalize_bvecs,
     sph2cart,
+    unitsphere_to_cartesian,
 )
 
 

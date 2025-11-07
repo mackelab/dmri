@@ -48,9 +48,9 @@ class Stick(SignalCompartment):
         """Convert the parameters to the parameter space theta."""
         lam_par = (lam_par - cls.min_lam) / (cls.max_lam - cls.min_lam)
         mu0_normalized = 1 - jnp.cos(
-            mu[...,0]
+            mu[..., 0]
         )  # Ensures uniform distribution on upper hemisphere
-        mu1_normalized = (mu[...,1] + jnp.pi) / (2 * jnp.pi)
+        mu1_normalized = (mu[..., 1] + jnp.pi) / (2 * jnp.pi)
         theta = jnp.array([lam_par, mu0_normalized, mu1_normalized])
         theta = jax.scipy.stats.norm.ppf(theta)
         return theta
@@ -59,9 +59,9 @@ class Stick(SignalCompartment):
     def to_params(cls, theta: ArrayLike) -> tuple:
         """Convert the parameter space theta to the lambda value and eigenvector."""
         theta = jax.scipy.stats.norm.cdf(theta)
-        lam_par = theta[...,0] * (cls.max_lam - cls.min_lam) + cls.min_lam
-        mu1 = jnp.arccos(1 - theta[...,1])  # Ensures output is in upper hemisphere
-        mu2 = theta[...,2] * 2 * jnp.pi - jnp.pi
+        lam_par = theta[..., 0] * (cls.max_lam - cls.min_lam) + cls.min_lam
+        mu1 = jnp.arccos(1 - theta[..., 1])  # Ensures output is in upper hemisphere
+        mu2 = theta[..., 2] * 2 * jnp.pi - jnp.pi
 
         mu = jnp.array([mu1, mu2])
 

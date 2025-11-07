@@ -201,8 +201,12 @@ class SimpleSANDIKernel(SignalKernel):
         lam_par_ex = (lam_par_ex - Zeppelin.min_lam) / (
             Zeppelin.max_lam - Zeppelin.min_lam
         )
-        theta = jnp.array(
-            [fraction_in, fraction_ec, lam_par_in, lam_perp_ex, lam_par_ex]
-        )
+        theta = jnp.array([
+            fraction_in,
+            fraction_ec,
+            lam_par_in,
+            lam_perp_ex,
+            lam_par_ex,
+        ])
         theta = jax.scipy.stats.norm.ppf(theta)
         return theta
