@@ -264,21 +264,19 @@ def rotation_matrix_100_to_xyz(x, y, z):
 
     # Avoid division by zero
     denom = jnp.maximum((y * y + z * z), 1e-12)
-    R_general = jnp.array(
+    R_general = jnp.array([
+        [x, -y, -z],
         [
-            [x, -y, -z],
-            [
-                y,
-                (x * (y * y) + (z * z)) / denom,
-                ((x - 1) * (y * z)) / denom,
-            ],
-            [
-                z,
-                ((x - 1) * (y * z)) / denom,
-                ((y * y) + x * (z * z)) / denom,
-            ],
-        ]
-    )
+            y,
+            (x * (y * y) + (z * z)) / denom,
+            ((x - 1) * (y * z)) / denom,
+        ],
+        [
+            z,
+            ((x - 1) * (y * z)) / denom,
+            ((y * y) + x * (z * z)) / denom,
+        ],
+    ])
     # Use a data-dependent condition instead of Python ifs
     R = jnp.where(is_identity, R_identity, R_general)
     return R
@@ -476,13 +474,11 @@ def reorder_angles_3fib(mu1, mu2, mu3, f1, f2, f3):
         v3 = sph2cart(mu3[j, 0], mu3[j, 1])
 
         # Calculate dot products with v1_ref
-        dots = jnp.array(
-            [
-                jnp.dot(v1_ref, v1) / (jnp.linalg.norm(v1_ref) * jnp.linalg.norm(v1)),
-                jnp.dot(v1_ref, v2) / (jnp.linalg.norm(v1_ref) * jnp.linalg.norm(v2)),
-                jnp.dot(v1_ref, v3) / (jnp.linalg.norm(v1_ref) * jnp.linalg.norm(v3)),
-            ]
-        )
+        dots = jnp.array([
+            jnp.dot(v1_ref, v1) / (jnp.linalg.norm(v1_ref) * jnp.linalg.norm(v1)),
+            jnp.dot(v1_ref, v2) / (jnp.linalg.norm(v1_ref) * jnp.linalg.norm(v2)),
+            jnp.dot(v1_ref, v3) / (jnp.linalg.norm(v1_ref) * jnp.linalg.norm(v3)),
+        ])
 
         # Find best match for v1_ref
         best_match = jnp.argmax(dots)
@@ -520,14 +516,12 @@ def reorder_angles_3fib(mu1, mu2, mu3, f1, f2, f3):
         )
 
         # Find best match for v2_ref among remaining vectors
-        dots_v2 = jnp.array(
-            [
-                jnp.dot(v2_ref, v_remaining[0])
-                / (jnp.linalg.norm(v2_ref) * jnp.linalg.norm(v_remaining[0])),
-                jnp.dot(v2_ref, v_remaining[1])
-                / (jnp.linalg.norm(v2_ref) * jnp.linalg.norm(v_remaining[1])),
-            ]
-        )
+        dots_v2 = jnp.array([
+            jnp.dot(v2_ref, v_remaining[0])
+            / (jnp.linalg.norm(v2_ref) * jnp.linalg.norm(v_remaining[0])),
+            jnp.dot(v2_ref, v_remaining[1])
+            / (jnp.linalg.norm(v2_ref) * jnp.linalg.norm(v_remaining[1])),
+        ])
 
         # Order remaining two vectors based on similarity to v2_ref using where
         angles2 = jnp.where(

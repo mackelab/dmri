@@ -151,7 +151,9 @@ class SimulationDataset:
         self._stop_producer()
 
         # Convert to host NumPy, validate tree & batch dimension
-        data_host = jax.tree_util.tree_map(lambda x: np.asarray(jax.device_get(x)), data)
+        data_host = jax.tree_util.tree_map(
+            lambda x: np.asarray(jax.device_get(x)), data
+        )
         leaves = jax.tree_util.tree_leaves(data_host)
         if not leaves:
             raise ValueError("set_data: Provided data has no leaves.")
@@ -194,7 +196,11 @@ class SimulationDataset:
                 remaining = dataset_size - N
                 if remaining > 0:
                     # Wrap (repeat from the start) to fill the last partial batch
-                    wrap_src = data_leaf[:remaining % N if N != 0 else 0] if remaining > N else data_leaf[:remaining]
+                    wrap_src = (
+                        data_leaf[: remaining % N if N != 0 else 0]
+                        if remaining > N
+                        else data_leaf[:remaining]
+                    )
                     # If remaining > N, tile then slice (avoids large loops)
                     if remaining > N:
                         reps = (remaining + N - 1) // N
@@ -227,9 +233,7 @@ class SimulationDataset:
         # Optionally restart the producer (kept off by default for a fixed dataset)
         self._start_producer()
 
-
     # --- internal helpers ------------------------------------------------------------
-
 
     def _initialise_buffer(self) -> None:
         self._stop_event.clear()

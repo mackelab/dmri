@@ -248,6 +248,7 @@ def build_corrector(method, model, acq, model_mask, sim_type, params):
 
         def corrector(key, theta, x, model_mask):
             return theta
+
     elif method == "smc_corrected":
         lam_start = params.get("lam_start", 0.99)
         num_steps = params.get("num_steps", 5)
@@ -300,6 +301,7 @@ def build_corrector(method, model, acq, model_mask, sim_type, params):
             keys = jax.random.split(key, num_steps)
             state, _ = jax.lax.scan(step, state, keys)
             return state.position
+
     else:
         raise ValueError(f"Method {method} not supported")
 

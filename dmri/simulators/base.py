@@ -4,6 +4,7 @@ from typing import Any
 import jax
 import jax.numpy as jnp
 import jax.tree_util as jtu
+from jax import Array
 from jax.typing import ArrayLike
 
 from dmri.simulators.acquisition_scheme import acquisition_scheme
@@ -26,7 +27,7 @@ class Compartment(ABC):
 
     @classmethod
     @abstractmethod
-    def to_theta(cls, *kwargs) -> ArrayLike:
+    def to_theta(cls, *kwargs) -> Array:
         """Transforms the natural parameters to the optimization parameters which are
         assumed to be normally distributed.
         """
@@ -39,7 +40,7 @@ class Compartment(ABC):
         pass
 
     @classmethod
-    def from_theta(cls, theta: ArrayLike, **kwargs) -> "SignalCompartment":
+    def from_theta(cls, theta: ArrayLike, **kwargs) -> "Compartment":
         """Creates a compartment from the optimization parameters."""
         args = cls.to_params(theta, **kwargs)
         return cls(*args)
@@ -50,7 +51,7 @@ class Compartment(ABC):
         return (theta,), (type(self),)
 
     @classmethod
-    def tree_unflatten(cls, aux_data: Any, children: list) -> "SignalCompartment":
+    def tree_unflatten(cls, aux_data: Any, children: list) -> "Compartment":
         """Reconstructs the compartment from the list of children and auxiliary data."""
         return cls.from_theta(children[0])
 
@@ -61,7 +62,9 @@ class SharedParameterState(Compartment):
     def __init__(self, shared_parameters: ArrayLike):
         self.shared_parameters = jnp.atleast_1d(shared_parameters)
 
-    def set_shared_params_for_compartment(self, compartment_type: type) -> ArrayLike:
+    def set_shared_params_for_compartment(
+        self, compartment_type: type
+    ) -> "Compartment":
         """Returns the parameters for the compartment."""
         if (
             hasattr(compartment_type, "from_global_params")
@@ -108,5 +111,6 @@ class NoiseCompartment(Compartment):
         """Simulates the noise for the compartment."""
         pass
 
-    def log_likelihood(self, signal_pred, signal_obs) -> ArrayLike:
+    @abstractmethod
+    def log_likelihood(self, signal_pred, signal_obs) -> Array:
         pass

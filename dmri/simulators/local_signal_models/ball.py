@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+from jax import Array
 from jax.typing import ArrayLike
 
 from dmri.simulators.acquisition_scheme import (
@@ -35,18 +36,18 @@ class Ball(SignalCompartment):
     def to_params(cls, theta: ArrayLike) -> tuple:
         """Convert the parameter space theta to the lambda value."""
         theta = jax.scipy.stats.norm.cdf(theta)
-        lam = theta[...,0] * (cls.lam_max - cls.lam_min) + cls.lam_min
+        lam = theta[..., 0] * (cls.lam_max - cls.lam_min) + cls.lam_min
         return (lam,)
 
     @classmethod
-    def to_theta(cls, lam: ArrayLike) -> ArrayLike:
+    def to_theta(cls, lam: ArrayLike) -> Array:
         """Convert the lambda value to the parameter space theta."""
         lam = (lam - cls.lam_min) / (cls.lam_max - cls.lam_min)
         theta = jnp.array([lam])
         theta = jax.scipy.stats.norm.ppf(theta)
         return theta
 
-    def fit(self, logS: ArrayLike, bvals: ArrayLike, bvecs: ArrayLike) -> tuple:
+    def fit(self, logS: ArrayLike, bvals: ArrayLike, bvecs: Array) -> tuple:
         """Fit the Ball model to the log signal and b-values."""
         lam = -logS / bvals
         return (jnp.mean(lam),)

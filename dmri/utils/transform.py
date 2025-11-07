@@ -19,15 +19,13 @@ def eps_mask(mask: jnp.ndarray) -> jnp.ndarray:
     mask_bool = jnp.asarray(mask, dtype=jnp.bool_)
 
     # suffix_any[i] = any(mask[i:])
-    suffix_any = jnp.flip(
-        jnp.cumsum(jnp.flip(mask_bool.astype(jnp.int32))) > 0
-    )
+    suffix_any = jnp.flip(jnp.cumsum(jnp.flip(mask_bool.astype(jnp.int32))) > 0)
 
     # future_any[i] = any(mask[i+1:])
-    future_any = suffix_any[1:]            # shape (K-1,)
-    current_active = mask_bool[:-1]        # shape (K-1,)
+    future_any = suffix_any[1:]  # shape (K-1,)
+    current_active = mask_bool[:-1]  # shape (K-1,)
 
-    return current_active & future_any     # shape (K-1,), bool
+    return current_active & future_any  # shape (K-1,), bool
 
 
 # ------------------------------------------------------------------------------
@@ -60,9 +58,7 @@ def _precompute_b(alpha: jnp.ndarray, mask_bool: jnp.ndarray) -> jnp.ndarray:
     suffix_sum = jnp.flip(jnp.cumsum(jnp.flip(alpha_active)))
     # b_i = sum_{j > i} alpha_active[j] = suffix_sum[i+1]
     # For convenience make shape (K,), last entry unused for eps/scan
-    b_all = jnp.concatenate(
-        [suffix_sum[1:], jnp.array([0.0], dtype=alpha.dtype)]
-    )
+    b_all = jnp.concatenate([suffix_sum[1:], jnp.array([0.0], dtype=alpha.dtype)])
     return b_all  # (K,)
 
 
@@ -103,9 +99,9 @@ def _last_active_index(mask_bool: jnp.ndarray) -> jnp.ndarray:
 #   - pi_full[~mask_bool] = 0
 #   - No renormalization tricks, no boolean indexing, static shapes only.
 # ------------------------------------------------------------------------------
-def _forward_pure(alpha: jnp.ndarray,
-                  eps: jnp.ndarray,
-                  mask_bool: jnp.ndarray) -> jnp.ndarray:
+def _forward_pure(
+    alpha: jnp.ndarray, eps: jnp.ndarray, mask_bool: jnp.ndarray
+) -> jnp.ndarray:
     alpha = jnp.asarray(alpha)
     eps = jnp.asarray(eps)
     mask_bool = jnp.asarray(mask_bool, dtype=jnp.bool_)
@@ -192,9 +188,9 @@ def _forward_pure(alpha: jnp.ndarray,
 # active subset. eps MUST be shape (K-1,).
 # ------------------------------------------------------------------------------
 @jax.custom_vjp
-def normal_to_dirichlet(alpha: ArrayLike,
-                        eps: ArrayLike,
-                        mask: ArrayLike | None = None) -> ArrayLike:
+def normal_to_dirichlet(
+    alpha: ArrayLike, eps: ArrayLike, mask: ArrayLike | None = None
+) -> ArrayLike:
     alpha = jnp.asarray(alpha)
     eps = jnp.asarray(eps)
     K = alpha.shape[0]
@@ -228,9 +224,7 @@ def normal_to_dirichlet_bwd(res, g: ArrayLike):
         return jnp.sum(out * g)
 
     grad_eps = jax.grad(scalarized)(eps)  # (K-1,)
-    grad_eps = jnp.nan_to_num(
-        grad_eps, nan=0.0, posinf=0.0, neginf=0.0
-    )
+    grad_eps = jnp.nan_to_num(grad_eps, nan=0.0, posinf=0.0, neginf=0.0)
 
     # Zero out grads where eps does not participate
     em = eps_mask(mask_bool).astype(grad_eps.dtype)  # (K-1,)
@@ -277,8 +271,8 @@ def dirichlet_to_normal(
     )
 
     # Precompute helpers (same static logic as forward)
-    em = eps_mask(mask_bool)                   # (K-1,) bool
-    b_all = _precompute_b(alpha, mask_bool)    # (K,)
+    em = eps_mask(mask_bool)  # (K-1,) bool
+    b_all = _precompute_b(alpha, mask_bool)  # (K,)
     # We'll reconstruct eps[i] for i in 0..K-2 where em[i] is True.
 
     def scan_fn(pi_sum_active, i):
@@ -315,4 +309,6 @@ def dirichlet_to_normal(
 
     eps_full = jnp.nan_to_num(eps_full, nan=0.0, posinf=0.0, neginf=0.0)
     return eps_full  # shape (K-1,)
+
+
 # ------------------------------------------------------------------------------
