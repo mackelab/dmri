@@ -728,7 +728,7 @@ class Bingham(SphericalDistribution):
         return jnp.array([mu0, mu1, odi_theta, psi_theta, beta_fraction_theta])
 
 
-def deterministic_sphere_integration(kappa, beta, mu, mu_beta, n_theta=400, n_phi=400):
+def deterministic_sphere_integration(kappa, beta, mu, mu_beta, n_theta=200, n_phi=200):
     """
     Use a 2D trapezoidal rule in spherical coords to approximate
         ∫ exp(kappa (n·mu)^2 + beta (n·mu_beta)^2 ) dΩ(n).

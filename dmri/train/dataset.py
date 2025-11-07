@@ -68,7 +68,6 @@ class SimulationDataset:
         self._stats = {
             "batches_produced": 0,
             "production_time": 0.0,
-            "batches_recycled": 0,
             "samples_written": 0,
             "batches_requested": 0,
             "samples_requested": 0,
@@ -105,7 +104,10 @@ class SimulationDataset:
 
     def get_stats(self) -> dict[str, Any]:
         with self._lock:
-            return dict(self._stats)
+            stats = dict(self._stats)
+            batches = max(1, int(stats.get("batches_produced", 0)))
+            stats["avg_production_time_per_batch"] = stats["production_time"] / batches
+            return stats
 
     def reset(self, *, seed: int | None = None, rng: RngKey | None = None) -> None:
         if rng is not None and seed is not None:
@@ -217,7 +219,6 @@ class SimulationDataset:
             self._stats.update({
                 "batches_produced": 0,
                 "production_time": 0.0,
-                "batches_recycled": 0,
                 "samples_written": dataset_size,
                 "batches_requested": 0,
                 "samples_requested": 0,

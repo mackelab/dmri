@@ -14,8 +14,11 @@ from dmri.simulators.sphereical_distributions import (
 )
 
 
+HEMISPHERE_VERTICES = jnp.array(hemisphere_default.vertices)
+
+
 class SignalKernel(Compartment):
-    vmap_on_sphere: bool = True
+    vmap_on_sphere: bool = False
 
     @classmethod
     @abstractmethod
@@ -25,22 +28,18 @@ class SignalKernel(Compartment):
     def sh_coeff(self, acq: acquisition_scheme, sh_order: int) -> ArrayLike:
         with jax.ensure_compile_time_eval():
             inverse_real_sh = inverse_sh_matrix(sh_order, sphere=hemisphere_default)
-
         inverse_real_sh = jnp.array(inverse_real_sh)
         kernel = partial(self.kernel_fn, **self.params)
-        # This her can be quite memory intensive so might be better to use a for loop
-        if type(self).vmap_on_sphere:
-            signal = jax.vmap(partial(kernel, acq))(
-                hemisphere_default.vertices
-            )
-            sh_coeff = inverse_real_sh @ signal.squeeze()
-        else:
-            signal = jax.lax.map(
-                partial(kernel, acq),
-                hemisphere_default.vertices,
-            )
-            sh_coeff = inverse_real_sh @ signal.squeeze()
+        eval_kernel = partial(kernel, acq)
 
+        # Vectorizing over the hemisphere can explode memory when the grid is large,
+        # so allow kernels to opt-out via vmap_on_sphere.
+        if type(self).vmap_on_sphere:
+            signal = jax.vmap(eval_kernel)(HEMISPHERE_VERTICES)
+        else:
+            signal = jax.lax.map(eval_kernel, HEMISPHERE_VERTICES, batch_size=64)
+
+        sh_coeff = inverse_real_sh @ jnp.squeeze(signal)
         return sh_coeff
 
 

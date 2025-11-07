@@ -18,3 +18,5 @@ params:
   embed_bvals: fourier
   use_global_summary_token: True
   global_summary_bins: 8
+  y_seq_dim: null
+  y_glob_dim: null

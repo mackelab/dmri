@@ -9,3 +9,5 @@ params:
   dropout_rate: 0.0
   use_global_summary_token: false
   global_summary_bins: 8
+  y_seq_dim: null
+  y_glob_dim: null
