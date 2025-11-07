@@ -1,5 +1,5 @@
 # @package _global_
-name: default_pp_global_ctx2
+name: default_pp_global_ctx4
 use_wandb: true
 
 hydra:
@@ -9,6 +9,8 @@ hydra:
       train.ema_decay: 0.9999
       train.continue_training: true
       train.restart_optimizer: true
+      model.inference_net.params.gate_attention: false
+      train.model_selection_weight: 0.1
 
 
 defaults:

@@ -8,11 +8,12 @@ hydra:
       wandb.project: all_models
       train.ema_decay: 0.9999
       train.continue_training: true
+      model.inference_net.params.gate_attention: false
 
 
 defaults:
   - _self_
   - override /partition: h100_long
-  - override /simulator: all_models
-  - override /train/dataloader: datastream_gpu
+  - override /simulator: all_gaussian
+  - override /train/dataloader: datastream
   - override /model: mask_amortized_pp_global_ctx

@@ -58,6 +58,11 @@ class MultiCompartment(SignalCompartment):
     shared_parameter_type: type[SharedParameterState] | None = None
     normalizing_fn: Callable | None = None
     pre_normalizing_fn: Callable | None = None
+    _split_dims: tuple[int, ...] = ()
+    _split_indices: tuple[int, ...] = ()
+    _num_models: int = 0
+    _num_noises: int = 0
+    _has_shared: bool = False
 
     def __init_subclass__(cls):
         assert hasattr(cls, "model_types"), "model_types not defined"
@@ -69,11 +74,13 @@ class MultiCompartment(SignalCompartment):
             "Wrong number of fractions"
         )
 
-        model_fraction_theta_dim = len(cls.model_types) - 1
+        cls._num_models = len(cls.model_types)
+        cls._num_noises = len(cls.noise_types)
+        cls._has_shared = cls.shared_parameter_type is not None
+
+        model_fraction_theta_dim = max(cls._num_models - 1, 0)
         shared_parameters_dim = (
-            0
-            if cls.shared_parameter_type is None
-            else cls.shared_parameter_type.theta_dim
+            0 if not cls._has_shared else cls.shared_parameter_type.theta_dim
         )
         cls.theta_dim = (
             model_fraction_theta_dim
@@ -81,6 +88,18 @@ class MultiCompartment(SignalCompartment):
             + sum([m.theta_dim for m in cls.model_types])
             + sum([n.theta_dim for n in cls.noise_types])
         )
+        split_dims: list[int] = [model_fraction_theta_dim]
+        if cls._has_shared:
+            split_dims.append(shared_parameters_dim)
+        split_dims.extend(m.theta_dim for m in cls.model_types)
+        split_dims.extend(n.theta_dim for n in cls.noise_types)
+        cls._split_dims = tuple(split_dims)
+        if len(split_dims) > 1:
+            cls._split_indices = tuple(
+                np.cumsum(split_dims, dtype=int)[:-1].tolist()
+            )
+        else:
+            cls._split_indices = ()
 
         jtu.register_pytree_node_class(cls)
 
@@ -92,9 +111,9 @@ class MultiCompartment(SignalCompartment):
         model_mask: Optional[ArrayLike] = None,
         shared_parameter: SharedParameterState | None = None,
     ):
-        self.model_fractions = model_fractions
-        self.model_compartments = model_compartments
-        self.noise_compartments = noise_compartments
+        self.model_fractions = jnp.asarray(model_fractions)
+        self.model_compartments = tuple(model_compartments)
+        self.noise_compartments = tuple(noise_compartments)
         self.model_mask = model_mask
         self.shared_parameter = shared_parameter
         assert len(model_compartments) == len(model_fractions), (
@@ -116,6 +135,33 @@ class MultiCompartment(SignalCompartment):
             all_params["shared_parameter"] = self.shared_parameter.params
         return all_params
 
+    @staticmethod
+    def _mix_model_signals(acq, model_compartments, model_fractions):
+        num_models = len(model_compartments)
+        if num_models == 0:
+            return jnp.zeros_like(acq.bvals)
+
+        signals = [m.signal(acq) for m in model_compartments]
+        stacked = jnp.stack(signals, axis=0)
+        return jnp.sum(stacked * model_fractions[:, None], axis=0)
+
+    @staticmethod
+    def _noise_mask(model_mask, num_models: int, num_noise: int):
+        if num_noise == 0:
+            return None
+        if model_mask is None:
+            mask = jnp.zeros((num_noise,), dtype=bool)
+            return mask.at[0].set(True)
+        mask_slice = model_mask[num_models : num_models + num_noise]
+        return jnp.asarray(mask_slice, dtype=bool)
+
+    @staticmethod
+    def _mask_weights(mask: ArrayLike, target_ndim: int, dtype):
+        if target_ndim < 1:
+            raise ValueError("target_ndim must be at least 1")
+        expand_shape = mask.shape + (1,) * (target_ndim - 1)
+        return mask.astype(dtype).reshape(expand_shape)
+
     @classmethod
     def signal_fn(
         cls,
@@ -128,29 +174,27 @@ class MultiCompartment(SignalCompartment):
         rng=None,
     ):
         del shared_parameter
-        # Compute the signal for each compartment
-        signals = jnp.stack([m.signal(acq) for m in model_compartments], axis=0)
-        fractions = model_fractions[:, None]
-        # Combine signals with sum
-        signal = jnp.sum(signals * fractions, axis=0)
+        signal = cls._mix_model_signals(acq, model_compartments, model_fractions)
+        base_signal = signal
 
         if cls.pre_normalizing_fn is not None:
             signal = cls.pre_normalizing_fn(acq, signal)
 
         # Add noise
-        if rng is not None and len(noise_compartments) > 0:
-            if model_mask is None:
-                # Select first noise compartment
-                noise_model = noise_compartments[0]
-                signal = noise_model.noise(signal, rng)
-            else:
-                # Make mask shape match noise compartments
-                idx = len(model_compartments)
-                noise_mask = model_mask[idx:]
-                # Apply noise sequentially with where to avoid conditionals
-                for i in range(len(noise_compartments)):
-                    noised_signal = noise_compartments[i].noise(signal, rng)
-                    signal = jnp.where(noise_mask[i], noised_signal, signal)
+        num_noise = len(noise_compartments)
+        if rng is not None and num_noise > 0:
+            noise_mask = cls._noise_mask(
+                model_mask, len(model_compartments), num_noise
+            )
+            noise_outputs = [
+                noise_compartments[i].noise(base_signal, rng) for i in range(num_noise)
+            ]
+            stacked_noise = jnp.stack(noise_outputs, axis=0)
+            mask_weights = cls._mask_weights(
+                noise_mask, stacked_noise.ndim, stacked_noise.dtype
+            )
+            weighted_noise = jnp.sum(stacked_noise * mask_weights, axis=0)
+            signal = jnp.where(jnp.any(noise_mask), weighted_noise, base_signal)
 
         if cls.normalizing_fn is not None:
             signal = cls.normalizing_fn(acq, signal)
@@ -163,32 +207,14 @@ class MultiCompartment(SignalCompartment):
 
     @classmethod
     def split_idx(cls):
-        theta_dims_fractions = [len(cls.model_types) - 1]
-        theta_dims_shared = (
-            []
-            if cls.shared_parameter_type is None
-            else [cls.shared_parameter_type.theta_dim]
-        )
-        theta_dims_model = [m.theta_dim for m in cls.model_types]
-        theta_dims_noise = [m.theta_dim for m in cls.noise_types]
-        total_dims = (
-            theta_dims_fractions
-            + theta_dims_shared
-            + theta_dims_model
-            + theta_dims_noise
-        )
-        total_dims = np.array(total_dims)
-
-        return total_dims
+        return np.asarray(cls._split_dims)
 
     @classmethod
     def split_theta(cls, theta):
-        total_dims = cls.split_idx()
-        # Calculate the cumulative sum of total_dims to get the split indices
-        split_indices = np.cumsum(total_dims)[:-1]
-
-        # Split theta into fractions, model, and noise
-        thetas_split = jnp.split(theta, split_indices)
+        if cls._split_indices:
+            thetas_split = jnp.split(theta, cls._split_indices)
+        else:
+            thetas_split = (theta,)
 
         return thetas_split
 
@@ -234,14 +260,14 @@ class MultiCompartment(SignalCompartment):
         fractions = thetas_split[0]
 
         # Handle shared parameters
-        if cls.shared_parameter_type is not None and len(thetas_split) > 1:
-            shared_parameter = cls.shared_parameter_type.from_theta(thetas_split[1])
-            model_thetas = thetas_split[2 : len(cls.model_types) + 2]
-            noise_thetas = thetas_split[len(cls.model_types) + 2 :]
-        else:
-            shared_parameter = None
-            model_thetas = thetas_split[1 : len(cls.model_types) + 1]
-            noise_thetas = thetas_split[len(cls.model_types) + 1 :]
+        idx = 1
+        shared_parameter = None
+        if cls._has_shared and len(thetas_split) > 1:
+            shared_parameter = cls.shared_parameter_type.from_theta(thetas_split[idx])
+            idx += 1
+        model_end = idx + cls._num_models
+        model_thetas = thetas_split[idx:model_end]
+        noise_thetas = thetas_split[model_end:]
 
         # Model fractions should sum to 1 and follow a Dirichlet distribution
         if model_mask is not None:
@@ -326,23 +352,22 @@ class MultiCompartment(SignalCompartment):
 
         # Compute the noise likelihood
 
-        if len(self.noise_compartments) > 0:
-            if self.model_mask is None:
-                # Select first noise compartment
-                noise_model = self.noise_compartments[0]
-                log_likelihood = noise_model.log_likelihood(signal, signal_observed)
-            else:
-                # Make mask shape match noise compartments
-                idx = len(self.model_compartments)
-                noise_mask = self.model_mask[idx:]
-                # Apply noise sequentially with where to avoid conditionals
-                log_likelihood = 0.0
-                for i in range(len(self.noise_compartments)):
-                    ll = self.noise_compartments[i].log_likelihood(
-                        signal, signal_observed
-                    )
-                    log_likelihood += jnp.where(noise_mask[i], ll, 0.0)
-        return log_likelihood
+        num_noise = len(self.noise_compartments)
+        if num_noise == 0:
+            return jnp.array(0.0)
+
+        noise_mask = self._noise_mask(
+            self.model_mask, len(self.model_compartments), num_noise
+        )
+        ll_values = [
+            self.noise_compartments[i].log_likelihood(signal, signal_observed)
+            for i in range(num_noise)
+        ]
+        stacked_ll = jnp.stack(ll_values, axis=0)
+        mask_weights = self._mask_weights(
+            noise_mask, stacked_ll.ndim, stacked_ll.dtype
+        )
+        return jnp.sum(stacked_ll * mask_weights, axis=0)
 
 
 class SharedDiffusivity(SharedParameterState):
@@ -621,10 +646,8 @@ class Ball3Stick3ZeppelinNoise(MultiCompartment):
 class AllGaussianModels(MultiCompartment):
     model_types = [Ball] + 3 * [Stick] + 3 * [Zeppelin] + 3 * [Dti]
     noise_types = [
-        RicianNoiseSNR310,
-        RicianNoiseSNR1020,
-        RicianNoiseSNR2030,
-        RicianNoiseSNR3040,
+        BoundedGaussianNoise,
+        BoundedRicianNoise,
     ]
     fraction_prior = jnp.ones(1 + 3 + 3 + 3)
 
@@ -635,13 +658,13 @@ class AllGaussianAndConvolvedModels(MultiCompartment):
         + 3 * [Stick]
         + 3 * [Zeppelin]
         + 1 * [NoddiB]
-        + 1 * [NoddiW]
+        #+ 1 * [NoddiW]
         + 1 * [SandiB]
-        + 1 * [SandiW]
+        #+ 1 * [SandiW]
     )
     noise_types = [
         BoundedGaussianNoise,
     ] + [
         BoundedRicianNoise,
     ]
-    fraction_prior = jnp.ones(1 + 3 + 3 + 1 + 1 + 1 + 1)
+    fraction_prior = jnp.ones(1 + 3 + 3 + 1 + 1 )
