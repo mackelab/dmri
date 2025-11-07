@@ -46,6 +46,7 @@ class DMRIEmbeddingConfig:
     preferred_element_type: DTypeLike | None = None
     use_global_summary_token: bool = False
     global_summary_bins: int = 8
+    out_norm: bool = False
 
 
 class BvalBvecSignalEmbeddingNet(nnx.Module):
@@ -83,6 +84,7 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
         param_dtype: DTypeLike | None = None,
         precision: PrecisionLike | None = None,
         preferred_element_type: DTypeLike | None = None,
+        out_norm: bool = False,
     ) -> None:
         self.model_dim = model_dim
         self.num_heads = num_heads
@@ -97,6 +99,7 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
         self.max_signal = max_signal
         self.use_global_summary_token = use_global_summary_token
         self.global_summary_bins = global_summary_bins
+        self.out_norm = out_norm
 
         precision_kwargs = {
             "dtype": dtype,
@@ -173,18 +176,30 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
             self.output_seq_layer = nnx.Linear(
                 model_dim, y_seq_dim, rngs=rngs, **precision_kwargs
             )
+            self.out_norm_seq = (
+                nnx.LayerNorm(y_seq_dim, rngs=rngs) if out_norm else lambda x: x
+            )
         else:
             self.y_seq_dim = model_dim
             self.output_seq_layer = lambda x: x
+            self.out_norm_seq = (
+                nnx.LayerNorm(model_dim, rngs=rngs) if out_norm else lambda x: x
+            )
 
         if y_glob_dim is not None:
             self.y_glob_dim = y_glob_dim
             self.output_glob_layer = nnx.Linear(
                 model_dim, y_glob_dim, rngs=rngs, **precision_kwargs
             )
+            self.out_norm_glob = (
+                nnx.LayerNorm(y_glob_dim, rngs=rngs) if out_norm else lambda x: x
+            )
         else:
             self.y_glob_dim = model_dim
             self.output_glob_layer = lambda x: x
+            self.out_norm_glob = (
+                nnx.LayerNorm(model_dim, rngs=rngs) if out_norm else lambda x: x
+            )
 
     def transform_bvals(self, bvals: ArrayLike) -> Array:
         if self.max_bval <= self.min_bval:
@@ -316,11 +331,14 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
             global_summary = self.output_glob_layer(
                 self.global_summary_outnorm(global_summary)
             )
+            global_summary = self.out_norm_glob(global_summary)
             sequence_tokens = self.output_seq_layer(sequence_tokens)
+            sequence_tokens = self.out_norm_seq(sequence_tokens)
         else:
             global_summary = None
             sequence_tokens = out_tokens
             sequence_tokens = self.output_seq_layer(sequence_tokens)
+            sequence_tokens = self.out_norm_seq(sequence_tokens)
         return global_summary, sequence_tokens
 
 
