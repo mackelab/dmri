@@ -9,7 +9,7 @@ from probjax.nn.layers.attention import flex_attention
 from probjax.utils.typing import Array, ArrayLike, DTypeLike, PrecisionLike
 
 from dmri.simulators.acquisition_scheme import (
-    acquisition_scheme,
+    AcquisitionScheme,
     ssfp_acquisition_scheme,
 )
 
@@ -164,9 +164,7 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
                 rngs=rngs,
                 **precision_kwargs,
             )
-            self.global_summary_outnorm = nnx.LayerNorm(
-                model_dim,rngs=rngs
-            )
+            self.global_summary_outnorm = nnx.LayerNorm(model_dim, rngs=rngs)
         else:
             self.global_summary_projection = None
 
@@ -284,7 +282,7 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
 
     def __call__(
         self,
-        acq: acquisition_scheme,
+        acq: AcquisitionScheme,
         x: ArrayLike,
         deterministic: bool | None = None,
         decode: bool = False,
@@ -315,7 +313,9 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
         if using_summary:
             global_summary = out_tokens[..., 0, :]
             sequence_tokens = out_tokens[..., 1:, :]
-            global_summary = self.global_summary_outnorm(self.output_glob_layer(global_summary))
+            global_summary = self.output_glob_layer(
+                self.global_summary_outnorm(global_summary)
+            )
             sequence_tokens = self.output_seq_layer(sequence_tokens)
         else:
             global_summary = None
@@ -397,10 +397,14 @@ class SSFPEmbeddingNet(nnx.Module):
         bvec_embed_dim = self.model_dim - scalar_embed_dim - signal_embed_dim
         self.embed_scalars = GaussianFourierEmbedding(7, scalar_embed_dim, rngs=rngs)
         self.embed_signals = GaussianFourierEmbedding(1, signal_embed_dim, rngs=rngs)
+
         # Repeat bvecs
-        self.embed_bvecs: Callable[[ArrayLike], Array] = lambda x: jnp.repeat(
-            x[..., None], bvec_embed_dim, axis=-1
-        ).reshape(*x.shape[:-1], -1)[..., :bvec_embed_dim]
+        def _repeat_bvecs(x: ArrayLike) -> Array:
+            arr: Array = jnp.asarray(x)
+            repeated = jnp.repeat(arr[..., None], bvec_embed_dim, axis=-1)
+            return repeated.reshape(*arr.shape[:-1], -1)[..., :bvec_embed_dim]
+
+        self.embed_bvecs: Callable[[ArrayLike], Array] = _repeat_bvecs
 
         if use_flash_attention:
             attention_fn = flex_attention
@@ -539,6 +543,7 @@ class SSFPEmbeddingNet(nnx.Module):
         if self.use_global_summary_token:
             summary_token = self.global_summary_token(acq, signals)
         using_summary = summary_token is not None
+        signals = jnp.asarray(signals)
 
         T1 = acq.T1
         T2 = acq.T2

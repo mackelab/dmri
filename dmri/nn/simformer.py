@@ -87,7 +87,9 @@ class DiffusionTransformer(nnx.Module):
         )
         attn_fuse_cls = AdditiveBinaryFuse if gate_attention else GatedFuse
         mlp_fuse_cls = AdditiveBinaryFuse if gate_mlp else GatedFuse
-        self.kv_in_features = kv_in_features if kv_in_features is not None else model_dim
+        self.kv_in_features = (
+            kv_in_features if kv_in_features is not None else model_dim
+        )
         self.transformer = Transformer(
             model_dim,
             num_heads=num_heads,
@@ -216,6 +218,7 @@ class EDMSimformer(EDM):
         context: Optional[ArrayLike] = None,
     ) -> Array:
         assert loss_mask is None
+        model_mask_arr = jnp.asarray(model_mask)
         rng0, rng1 = jax.random.split(rng)
         t = self.noise_schedule(rng0, (theta.shape[0],))
         std = self.std_fn(t)
@@ -227,10 +230,13 @@ class EDMSimformer(EDM):
                 thetas_noisy,
                 tokenizer,
                 y=y,
-                model_mask=model_mask,
+                model_mask=model_mask_arr,
                 tokens_cfg=tokens_cfg,
                 attention_mask=attention_mask,
                 context=context,
+            )
+            assert isinstance(theta_denoised, jnp.ndarray), (
+                "Denoised output is not an ndarray"
             )
             weight = self.weight_fn(t)
             loss_denoised = weight * jnp.sum(
@@ -248,10 +254,13 @@ class EDMSimformer(EDM):
                 thetas_noisy,
                 tokenizer,
                 y=y,
-                model_mask=model_mask,
+                model_mask=model_mask_arr,
                 tokens_cfg=tokens_cfg,
                 attention_mask=attention_mask,
                 context=context,
+            )
+            assert isinstance(theta_denoised, jnp.ndarray), (
+                "dennoised output is not an ndarray"
             )
             eps_pred = (thetas_noisy - theta_denoised) / std
             v = alpha_t * eps_pred - sigma_t * theta_denoised
@@ -280,7 +289,7 @@ class EDMSimformer(EDM):
             # )
 
         if weight_by_complexity:
-            loss = loss * (model_mask.sum(axis=-1, keepdims=True) + 0.01)
+            loss = loss * (model_mask_arr.sum(axis=-1, keepdims=True) + 0.01)
 
         return jnp.mean(loss)
 
@@ -302,7 +311,9 @@ class EDMSimformer(EDM):
     ) -> Array:
         rng, rng_init = jax.random.split(rng)
         eps = jax.random.normal(rng_init, dim) * self.marginal_std(self.max_noise)
-        ts = self.solve_schedule(num_steps, rho=rho, min_noise=min_noise, max_noise=max_noise)
+        ts = self.solve_schedule(
+            num_steps, rho=rho, min_noise=min_noise, max_noise=max_noise
+        )
 
         if sample_method == "ode":
 
@@ -365,6 +376,8 @@ class EDMSimformer(EDM):
             )
             x = state.y0
             return x
+        else:
+            raise ValueError(f"Sample method {sample_method} not recognized.")
 
     def log_prob(
         self,
@@ -380,8 +393,12 @@ class EDMSimformer(EDM):
         num_steps: int = 16,
         rho: float = 7,
     ) -> Array:
-        ts = self.solve_schedule(num_steps, rho=rho, min_noise=min_noise, max_noise=max_noise)[::-1]
-        print(x.shape, ts.shape, y.shape, context.shape if context is not None else None)
+        ts = self.solve_schedule(
+            num_steps, rho=rho, min_noise=min_noise, max_noise=max_noise
+        )[::-1]
+        print(
+            x.shape, ts.shape, y.shape, context.shape if context is not None else None
+        )
 
         def dx_dt_fn(t, z):
             f_ = self.drift(t, z)
@@ -440,7 +457,9 @@ class EDMSimformer(EDM):
         rho: float = 7,
     ) -> Tuple[Array, Array]:
         eps = jax.random.normal(rng, dim) * self.marginal_std(self.max_noise)
-        ts = self.solve_schedule(num_steps, rho, min_noise=min_noise, max_noise=max_noise)
+        ts = self.solve_schedule(
+            num_steps, rho, min_noise=min_noise, max_noise=max_noise
+        )
 
         def dx_dt_fn(t, x):
             t = jnp.atleast_1d(t)

@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from typing import Protocol, runtime_checkable
 
 import jax
 import jax.numpy as jnp
@@ -18,8 +19,21 @@ ACQ_CONSTANTS = {
 }
 
 
+@runtime_checkable
+class AcquisitionScheme(Protocol):
+    """Abstract acquisition scheme interface for typing."""
+
+    bvals: ArrayLike
+    bvecs: ArrayLike
+    delta: ArrayLike
+    Delta: ArrayLike
+
+    @property
+    def qvals(self) -> ArrayLike: ...
+
+
 @dataclass
-class acquisition_scheme:  # noqa: N801
+class acquisition_scheme(AcquisitionScheme):  # noqa: N801
     """A class representing a diffusion MRI acquisition scheme.
 
     This class encapsulates the parameters needed to define a diffusion MRI acquisition,
@@ -110,7 +124,7 @@ class acquisition_scheme:  # noqa: N801
 
 
 @dataclass
-class ssfp_acquisition_scheme:
+class ssfp_acquisition_scheme(AcquisitionScheme):
     """A class representing a Steady-State Free Precession (SSFP) acquisition scheme.
 
     Fields:

@@ -85,11 +85,14 @@ class ScalarTokenizer(Tokenizer):
         condition_mask: ArrayLike,
         context: Optional[ArrayLike] = None,
     ) -> Array:
-        node_embed = self.embed_id(node_ids)
-        value_embed = self.embed_value(x)
+        node_ids_arr = jnp.asarray(node_ids, dtype=jnp.int32)
+        values = jnp.asarray(x)
+        condition = jnp.asarray(condition_mask)
+        node_embed = self.embed_id(node_ids_arr)
+        value_embed = self.embed_value(values)
 
         if self.cond_dim > 0:
-            condition_embed = self.condition_token.value * condition_mask[..., None]
+            condition_embed = self.condition_token.value * condition[..., None]
             input_embed = jnp.concatenate(
                 [node_embed, value_embed, condition_embed], axis=-1
             )
@@ -97,7 +100,7 @@ class ScalarTokenizer(Tokenizer):
             input_embed = jnp.concatenate([node_embed, value_embed], axis=-1)
 
         if context is not None and self.context_dim is not None:
-            context_embed = self.context_embed(context)
+            context_embed = self.context_embed(jnp.asarray(context))
             input_embed += context_embed
 
         return input_embed
@@ -109,7 +112,8 @@ class ScalarTokenizer(Tokenizer):
         condition_mask: ArrayLike,
         context: Optional[ArrayLike] = None,
     ) -> Array:
-        return self.outlayer(h)
+        del node_ids, condition_mask, context
+        return self.outlayer(jnp.asarray(h))
 
 
 class StructuredTokenizer(Tokenizer):
@@ -179,7 +183,7 @@ class StructuredTokenizer(Tokenizer):
 
     def decode(
         self,
-        h: ArrayLike,
+        h: Array,
         node_ids: Sequence[int],
         condition_mask: Optional[ArrayLike] = None,
         **kwargs: Any,
@@ -325,7 +329,7 @@ class DMRITokenizer(Tokenizer):
         self,
         theta: Optional[ArrayLike] = None,
         model_mask: Optional[ArrayLike] = None,
-        tokens_cfg: Optional[ArrayLike] = None,
+        tokens_cfg: Optional[Array] = None,
         alpha_prior: Optional[ArrayLike] = None,
         model_idx: Optional[Sequence[int]] = None,
         noise_idx: Optional[Sequence[int]] = None,
@@ -391,14 +395,14 @@ class DMRITokenizer(Tokenizer):
         return indices
 
     @staticmethod
-    def theta_fraction_mask(model_mask: ArrayLike) -> Array:
+    def theta_fraction_mask(model_mask: Array) -> Array:
         return jnp.ones(model_mask.shape[:-1] + (1,), dtype=jnp.bool_)
 
     def theta_mask(
         self,
-        model_mask: ArrayLike,
-        model_idx: Optional[Sequence[type]] = None,
-        noise_idx: Optional[Sequence[type]] = None,
+        model_mask: Array,
+        model_idx: Optional[Sequence[int]] = None,
+        noise_idx: Optional[Sequence[int]] = None,
     ) -> Array:
         if model_idx is None:
             model_idx = self.model_indices
@@ -424,7 +428,8 @@ class DMRITokenizer(Tokenizer):
         for i in model_idx:
             active_thetas = jnp.concatenate(
                 [active_thetas]
-                + [model_mask[..., i, None]] * self.simulator.value.model_types[i].theta_dim,
+                + [model_mask[..., i, None]]
+                * self.simulator.value.model_types[i].theta_dim,
                 axis=-1,
             )
 
@@ -441,7 +446,7 @@ class DMRITokenizer(Tokenizer):
 
     def theta_token_mask(
         self,
-        model_mask: ArrayLike,
+        model_mask: Array,
         model_idx: Optional[Sequence[int]] = None,
         noise_idx: Optional[Sequence[int]] = None,
     ) -> Array:
@@ -495,7 +500,7 @@ class DMRITokenizer(Tokenizer):
 
     def embed_cfgs(
         self,
-        model_mask: ArrayLike,
+        model_mask: Array,
         alpha_prior: Optional[ArrayLike] = None,
         model_idx: Optional[Sequence[int]] = None,
         noise_idx: Optional[Sequence[int]] = None,
@@ -566,11 +571,11 @@ class DMRITokenizer(Tokenizer):
 
     def embed_theta(
         self,
-        theta: ArrayLike,
-        tokens_cfg: ArrayLike,
+        theta: Array,
+        tokens_cfg: Array,
         model_idx: Optional[Sequence[int]] = None,
         noise_idx: Optional[Sequence[int]] = None,
-        model_mask: Optional[ArrayLike] = None,
+        model_mask: Optional[Array] = None,
     ) -> Array:
         """
         Embeds the continuous parameter vector theta into token representation.
@@ -698,10 +703,10 @@ class DMRITokenizer(Tokenizer):
 
     def decode_theta(
         self,
-        tokens: ArrayLike,
+        tokens: Array,
         model_idx: Optional[Sequence[int]] = None,
         noise_idx: Optional[Sequence[int]] = None,
-        model_mask: Optional[ArrayLike] = None,
+        model_mask: Optional[Array] = None,
         **kwargs: Any,
     ) -> Array:
         """Decode tokens back into the continuous parameter vector theta."""
@@ -724,7 +729,7 @@ class DMRITokenizer(Tokenizer):
 
         tokens_split = jnp.split(tokens, tokens.shape[-2], axis=-2)
 
-        net_subs: List[nnx.Module] = [self.theta_decode_nets[0]]
+        net_subs: List[nnx.Module | None] = [self.theta_decode_nets[0]]
         offset = 1
         if self.simulator.value.shared_parameter_type is not None:
             net_subs.append(self.theta_decode_nets[1])
@@ -792,7 +797,7 @@ class DMRITokenizerPP(DMRITokenizer):
         )
 
     @staticmethod
-    def theta_fraction_mask(model_mask: ArrayLike) -> Array:
+    def theta_fraction_mask(model_mask: Array) -> Array:
         """
         Creates a mask for the model fractions.
         """
@@ -804,9 +809,9 @@ class DMRITokenizerPP(DMRITokenizer):
 
     def _create_fraction_tokens(
         self,
-        theta_fractions: ArrayLike,
+        theta_fractions: Array,
         model_idx: Tuple[int, ...],
-        theta_fraction_mask: ArrayLike,
+        theta_fraction_mask: Array,
     ) -> Array:
         """
         Creates fraction tokens by combining model type embeddings with fraction values.
@@ -843,18 +848,18 @@ class DMRITokenizerPP(DMRITokenizer):
         fraction_tokens = fraction_id_batch * theta_fraction_mask[..., None]
 
         # Add the value embedding
-        fraction_val = self.theta_encode_nets[0](theta_fractions[..., None])
+        fraction_val = self.theta_encode_nets[0](theta_fractions[..., None])  # type: ignore
         fraction_tokens = fraction_tokens + fraction_val
 
         return fraction_tokens
 
     def embed_theta(
         self,
-        theta: ArrayLike,
-        tokens_cfg: ArrayLike,
+        theta: Array,
+        tokens_cfg: Array,
         model_idx: Optional[Sequence[int]] = None,
         noise_idx: Optional[Sequence[int]] = None,
-        model_mask: Optional[ArrayLike] = None,
+        model_mask: Optional[Array] = None,
     ) -> Array:
         if model_idx is None:
             model_idx = self.model_indices
@@ -890,6 +895,7 @@ class DMRITokenizerPP(DMRITokenizer):
         assert sum(dims_per_component) == theta.shape[-1], (
             f"theta shape last axis {theta.shape} does not match the number of model components {sum(dims_per_component)}"
         )
+        assert model_mask is not None, "model_mask must be provided for DMRITokenizerPP"
 
         # Split theta into components
         dims = np.asarray(dims_per_component, dtype=np.int32)
@@ -907,7 +913,7 @@ class DMRITokenizerPP(DMRITokenizer):
         # Handle shared parameters if they exist
         if self.simulator.value.shared_parameter_type is not None:
             theta_shared = theta_split[1]
-            shared_tokens = self.theta_encode_nets[1](theta_shared[..., None, :])
+            shared_tokens = self.theta_encode_nets[1](theta_shared[..., None, :])  # type: ignore
             theta_models = theta_split[2:]
         else:
             theta_models = theta_split[1:]
@@ -932,9 +938,7 @@ class DMRITokenizerPP(DMRITokenizer):
         model_tokens = val_tokens_cfg[..., indices_with_params, :] + val_embeddings
         # Combine the tokens
         if self.simulator.value.shared_parameter_type is not None:
-            shared_index_array = jnp.zeros(
-                shared_tokens.shape[:-1], dtype=jnp.int32
-            )
+            shared_index_array = jnp.zeros(shared_tokens.shape[:-1], dtype=jnp.int32)
             shared_tokens_idx = self.shared_parameter_idx(shared_index_array)
             shared_tokens = shared_tokens_idx + shared_tokens
             theta_tokens = jnp.concatenate(
@@ -947,10 +951,10 @@ class DMRITokenizerPP(DMRITokenizer):
 
     def decode_theta(
         self,
-        tokens: ArrayLike,
+        tokens: Array,
         model_idx: Optional[Sequence[int]] = None,
         noise_idx: Optional[Sequence[int]] = None,
-        model_mask: Optional[ArrayLike] = None,
+        model_mask: Optional[Array] = None,
         **kwargs: Any,
     ) -> Array:
         del model_mask, kwargs
@@ -976,17 +980,17 @@ class DMRITokenizerPP(DMRITokenizer):
 
         num_fractions = len(model_idx) - 1
         for _ in range(num_fractions):
-            net_subs.append(self.theta_decode_nets[0])
+            net_subs.append(self.theta_decode_nets[0])  # type: ignore
 
         offset = 1
         if self.simulator.value.shared_parameter_type is not None:
-            net_subs.append(self.theta_decode_nets[1])
+            net_subs.append(self.theta_decode_nets[1])  # type: ignore
             offset += 1
 
         for i in model_idx_with_params:
-            net_subs.append(self.theta_decode_nets[i + offset])
+            net_subs.append(self.theta_decode_nets[i + offset])  # type: ignore
         for i in noise_idx_with_params:
-            net_subs.append(self.theta_decode_nets[self.num_models + i + offset])
+            net_subs.append(self.theta_decode_nets[self.num_models + i + offset])  # type: ignore
 
         assert len(net_subs) == len(tokens_split), (
             f"Number of networks ({len(net_subs)}) does not match number of tokens ({len(tokens_split)})"

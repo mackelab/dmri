@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from functools import partial
-from typing import Any, List, Optional, Tuple, Type
+from typing import Any, List, Optional, Tuple, Type, cast
 
 import jax
 import jax.numpy as jnp
@@ -8,7 +8,10 @@ from flax import nnx
 from probjax.utils.typing import Array, ArrayLike, DTypeLike, PrecisionLike, RngKey
 
 from dmri.simulators import MultiCompartment
-from dmri.simulators.acquisition_scheme import acquisition_scheme
+from dmri.simulators.acquisition_scheme import (
+    acquisition_scheme,
+    ssfp_acquisition_scheme,
+)
 
 from .autoregressive import (
     BinaryAutoregressiveDecoder,
@@ -26,6 +29,7 @@ from .tokenizer import DMRITokenizer, DMRITokenizerPP
 
 EmbeddingModule = BvalBvecSignalEmbeddingNet | SSFPEmbeddingNet
 TokenizerType = Type[DMRITokenizer]
+AcquisitionSchemeLike = acquisition_scheme | ssfp_acquisition_scheme
 
 
 @dataclass
@@ -154,7 +158,7 @@ class DMRIInferenceModel(nnx.Module):
         model_mask: Array,
         theta: Array,
         x: Array,
-        acq: acquisition_scheme,
+        acq: AcquisitionSchemeLike,
         mask_prior: Optional[Array] = None,
         alpha_prior: Optional[Array] = None,
         model_idx: Optional[List[int]] = None,
@@ -189,24 +193,48 @@ class DMRIInferenceModel(nnx.Module):
         attention_mask = self.marginalization_mask(
             model_mask, model_idx=model_idx, noise_idx=noise_idx
         )
-        theta_pred = self.inference_decoder(
-            t,
-            theta,
-            self.tokenizer,
-            y=y,
-            tokens_cfg=tokens_cfg,
-            attention_mask=attention_mask,
-            model_mask=model_mask,
-            context=y_ctx,
+        theta_pred = cast(
+            Array,
+            self.inference_decoder(
+                t,
+                theta,
+                self.tokenizer,
+                y=y,
+                tokens_cfg=tokens_cfg,
+                attention_mask=attention_mask,
+                model_mask=model_mask,
+                context=y_ctx,
+            ),
         )
 
         return model_mask_logits, theta_pred
+
+    def _encode_observations(
+        self,
+        acq: AcquisitionSchemeLike,
+        x: ArrayLike,
+        deterministic: bool | None = None,
+        decode: bool = False,
+    ) -> tuple[Array | None, Array]:
+        if isinstance(self.encoder, BvalBvecSignalEmbeddingNet):
+            if not isinstance(acq, acquisition_scheme):
+                raise TypeError(
+                    "Expected a diffusion acquisition scheme for the diffusion encoder."
+                )
+            return self.encoder(acq, x, deterministic=deterministic, decode=decode)
+        if isinstance(self.encoder, SSFPEmbeddingNet):
+            if not isinstance(acq, ssfp_acquisition_scheme):
+                raise TypeError(
+                    "Expected an SSFP acquisition scheme for the SSFP encoder."
+                )
+            return self.encoder(acq, x, deterministic=deterministic, decode=decode)
+        raise TypeError(f"Unsupported encoder type: {type(self.encoder)!r}")
 
     def embed_inputs(
         self,
         model_mask: Array,
         x: Array,
-        acq: acquisition_scheme,
+        acq: AcquisitionSchemeLike,
         mask_prior: Optional[Array] = None,
         alpha_prior: Optional[Array] = None,
         model_idx: Optional[List[int]] = None,
@@ -220,11 +248,13 @@ class DMRIInferenceModel(nnx.Module):
             noise_idx=noise_idx,
         )
         # Embed observations and acquisition parameters
-        y_ctx, y = self.encoder(acq, x)
+        y_ctx, y = self._encode_observations(acq, x)
         if y.ndim == 2:
             y = y[..., None, :]
 
-        print("cfg", tokens_cfg.shape, y.shape, y_ctx.shape if y_ctx is not None else None)
+        print(
+            "cfg", tokens_cfg.shape, y.shape, y_ctx.shape if y_ctx is not None else None
+        )
         return tokens_cfg, y_ctx, y, mask_prior
 
     def theta_mask(
@@ -261,7 +291,7 @@ class DMRIInferenceModel(nnx.Module):
         model_mask: Array,
         theta: Array,
         x: Array,
-        acq: acquisition_scheme,
+        acq: AcquisitionSchemeLike,
         mask_prior: Array | None = None,
         alpha_prior: Array | None = None,
         target_score: Array | None = None,
@@ -277,7 +307,7 @@ class DMRIInferenceModel(nnx.Module):
             model_mask, alpha_prior, model_idx=model_idx, noise_idx=noise_idx
         )
         # Embed observatiosn
-        y_ctx, y = self.encoder(acq, x)
+        y_ctx, y = self._encode_observations(acq, x)
         if y.ndim == 2:
             y = y[..., None, :]
 
@@ -333,13 +363,13 @@ class DMRIInferenceModel(nnx.Module):
     def sample_mask(
         self,
         rng: RngKey,
-        acq: acquisition_scheme,
+        acq: AcquisitionSchemeLike,
         x: Array,
         mask_prior: Array | None = None,
     ) -> Array:
         # Update for different model configs
         mask_prior = jnp.asarray(mask_prior) if mask_prior is not None else None
-        y_ctx, y = self.encoder(acq, x)
+        y_ctx, y = self._encode_observations(acq, x)
         model_mask = self.model_decoder.sample(
             rng,
             tokenizer=self.tokenizer,
@@ -353,12 +383,12 @@ class DMRIInferenceModel(nnx.Module):
     def log_prob_mask(
         self,
         model_mask: Array,
-        acq: acquisition_scheme,
+        acq: AcquisitionSchemeLike,
         x: Array,
         mask_prior: Array | None = None,
     ) -> Array:
         mask_prior_arr = jnp.asarray(mask_prior) if mask_prior is not None else None
-        y_ctx, y = self.encoder(acq, x)
+        y_ctx, y = self._encode_observations(acq, x)
         log_prob = self.model_decoder.log_prob(
             model_mask,
             self.tokenizer,
@@ -371,7 +401,7 @@ class DMRIInferenceModel(nnx.Module):
     def sample_theta(
         self,
         rng: RngKey,
-        acq: acquisition_scheme,
+        acq: AcquisitionSchemeLike,
         x: Array,
         model_mask: Array,
         num_steps: int = 16,
@@ -380,7 +410,7 @@ class DMRIInferenceModel(nnx.Module):
         rho: float = 7,
         sample_method: str = "ode",
     ) -> Array:
-        y_ctx, y = self.encoder(acq, x)
+        y_ctx, y = self._encode_observations(acq, x)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
 
         attention_mask = self.marginalization_mask(model_mask)
@@ -407,7 +437,7 @@ class DMRIInferenceModel(nnx.Module):
     def log_prob_theta(
         self,
         theta: Array,
-        acq: acquisition_scheme,
+        acq: AcquisitionSchemeLike,
         x: Array,
         model_mask: Array,
         num_steps: int = 16,
@@ -415,7 +445,7 @@ class DMRIInferenceModel(nnx.Module):
         max_noise: Optional[float] = None,
         rho: float = 7,
     ) -> Array:
-        y_ctx, y = self.encoder(acq, x)
+        y_ctx, y = self._encode_observations(acq, x)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
 
         attention_mask = self.marginalization_mask(model_mask)
@@ -439,7 +469,7 @@ class DMRIInferenceModel(nnx.Module):
     def sample_and_log_prob_theta(
         self,
         rng: RngKey,
-        acq: acquisition_scheme,
+        acq: AcquisitionSchemeLike,
         x: ArrayLike,
         model_mask: Array,
         num_steps: int = 16,
@@ -447,7 +477,7 @@ class DMRIInferenceModel(nnx.Module):
         max_noise: Optional[float] = None,
         rho: float = 7,
     ) -> tuple[Array, Array]:
-        y_ctx, y = self.encoder(acq, x)
+        y_ctx, y = self._encode_observations(acq, x)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
 
         attention_mask = self.marginalization_mask(model_mask)
@@ -472,7 +502,7 @@ class DMRIInferenceModel(nnx.Module):
     def score_theta(
         self,
         theta: Array,
-        acq: acquisition_scheme,
+        acq: AcquisitionSchemeLike,
         x: ArrayLike,
         model_mask: Array,
         t: Optional[ArrayLike] = None,
@@ -482,20 +512,23 @@ class DMRIInferenceModel(nnx.Module):
         else:
             t = jnp.asarray(t)
 
-        y_ctx, y = self.encoder(acq, x)
+        y_ctx, y = self._encode_observations(acq, x)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
 
         attention_mask = self.marginalization_mask(model_mask)
 
-        score = self.inference_decoder.score(
-            t,
-            theta,
-            y=y,
-            tokenizer=self.tokenizer,
-            tokens_cfg=tokens_cfg,
-            attention_mask=attention_mask,
-            model_mask=model_mask,
-            context=y_ctx,
+        score = cast(
+            Array,
+            self.inference_decoder.score(
+                t,
+                theta,
+                y=y,
+                tokenizer=self.tokenizer,
+                tokens_cfg=tokens_cfg,
+                attention_mask=attention_mask,
+                model_mask=model_mask,
+                context=y_ctx,
+            ),
         )
 
         return score
