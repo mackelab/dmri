@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from functools import lru_cache
-from typing import Callable, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from functools import cache
+from typing import Any, Callable, Optional, Tuple
 
 import jax
 import jax.numpy as jnp
@@ -14,8 +15,6 @@ from dmri.simulators import acquisition_scheme
 from dmri.simulators.base import SharedParameterState, SignalCompartment
 from dmri.simulators.local_signal_models import (
     Ball,
-    BinghamStick,
-    BinghamZeppelin,
     Dti,
     NoddiB,
     NoddiW,
@@ -26,25 +25,20 @@ from dmri.simulators.local_signal_models import (
     StaticBall,
     StaticStick,
     Stick,
-    WatsonStick,
-    WatsonZeppelin,
     Zeppelin,
 )
 from dmri.simulators.local_signal_models.ball import (
     MultiShellStaticBall,
 )
 from dmri.simulators.local_signal_models.stick import MultiShellStaticStick
+from dmri.simulators.mask_prior import BetaBernoulliMaskPrior, MaskPrior
 from dmri.simulators.noise_compartments import (
     BoundedGaussianNoise,
-    GaussianNoiseSNR310,
-    GaussianNoiseSNR1020,
-    GaussianNoiseSNR2030,
-    GaussianNoiseSNR3040,
+    BoundedRicianNoise,
     RicianNoiseSNR310,
     RicianNoiseSNR1020,
     RicianNoiseSNR2030,
     RicianNoiseSNR3040,
-    BoundedRicianNoise,
 )
 from dmri.simulators.sphereical_distributions import MixtureOfFODs
 from dmri.utils.dmriutils import ssfp_signal_fn
@@ -58,6 +52,8 @@ class MultiCompartment(SignalCompartment):
     shared_parameter_type: type[SharedParameterState] | None = None
     normalizing_fn: Callable | None = None
     pre_normalizing_fn: Callable | None = None
+    mask_prior_cls: type[MaskPrior] = BetaBernoulliMaskPrior
+    mask_prior_kwargs: dict[str, Any] | None = None
     _split_dims: tuple[int, ...] = ()
     _split_indices: tuple[int, ...] = ()
     _num_models: int = 0
@@ -102,6 +98,8 @@ class MultiCompartment(SignalCompartment):
             cls._split_indices = ()
 
         jtu.register_pytree_node_class(cls)
+        if not hasattr(cls, "mask_prior_cls") or cls.mask_prior_cls is None:
+            cls.mask_prior_cls = BetaBernoulliMaskPrior
 
     def __init__(
         self,
@@ -200,6 +198,17 @@ class MultiCompartment(SignalCompartment):
             signal = cls.normalizing_fn(acq, signal)
 
         return signal
+
+    @classmethod
+    def create_mask_prior(cls, **overrides: Any) -> MaskPrior:
+        """Instantiate the configured mask-prior distribution."""
+        kwargs = dict(cls.mask_prior_kwargs or {})
+        kwargs.update(overrides)
+        return cls.mask_prior_cls(
+            len(cls.model_types),
+            len(cls.noise_types),
+            **kwargs,
+        )
 
     @classmethod
     def log_signal_fn(cls, acq, **kwargs):
@@ -306,7 +315,7 @@ class MultiCompartment(SignalCompartment):
         cls,
         model_idx: Sequence[int],
         noise_idx: Sequence[int],
-    ) -> type["MultiCompartment"]:
+    ) -> type[MultiCompartment]:
         """Return a reduced ``MultiCompartment`` subclass with selected components."""
 
         model_idx_tuple = tuple(int(i) for i in model_idx)
@@ -329,7 +338,9 @@ class MultiCompartment(SignalCompartment):
             return MixtureOfFODs(fractions, fods)
         else:
             fods = [
-                m.to_fod() for m in self.model_compartments if not isinstance(m, Ball) or not isinstance(m, MultiShellStaticBall)
+                m.to_fod()
+                for m in self.model_compartments
+                if not isinstance(m, Ball) or not isinstance(m, MultiShellStaticBall)
             ]
             fractions = self.model_fractions[1:]
             fractions = fractions / jnp.sum(fractions)
@@ -424,7 +435,7 @@ class SharedMultiShellDiffusivity(SharedParameterState):
         return jax.scipy.stats.norm.ppf(us)
 
 
-@lru_cache(maxsize=None)
+@cache
 def _build_submodel(
     base_cls: type[MultiCompartment],
     model_idx_tuple: Tuple[int, ...],

@@ -150,7 +150,7 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         input_tokens = self._encode_model_mask(model_mask, tokenizer, **kwargs)
         batch_shape = input_tokens.shape[:-2]
         context_vec = self._prepare_context(
-            batch_shape,
+            tuple(batch_shape),
             input_tokens.dtype,
             mask_prior=mask_prior,
             additional_context=additional_context,
@@ -219,7 +219,9 @@ class BinaryAutoregressiveDecoder(nnx.Module):
             try:
                 mask_prior_arr = jnp.broadcast_to(mask_prior_arr, expected_shape)
             except ValueError as err:
-                raise ValueError("Mask prior batch shape does not match tokens.") from err
+                raise ValueError(
+                    "Mask prior batch shape does not match tokens."
+                ) from err
 
             if self.mask_prior_embed is None:
                 raise ValueError("Mask prior embedding is not initialized.")
@@ -350,7 +352,7 @@ class BinaryAutoregressiveDecoder(nnx.Module):
             model_mask = jax.vmap(permute_batch_element)(model_mask, batch_orders)
 
         context_vec = self._prepare_context(
-            batch_shape,
+            tuple(batch_shape),
             input_tokens.dtype,
             mask_prior=mask_prior,
             additional_context=additional_context,
