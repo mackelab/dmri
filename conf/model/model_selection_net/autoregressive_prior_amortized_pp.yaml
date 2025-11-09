@@ -6,6 +6,8 @@ params:
   use_flash_attention: false
   use_flash_cross_attention: true
   attn_size: 16
+  normalize_qk_attn: false
+  normalize_qk_cross_attn: false
   dropout_rate: 0.0
   prior_params_embed_dim: 128  # Context dimension embedding
   mask_prior_dim: 1  # Model prior input dim

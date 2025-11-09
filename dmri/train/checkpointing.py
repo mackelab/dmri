@@ -35,7 +35,7 @@ class CheckpointManager:
         self.keep_best = keep_best
         self.best_loss = float("inf")
         self.recovery_threshold = recovery_threshold
-        self.prev_loss: Optional[float] = None
+        self.prev_metric: Optional[float] = None
 
         if continue_training:
             latest = self.manager.latest_step()
@@ -154,24 +154,29 @@ class CheckpointManager:
     def get_latest_step(self) -> Optional[int]:
         return self.manager.latest_step()
 
-    def should_recover(self, current_loss: float) -> bool:
-        if self.prev_loss is None:
-            self.prev_loss = current_loss
+    def should_recover(
+        self, current_metric: Optional[float], recovery_threshold: float | None = None
+    ) -> bool:
+        if current_metric is None:
             return False
+        if self.prev_metric is None:
+            self.prev_metric = current_metric
+            return False
+        recovery_threshold = self.recovery_threshold if recovery_threshold is None else recovery_threshold
 
         if (
-            current_loss > self.recovery_threshold
-            or np.isnan(current_loss)
-            or np.isinf(current_loss)
+            current_metric > recovery_threshold
+            or np.isnan(current_metric)
+            or np.isinf(current_metric)
         ):
-            self.prev_loss = current_loss
+            self.prev_metric = current_metric
             return True
 
-        if current_loss > self.prev_loss * 2:
-            self.prev_loss = current_loss
+        if current_metric > self.prev_metric * 2:
+            self.prev_metric = current_metric
             return True
 
-        self.prev_loss = current_loss
+        self.prev_metric = current_metric
         return False
 
     def wait_until_finished(self) -> None:

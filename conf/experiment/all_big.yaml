@@ -7,6 +7,7 @@ hydra:
     params:
       wandb.project: all_models
       train.ema_decay: 0.9999
+      train.optimizer.gradient_clip_value: 1.0
       model.model_dim: 256
       model.inference_net.params.gate_attention: false
 
@@ -18,3 +19,4 @@ defaults:
   - override /train/dataloader: datastream
  # - override /simulator/acquisition_scheme: multi
   - override /model: mask_amortized_pp_global_ctx
+  - override /model/embedding_net: bvalbvec_pp

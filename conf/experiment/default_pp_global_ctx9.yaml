@@ -1,0 +1,22 @@
+# @package _global_
+name: default_pp_global_ctx9
+use_wandb: true
+
+hydra:
+  sweeper:
+    params:
+      wandb.project: new_multishell_ball3stick
+      train.ema_decay: 0.9999
+      train.continue_training: true
+      train.restart_optimizer: true
+      model.inference_net.params.gate_attention: false
+      train.model_selection_weight: 0.1
+      train.optimizer.gradient_clip_value: 1.0
+
+defaults:
+  - _self_
+  - override /partition: h100_long
+  - override /model/embedding_net: bvalbvec_pp
+  - override /simulator: multishell_ball3stick_shared_with_score
+  - override /simulator/acquisition_scheme: multi
+  - override /model: mask_amortized_pp_global_ctx2
