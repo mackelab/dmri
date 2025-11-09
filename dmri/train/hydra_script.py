@@ -636,32 +636,22 @@ def train_loop(
                 if hasattr(dataset, "get_stats"):
                     all_stats.append(dataset.get_stats())
 
-            # Compute averaged production_time and samples_written/samples_requested ratio
+            # Compute averaged production time across datasets
             if all_stats:
-                production_times = [
-                    stats.get("production_time", 0) for stats in all_stats
+                avg_times = [
+                    stats.get("avg_production_time")
+                    for stats in all_stats
+                    if stats and "avg_production_time" in stats
                 ]
-                samples_written = [
-                    stats.get("samples_written", 0) for stats in all_stats
-                ]
-                samples_requested = [
-                    stats.get("samples_requested", 1) for stats in all_stats
-                ]
-
-                avg_production_time = sum(production_times) / len(production_times)
-                total_written = sum(samples_written)
-                total_requested = sum(samples_requested)
-
-                dataset_stats["train_dataset/production_time"] = avg_production_time
-                if total_requested > 0:
-                    dataset_stats["train_dataset/samples_written_requested_ratio"] = (
-                        total_written / total_requested
+                if avg_times:
+                    dataset_stats["train_dataset/avg_production_time"] = (
+                        sum(avg_times) / len(avg_times)
                     )
 
         # Log dataset stats locally
         if dataset_stats:
-            stats_str = ", ".join(f"{k}: {v:.4f}" for k, v in dataset_stats.items())
-            log.info(f"Dataset stats - {stats_str}")
+            avg_time = dataset_stats.get("train_dataset/avg_production_time", 0.0)
+            log.info(f"Dataset avg production time: {avg_time:.4f}s")
 
         log.info(
             f"Step {train_state.step}, Loss mask: {loss_mask}, Loss theta: {loss_theta}, data_queue_size: {queue_size}"
@@ -723,6 +713,51 @@ def train_loop(
                     "theta_negative_log_likelihood": float(theta_nnl),
                     "step": train_state.step,
                 })
+            validation_metric = float(mask_nnl + theta_nnl)
+            recovery_threshold = cfg.train.get("recovery_threshold", 2.0)
+            if checkpoint_manager.should_recover(
+                validation_metric, recovery_threshold=recovery_threshold
+            ):
+                log.warning(
+                    f"Recovery triggered at step {train_state.step} based on validation metrics. Restoring from checkpoint."
+                )
+                try:
+                    latest_step = checkpoint_manager.get_latest_step()
+                    if latest_step is None:
+                        log.warning(
+                            "No checkpoints available for recovery. Continuing without recovery."
+                        )
+                    else:
+                        checkpoint = checkpoint_manager.restore(
+                            step=latest_step,
+                            params=train_state.params,
+                            optimizer_state=train_state.opt_state,
+                            params_ema=get_ema_params(train_state.ema_state)
+                            if track_ema
+                            else None,
+                            model_state=train_state.model_state,
+                            ema_state=train_state.ema_state if track_ema else None,
+                            rng=train_state.rng,
+                        )
+                        if checkpoint is None:
+                            log.warning(
+                                "Failed to restore recovery checkpoint. Continuing without recovery."
+                            )
+                        else:
+                            train_state = apply_checkpoint_to_state(
+                                train_state=train_state,
+                                checkpoint=checkpoint,
+                                cfg=cfg,
+                                optimizer=optimizer,
+                                ema_transform=ema_transform,
+                                log=log,
+                                rebuild_optimizer=False,
+                            )
+                            log.info(f"Recovered to step {train_state.step}")
+                            datastreams = [iter(loader) for loader in loaders]
+                except Exception as err:  # pragma: no cover - defensive logging
+                    log.error(f"Error during recovery: {err}")
+                    log.warning("Continuing without recovery.")
 
         if (
             checkpoint_freq
@@ -736,48 +771,6 @@ def train_loop(
                 total_loss_value,
                 track_ema,
             )
-
-        if checkpoint_manager.should_recover(total_loss_value):
-            log.warning(
-                f"Recovery triggered at step {train_state.step}. Restoring from checkpoint."
-            )
-            try:
-                latest_step = checkpoint_manager.get_latest_step()
-                if latest_step is None:
-                    log.warning(
-                        "No checkpoints available for recovery. Continuing without recovery."
-                    )
-                else:
-                    checkpoint = checkpoint_manager.restore(
-                        step=latest_step,
-                        params=train_state.params,
-                        optimizer_state=train_state.opt_state,
-                        params_ema=get_ema_params(train_state.ema_state)
-                        if track_ema
-                        else None,
-                        model_state=train_state.model_state,
-                        ema_state=train_state.ema_state if track_ema else None,
-                        rng=train_state.rng,
-                    )
-                    if checkpoint is None:
-                        log.warning(
-                            "Failed to restore recovery checkpoint. Continuing without recovery."
-                        )
-                    else:
-                        train_state = apply_checkpoint_to_state(
-                            train_state=train_state,
-                            checkpoint=checkpoint,
-                            cfg=cfg,
-                            optimizer=optimizer,
-                            ema_transform=ema_transform,
-                            log=log,
-                            rebuild_optimizer=False,
-                        )
-                        log.info(f"Recovered to step {train_state.step}")
-                        datastreams = [iter(loader) for loader in loaders]
-            except Exception as err:  # pragma: no cover - defensive logging
-                log.error(f"Error during recovery: {err}")
-                log.warning("Continuing without recovery.")
 
     log.info("Training complete")
     checkpoint_manager.wait_until_finished()
@@ -843,7 +836,7 @@ def _main(cfg: DictConfig):
         ckpt_dir=checkpoint_dir,
         max_to_keep=cfg.get("max_checkpoints", 3),
         keep_best=cfg.get("keep_best_checkpoint", True),
-        recovery_threshold=cfg.get("recovery_threshold", float("inf")),
+        recovery_threshold=cfg.train.get("recovery_threshold", float("inf")),
         continue_training=cfg.train.get("continue_training", False),
     )
 

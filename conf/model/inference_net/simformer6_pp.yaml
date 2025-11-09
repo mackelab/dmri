@@ -5,6 +5,8 @@ params:
   widening_factor: 4
   use_flash_attention: false
   use_flash_cross_attention: true
+  normalize_qk_attn: false
+  normalize_qk_cross_attn: false
   attn_size: 16
   time_embed_dim: 128
   gate_attention: true

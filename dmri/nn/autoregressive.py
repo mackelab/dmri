@@ -25,6 +25,8 @@ class DMRIModelSelectionConfig:
     kv_in_features: Optional[int] = None
     use_flash_attention: bool = False
     use_flash_cross_attention: bool = False
+    normalize_qk_attn: bool = False
+    normalize_qk_cross_attn: bool = False
     dtype: DTypeLike | None = None
     param_dtype: DTypeLike | None = None
     precision: PrecisionLike | None = None
@@ -60,6 +62,8 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         enable_cross_attention: bool = True,
         use_flash_attention: bool = False,
         use_flash_cross_attention: bool = False,
+        normalize_qk_attn: bool = False,
+        normalize_qk_cross_attn: bool = False,
         dtype: DTypeLike | None = None,
         param_dtype: DTypeLike | None = None,
         precision: PrecisionLike | None = None,
@@ -126,8 +130,11 @@ class BinaryAutoregressiveDecoder(nnx.Module):
             attention_fn=attn_fn,
             cross_attention_fn=cross_attn_fn,
             enable_cross_attention=enable_cross_attention,
+            normalize_qk_attn=normalize_qk_attn,
+            normalize_qk_cross_attn=normalize_qk_cross_attn,
             **precision_kwargs,
         )
+        self.out_norm = nnx.LayerNorm(model_dim, rngs=rngs)
         self.output = nnx.Linear(
             model_dim,
             1,
@@ -164,6 +171,7 @@ class BinaryAutoregressiveDecoder(nnx.Module):
             decode=decode,
             deterministic=deterministic,
         )
+        output_tokens = self.out_norm(output_tokens)
         # Reduce to logits
         logits = self.output(output_tokens)
         # Remove the first "padding" token output

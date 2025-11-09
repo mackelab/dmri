@@ -30,6 +30,8 @@ class DMRIThetaInferenceConfig:
     dropout_rate: float = 0.0
     use_flash_attention: bool = False
     use_flash_cross_attention: bool = False
+    normalize_qk_attn: bool = False
+    normalize_qk_cross_attn: bool = False
     gate_attention: bool = False
     gate_mlp: bool = False
     kv_in_features: Optional[int] = None
@@ -54,6 +56,8 @@ class DiffusionTransformer(nnx.Module):
         enable_cross_attention: bool = True,
         use_flash_attention: bool = False,
         use_flash_cross_attention: bool = False,
+        normalize_qk_attn: bool = False,
+        normalize_qk_cross_attn: bool = False,
         gate_attention: bool = False,
         gate_mlp: bool = False,
         kv_in_features: Optional[int] = None,
@@ -103,10 +107,13 @@ class DiffusionTransformer(nnx.Module):
             context_dim=transformer_context_dim,
             attention_fn=attn_fn,
             cross_attention_fn=cross_attn_fn,
+            normalize_qk_attn=normalize_qk_attn,
+            normalize_qk_cross_attn=normalize_qk_cross_attn,
             attn_fuse_cls=attn_fuse_cls,
             mlp_fuse_cls=mlp_fuse_cls,
             **precision_kwargs,
         )
+        self.out_norm = nnx.LayerNorm(model_dim, rngs=rngs)
 
     def __call__(
         self,
@@ -150,6 +157,7 @@ class DiffusionTransformer(nnx.Module):
         output = self.transformer(
             input_embed, y, y, context=_context, mask=attention_mask
         )
+        output = self.out_norm(output)
         output = tokenizer.decode(output, **kwargs)
         return output
 
@@ -169,6 +177,8 @@ class EDMSimformer(EDM):
         enable_cross_attention: bool = True,
         use_flash_attention: bool = False,
         use_flash_cross_attention: bool = False,
+        normalize_qk_attn: bool = False,
+        normalize_qk_cross_attn: bool = False,
         gate_attention: bool = False,
         gate_mlp: bool = False,
         kv_in_features: Optional[int] = None,
@@ -194,6 +204,8 @@ class EDMSimformer(EDM):
             gate_attention=gate_attention,
             gate_mlp=gate_mlp,
             kv_in_features=kv_in_features,
+            normalize_qk_attn=normalize_qk_attn,
+            normalize_qk_cross_attn=normalize_qk_cross_attn,
             dtype=dtype,
             param_dtype=param_dtype,
             precision=precision,
