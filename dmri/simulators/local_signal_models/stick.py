@@ -5,10 +5,10 @@ from jax.typing import ArrayLike
 from dmri.simulators.base import SignalCompartment, acquisition_scheme
 from dmri.simulators.sphereical_distributions import SymmetricDirac
 from dmri.utils.dmriutils import (
-    cartesian_to_unitsphere,
+    cart2sph,
     fit_diffusion_tensor_linearized,
+    sph2cart,
     ssfp_signal_fn,
-    unitsphere_to_cartesian,
 )
 
 
@@ -39,7 +39,7 @@ class Stick(SignalCompartment):
         """Compute the log signal for given b-values and b-vectors."""
         bvals = acq.bvals
         bvecs = acq.bvecs
-        mu_cart = unitsphere_to_cartesian(mu)
+        mu_cart = sph2cart(mu)
         logS = -bvals * lam_par * (jnp.sum(bvecs * mu_cart, axis=-1)) ** 2
         return logS
 
@@ -68,7 +68,7 @@ class Stick(SignalCompartment):
         return mu, lam_par
 
     def to_fod(self):
-        mu_cart = unitsphere_to_cartesian(self.mu)
+        mu_cart = sph2cart(self.mu)
         return SymmetricDirac(mu_cart)
 
     def fit(self, logS: ArrayLike, acq: acquisition_scheme) -> tuple:
@@ -80,7 +80,7 @@ class Stick(SignalCompartment):
         idx = jnp.argmax(eigvals)
         lam_par = eigvals[idx]
         eigvec = eigvecs[:, idx]
-        mu = cartesian_to_unitsphere(eigvec)
+        mu = cart2sph(eigvec)
         return mu, lam_par
 
 
@@ -173,7 +173,7 @@ class StaticStick(Stick):
         """
         bvals = acq.bvals
         bvecs = acq.bvecs
-        mu_cart = unitsphere_to_cartesian(mu)
+        mu_cart = sph2cart(mu)
         logS = -bvals * cls.lam_par * (jnp.sum(bvecs * mu_cart, axis=-1)) ** 2
         return logS
 
@@ -215,7 +215,7 @@ class MultiShellStick(Stick):
         """
         bvals = acq.bvals
         bvecs = acq.bvecs
-        mu_cart = unitsphere_to_cartesian(mu)
+        mu_cart = sph2cart(mu)
 
         return multi_shell_stick_log_signal_fn(bvals, bvecs, mu, lam_par, lam_par_std)
 
@@ -370,7 +370,7 @@ class SSFPStick(Stick):
     ) -> ArrayLike:
         """Compute the signal for given b-values and b-vectors."""
 
-        mu_cart = unitsphere_to_cartesian(mu)
+        mu_cart = sph2cart(mu)
         adc_aniso = lam_par * (jnp.sum(acq.bvecs * mu_cart, axis=-1)) ** 2
 
         qvals = acq.qvals
@@ -461,7 +461,7 @@ def multi_shell_stick_log_signal_fn(
     lam_par_std: float,
 ) -> ArrayLike:
     """Implementation with float32 numerical stability."""
-    mu_cart = unitsphere_to_cartesian(mu)
+    mu_cart = sph2cart(mu)
     nugget = jnp.finfo(bvals.dtype).eps
 
     # Add small constant to prevent division by zero when mu -> 0

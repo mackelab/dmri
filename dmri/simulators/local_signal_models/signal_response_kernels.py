@@ -6,7 +6,7 @@ from dmri.simulators.acquisition_scheme import acquisition_scheme
 from dmri.simulators.convolved_models import SignalKernel
 from dmri.simulators.local_signal_models.stick import Stick
 from dmri.simulators.local_signal_models.zeppelin import Zeppelin
-from dmri.utils.dmriutils import cartesian_to_unitsphere
+from dmri.utils.dmriutils import cart2sph
 
 
 class StickKernel(SignalKernel):
@@ -27,7 +27,7 @@ class StickKernel(SignalKernel):
     ) -> ArrayLike:
         """Compute the log signal for given b-values and b-vectors."""
         signal_fn = jax.vmap(Stick.signal_fn, in_axes=(0, None, None))
-        mu = cartesian_to_unitsphere(mu)
+        mu = cart2sph(mu)
         return signal_fn(acq, mu, lam_par)
 
     @classmethod
@@ -66,7 +66,7 @@ class ZeppelinKernel(SignalKernel):
     ) -> ArrayLike:
         """Compute the log signal for given b-values and b-vectors."""
         signal_fn = jax.vmap(Zeppelin.signal_fn, in_axes=(0, None, None, None))
-        mu = cartesian_to_unitsphere(mu)
+        mu = cart2sph(mu)
         return signal_fn(acq, mu, lam_perp, lam_par)
 
     @classmethod

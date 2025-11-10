@@ -3,7 +3,6 @@ import pytest
 
 from dmri.utils.dmriutils import (
     cart2sph,
-    cartesian_to_unitsphere,
     compute_ad,
     compute_fa,
     compute_md,
@@ -12,7 +11,6 @@ from dmri.utils.dmriutils import (
     make_dyads,
     normalize_bvecs,
     sph2cart,
-    unitsphere_to_cartesian,
 )
 
 
@@ -49,14 +47,11 @@ def test_fit_diffusion_tensor_linearized(sample_bvecs, sample_bvals, sample_sign
 
 def test_cartesian_spherical_conversion():
     """Test conversion between Cartesian and spherical coordinates."""
-    # Test cartesian_to_unitsphere
     cart = jnp.array([1.0, 0.0, 0.0])
-    sph = cartesian_to_unitsphere(cart)
+    sph = cart2sph(cart)
     assert jnp.allclose(sph, jnp.array([jnp.pi / 2, 0.0]), atol=1e-6)
 
-    # Test unitsphere_to_cartesian
-    sph = jnp.array([jnp.pi / 2, 0.0])
-    cart = unitsphere_to_cartesian(sph)
+    cart = sph2cart(sph)
     assert jnp.allclose(cart, jnp.array([1.0, 0.0, 0.0]), atol=1e-6)
 
 
@@ -126,5 +121,6 @@ def test_cart2sph_sph2cart():
 
     # Test sph2cart
     theta, phi = jnp.pi / 2, 0.0
-    cart = sph2cart(theta, phi)
+    x, y, z = sph2cart(theta, phi)
+    cart = jnp.array([x, y, z])
     assert jnp.allclose(cart, jnp.array([1.0, 0.0, 0.0]), atol=1e-6)

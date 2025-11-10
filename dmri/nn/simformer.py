@@ -309,20 +309,23 @@ class EDMSimformer(EDM):
         rng: RngKey,
         tokenizer: Tokenizer,
         y: Array,
-        dim: Tuple[int, ...],
+        dim: int,
         tokens_cfg: Optional[Array] = None,
         model_mask: Optional[ArrayLike] = None,
         context: Optional[ArrayLike] = None,
         attention_mask: Optional[ArrayLike] = None,
         sample_method: str = "ode",
+        t_min: float = 1e-3,
+        t_max: float = 80.0,
+        num_steps: int = 64,
     ) -> Array:
         rng, rng_init = jax.random.split(rng)
-        eps = jax.random.normal(rng_init, dim) * self.marginal_std(self.train_cfg.t_max)
+        eps = jax.random.normal(rng_init, (dim,)) * self.marginal_std(self.train_cfg.t_max)
 
         if sample_method == "ode":
-            return super().sample_ode(eps,tokenizer=tokenizer,y=y,model_mask=model_mask,tokens_cfg=tokens_cfg,context=context,attention_mask=attention_mask)
+            return super().sample_ode(eps,t_max=t_max, t_min=t_min, num_steps=num_steps, tokenizer=tokenizer,y=y,model_mask=model_mask,tokens_cfg=tokens_cfg,context=context,attention_mask=attention_mask)
         elif sample_method == "sde":
-            return super().sample_sde(rng,eps,tokenizer=tokenizer,y=y,model_mask=model_mask,tokens_cfg=tokens_cfg,context=context,attention_mask=attention_mask)
+            return super().sample_sde(rng,eps,t_max=t_max, t_min=t_min, num_steps=num_steps, tokenizer=tokenizer,y=y,model_mask=model_mask,tokens_cfg=tokens_cfg,context=context,attention_mask=attention_mask)
         else:
             raise ValueError(f"Sample method {sample_method} not recognized.")
 
@@ -335,12 +338,49 @@ class EDMSimformer(EDM):
         context: Optional[ArrayLike] = None,
         attention_mask: Optional[ArrayLike] = None,
         model_mask: Optional[ArrayLike] = None,
+        t_min: float = 2e-3,
+        t_max: float = 80.0,
+        num_steps: int = 64,
     ) -> Array:
-        bij = partial(super().sample_ode,tokenizer=tokenizer,y=y,model_mask=model_mask,tokens_cfg=tokens_cfg,context=context,attention_mask=attention_mask)
-        x0, logdet = inverse_and_logabsdet(bij)(x)
-        sigma = self.marginal_std(self.train_cfg.t_max)
-        base_logp = -0.5 * jnp.sum(x0**2) / sigma**2
-        base_logp += -0.5 * x0.shape[-1] * jnp.log(2 * np.pi * sigma**2)
-        final = base_logp + logdet
-        return jnp.squeeze(final)
+        ts = self.solver_cfg.solve_schedule(t_min, t_max, num_steps)[::-1]
 
+        def dx_dt_fn(t, z):
+            f_ = self.drift(t, z)
+            g_ = self.diffusion(t, z)
+            s_ = self.score(
+                t,
+                z,
+                tokenizer=tokenizer,
+                tokens_cfg=tokens_cfg,
+                y=y,
+                context=context,
+                attention_mask=attention_mask,
+                model_mask=model_mask,
+            )
+            return f_ - 0.5 * g_**2 * s_
+
+        x = x
+        logp0 = 0.0
+
+        def drift(t, state):
+            data, _ = state
+            dx_dt = dx_dt_fn(t, data)
+            div = jnp.trace(jax.jacrev(lambda z: dx_dt_fn(t, z))(data))
+            return (dx_dt, div)
+
+        state, _ = odeint(
+            drift,
+            (x, logp0),
+            ts,
+            method="heun",
+            collect_trace=True,
+        )
+        x_final = state.y0
+        x_final, logp_final = x_final[:-1], x_final[-1]
+
+        sigma = self.marginal_std(t_max)
+        base_logp = -0.5 * jnp.sum(x_final**2) / sigma**2
+        base_logp += -0.5 * x_final.shape[-1] * jnp.log(2 * np.pi * sigma**2)
+        final = logp_final + base_logp
+
+        return jnp.squeeze(final)

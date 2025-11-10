@@ -33,7 +33,7 @@ def build_pure_eval_fns(graphdef, static, sim_type):
 
     @jax.jit
     def sample_thetas(
-        params, state, rng, data, num_steps=64, max_noise=None, min_noise=None, rho=None
+        params, state, rng, data, num_steps=64, t_min=None, t_max=None,
     ):
         model = nnx.merge(graphdef, params, static, state, copy=True)
         model.eval()
@@ -48,16 +48,15 @@ def build_pure_eval_fns(graphdef, static, sim_type):
             partial(
                 model.sample_theta,
                 num_steps=num_steps,
-                max_noise=max_noise,
-                min_noise=min_noise,
-                rho=rho,
+                t_max=t_max,
+                t_min=t_min,
             )
         )
         return sample_fn(rngs, acq, xs, model_mask)
 
     @jax.jit
     def log_prob_thetas(
-        params, state, data, num_steps=64, max_noise=None, min_noise=None, rho=None
+        params, state, data, num_steps=64, t_min=None, t_max=None,
     ):
         model = nnx.merge(graphdef, params, static, state, copy=True)
         model.eval()
@@ -69,34 +68,10 @@ def build_pure_eval_fns(graphdef, static, sim_type):
         sample_fn = partial(
             model.log_prob_theta,
             num_steps=num_steps,
-            max_noise=max_noise,
-            min_noise=min_noise,
-            rho=rho,
+            t_max=t_max,
+            t_min=t_min,
         )
         return jax.vmap(sample_fn)(thetas, acq, xs, model_mask)
-
-    @jax.jit
-    def sample_and_log_prob_thetas(
-        params, state, rng, data, num_steps=64, max_noise=None, min_noise=None, rho=None
-    ):
-        model = nnx.merge(graphdef, params, static, state, copy=True)
-        model.eval()
-
-        model_mask = data["model_mask"]
-        xs = data["x"]
-        acq = data["acq"]
-        thetas = data["theta"]
-        rngs = jax.random.split(rng, xs.shape[0])
-        thetas, log_probs = jax.vmap(
-            partial(
-                model.sample_and_log_prob_theta,
-                num_steps=num_steps,
-                max_noise=max_noise,
-                min_noise=min_noise,
-                rho=rho,
-            )
-        )(rngs, acq, xs, model_mask)
-        return thetas, log_probs
 
     @jax.jit
     def true_loglikelihood(data):
@@ -124,7 +99,6 @@ def build_pure_eval_fns(graphdef, static, sim_type):
         log_prob_masks=log_prob_masks,
         sample_thetas=sample_thetas,
         log_prob_thetas=log_prob_thetas,
-        sample_and_log_prob_thetas=sample_and_log_prob_thetas,
         true_loglikelihood=true_loglikelihood,
         true_posterior=true_posterior,
     )
@@ -135,7 +109,6 @@ class Evaluator(NamedTuple):
     log_prob_masks: Callable
     sample_thetas: Callable
     log_prob_thetas: Callable
-    sample_and_log_prob_thetas: Callable
     true_loglikelihood: Callable
     true_posterior: Callable
     seed: int = 42

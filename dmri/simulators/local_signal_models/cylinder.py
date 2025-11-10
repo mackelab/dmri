@@ -6,7 +6,7 @@ import numpy as np
 from jax.typing import ArrayLike
 
 from dmri.simulators.base import SignalCompartment
-from dmri.utils.dmriutils import unitsphere_to_cartesian
+from dmri.utils.dmriutils import sph2cart
 
 # Constants
 gamma = 2.6752218744 * 1e8  # [sec]^-1 * [T]^-1
@@ -141,7 +141,7 @@ class Cylinder(SignalCompartment):
         )
 
         # Get orientation components
-        mu_cart = unitsphere_to_cartesian(mu)
+        mu_cart = sph2cart(mu)
         c2 = jnp.sum(bvecs * mu_cart, axis=1) ** 2  # cosine^2
         s2 = 1 - c2  # sine^2
 

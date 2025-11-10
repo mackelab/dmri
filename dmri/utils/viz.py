@@ -1,3 +1,5 @@
+from typing import Any, Dict, Optional, Tuple
+
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
@@ -6,10 +8,49 @@ import plotly.graph_objects as go
 from dipy.data import get_sphere
 from jax.typing import ArrayLike
 from plotly.subplots import make_subplots
+import os
 
-from dmri.utils.dmriutils import cartesian_to_unitsphere, unitsphere_to_cartesian
+from dmri.utils.dmriutils import cart2sph, sph2cart
 
 sphere_default = get_sphere(name="symmetric724")
+
+
+
+def set_style(style="dark"):
+    # Directory where this file lives
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+
+    if style == "white":
+        style_path = os.path.join(base_dir, "pyloric.mplstyle")
+    elif style == "dark":
+        style_path = os.path.join(base_dir, "pyloric_black.mplstyle")
+    else:
+        raise ValueError("Style must be 'white' or 'dark'")
+
+    plt.style.use(style_path)
+
+
+set_style()
+
+
+def _ensure_axis(
+    ax=None,
+    *,
+    projection: Optional[str] = None,
+    figsize: Optional[Tuple[float, float]] = None,
+    subplot_kw: Optional[Dict[str, Any]] = None,
+):
+    """Return a Matplotlib axis, creating one if needed."""
+    if ax is not None:
+        return ax.figure, ax
+
+    subplot_kw = dict(subplot_kw or {})
+    if projection is not None:
+        subplot_kw["projection"] = projection
+
+    fig = plt.figure(figsize=figsize)
+    ax = fig.add_subplot(111, **subplot_kw)
+    return fig, ax
 
 
 def orthoview_quiver_plotly(
@@ -1042,27 +1083,56 @@ def plot_spherical_function(
     func_values: ArrayLike,
     elev: float = 30,
     azim: float = 30,
+    ax=None,
+    cmap: str = "viridis",
+    alpha: float = 0.7,
+    figsize: Optional[Tuple[float, float]] = (6, 6),
+    hide_axes: bool = True,
+    add_colorbar: bool = False,
+    surface_kwargs: Optional[Dict[str, Any]] = None,
 ):
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection="3d")
+    """Plot a scalar function that is defined on the sphere.
 
-    # Set camera angle
+    Returns:
+        Tuple[matplotlib.figure.Figure, matplotlib.axes._subplots.Axes3DSubplot]
+    """
+    surface_kwargs = dict(surface_kwargs or {})
+    fig, ax = _ensure_axis(ax, projection="3d", figsize=figsize)
+
     ax.view_init(elev=elev, azim=azim)
 
-    # Convert spherical to Cartesian for plotting
+    theta = np.asarray(theta)
+    phi = np.asarray(phi)
+    func_values = np.asarray(func_values)
+
     x = np.sin(theta) * np.cos(phi)
     y = np.sin(theta) * np.sin(phi)
     z = np.cos(theta)
 
-    # Plot the surface (color it by the function value)
-    # Ensure func_values is normalized for color mapping
     norm_vals = (func_values - func_values.min()) / (np.ptp(func_values) + 1e-15)
+    cmap_obj = plt.get_cmap(cmap)
+    facecolors = cmap_obj(norm_vals)
 
     ax.plot_surface(
-        x, y, z, facecolors=plt.cm.viridis(norm_vals), rstride=1, cstride=1, alpha=0.7
+        x,
+        y,
+        z,
+        facecolors=facecolors,
+        rstride=1,
+        cstride=1,
+        alpha=alpha,
+        **surface_kwargs,
     )
-    plt.axis("off")
-    plt.show()
+
+    if hide_axes:
+        ax.set_axis_off()
+
+    if add_colorbar:
+        mappable = plt.cm.ScalarMappable(cmap=cmap_obj)
+        mappable.set_array(func_values)
+        fig.colorbar(mappable, ax=ax, shrink=0.6)
+
+    return fig, ax
 
 
 def plot_spherical_distribution_polar(
@@ -1071,6 +1141,12 @@ def plot_spherical_distribution_polar(
     ax=None,
     color=None,
     levels: int = 3,
+    figsize: Optional[Tuple[float, float]] = (6, 4),
+    cmap: str = "viridis",
+    filled: bool = False,
+    contour_kwargs: Optional[Dict[str, Any]] = None,
+    show_axis_labels: bool = True,
+    title: Optional[str] = "Spherical Distribution PDF",
 ):
     """Plot spherical distribution in polar coordinates.
 
@@ -1078,40 +1154,62 @@ def plot_spherical_distribution_polar(
         distribution: Spherical distribution object with pdf and sample methods
         n_samples: Number of samples to generate
         ax: Matplotlib axis to plot on
-        color: Colormap to use
+        color: Backwards compatible alias for cmap
         levels: Number of contour levels
+        figsize: Figure size when creating a new axis
+        cmap: Matplotlib colormap name
+        filled: Use filled contours instead of lines
+        contour_kwargs: Additional kwargs forwarded to `tricontour`/`tricontourf`
+        show_axis_labels: Whether to draw axis labels and ticks
+        title: Title text (set to None to skip)
+
+    Returns:
+        Tuple of (Figure, Axes)
     """
     samples = distribution.sample(jax.random.key(0), (n_samples,))
     grid_y = np.linspace(0, np.pi, 100)
     grid_x = np.linspace(-np.pi, np.pi, 200)
     grid_x, grid_y = np.meshgrid(grid_x, grid_y)
     samples_rand = np.stack([grid_y.flatten(), grid_x.flatten()], axis=-1)
-    samples_cart = jax.vmap(unitsphere_to_cartesian)(samples_rand)
+    samples_cart = jax.vmap(sph2cart)(samples_rand)
     samples = jnp.concatenate([samples, samples_cart], axis=0)
     pdf = distribution.pdf(samples)
-    mu = jax.vmap(cartesian_to_unitsphere)(samples)
+    mu = jax.vmap(cart2sph)(samples)
     pdf = pdf / jnp.max(pdf)
 
-    if ax is None:
-        fig = plt.figure()
-        ax = plt.gca()
+    existing_ax = ax
+    fig, ax = _ensure_axis(ax, figsize=figsize)
+    contour_kwargs = dict(contour_kwargs or {})
 
-    cmap = "viridis" if color is None else color
-    ax.tricontour(
+    cmap_name = color or cmap
+    contour_fn = ax.tricontourf if filled else ax.tricontour
+    contour_fn(
         mu[:, 1],
         mu[:, 0],
         pdf,
-        cmap=cmap,
+        cmap=cmap_name,
         levels=levels,
+        **contour_kwargs,
     )
+
     ax.set_ylim(0, np.pi)
     ax.set_xlim(-np.pi, np.pi)
     ax.set_aspect("equal")
-    ax.set_title("Spherical Distribution PDF")
-    ax.set_xlabel("Azimuthal Angle (phi)")
-    ax.set_ylabel("Polar Angle (theta)")
 
-    fig.tight_layout()
+    if title is not None:
+        ax.set_title(title)
+
+    if show_axis_labels:
+        ax.set_xlabel("Azimuthal Angle (phi)")
+        ax.set_ylabel("Polar Angle (theta)")
+    else:
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+    if existing_ax is None:
+        fig.tight_layout()
+
+    return fig, ax
 
 
 def plot_spherical_distribution_cartesian(
@@ -1119,6 +1217,14 @@ def plot_spherical_distribution_cartesian(
     n_samples: int = 1000,
     sphere=None,
     ax=None,
+    figsize: Optional[Tuple[float, float]] = (6, 6),
+    cmap: str = "viridis",
+    vertex_kwargs: Optional[Dict[str, Any]] = None,
+    show_samples: bool = True,
+    sample_kwargs: Optional[Dict[str, Any]] = None,
+    add_colorbar: bool = True,
+    colorbar_kwargs: Optional[Dict[str, Any]] = None,
+    title: Optional[str] = "Spherical Distribution PDF",
 ):
     """Plot spherical distribution in Cartesian coordinates.
 
@@ -1127,43 +1233,75 @@ def plot_spherical_distribution_cartesian(
         n_samples: Number of samples to generate
         sphere: Sphere object for vertices
         ax: Matplotlib axis to plot on
+        figsize: Figure size for new axes
+        cmap: Colormap for pdf-colored vertices
+        vertex_kwargs: Extra kwargs forwarded to the pdf scatter
+        show_samples: Whether to overlay Monte Carlo samples
+        sample_kwargs: Extra kwargs forwarded to the samples scatter
+        add_colorbar: Whether to draw a colorbar for the pdf values
+        colorbar_kwargs: Extra kwargs forwarded to `fig.colorbar`
+        title: Title text (None to skip)
+
+    Returns:
+        Tuple of (Figure, Axes)
     """
     sphere = sphere_default if sphere is None else sphere
-    if ax is None:
-        fig = plt.figure()
-        ax = fig.add_subplot(projection="3d")
+    existing_ax = ax
+    fig, ax = _ensure_axis(ax, projection="3d", figsize=figsize)
 
     pdfs = distribution.pdf(sphere.vertices)
-    samples = distribution.sample(jax.random.key(0), (n_samples,))
+    samples = None
+    if show_samples:
+        samples = distribution.sample(jax.random.key(0), (n_samples,))
 
-    # Plot sphere vertices colored by their pdf
+    vertex_kwargs = dict(vertex_kwargs or {})
+    vertex_kwargs.setdefault("cmap", cmap)
+    vertex_kwargs.setdefault("s", 10)
+    vertex_kwargs.setdefault("alpha", 0.9)
+    vertex_kwargs.setdefault("c", pdfs)
     sc = ax.scatter(
         sphere.vertices[:, 0],
         sphere.vertices[:, 1],
         sphere.vertices[:, 2],
-        c=pdfs,
-        cmap="viridis",
+        **vertex_kwargs,
     )
 
-    # Overlay sample points in red
-    ax.scatter(
-        samples[:, 0],
-        samples[:, 1],
-        samples[:, 2],
-        color="red",
-        s=10,
-        alpha=0.1,
-        label="Samples",
-    )
+    if show_samples and samples is not None:
+        sample_kwargs = dict(sample_kwargs or {})
+        sample_kwargs.setdefault("color", "red")
+        sample_kwargs.setdefault("s", 10)
+        sample_kwargs.setdefault("alpha", 0.1)
+        sample_kwargs.setdefault("label", "Samples")
+        ax.scatter(
+            samples[:, 0],
+            samples[:, 1],
+            samples[:, 2],
+            **sample_kwargs,
+        )
 
-    plt.colorbar(sc, label="PDF value")
-    ax.set_title("Spherical Distribution PDF")
+    if add_colorbar:
+        colorbar_kwargs = dict(colorbar_kwargs or {})
+        colorbar_kwargs.setdefault("label", "PDF value")
+        colorbar_kwargs.setdefault("shrink", 0.6)
+        fig.colorbar(sc, ax=ax, **colorbar_kwargs)
+
+    if title is not None:
+        ax.set_title(title)
+
+    if existing_ax is None:
+        fig.tight_layout()
+
+    return fig, ax
 
 
 def plot_spherical_distribution_fod(
     distribution,
     ax=None,
-    alpha=None,
+    alpha: float = 0.8,
+    figsize: Optional[Tuple[float, float]] = (7, 7),
+    cmap: Optional[str] = "viridis",
+    surface_kwargs: Optional[Dict[str, Any]] = None,
+    hide_axes: bool = True,
 ):
     """Plot spherical distribution as a fiber orientation distribution (FOD).
 
@@ -1171,10 +1309,17 @@ def plot_spherical_distribution_fod(
         distribution: Spherical distribution object with pdf and sample methods
         ax: Matplotlib axis to plot on
         alpha: Transparency of the surface
+        figsize: Figure size when creating a new axis
+        cmap: Colormap applied to the pdf evaluated on the sphere (set to None for default Matplotlib coloring)
+        surface_kwargs: Additional kwargs forwarded to `plot_surface`
+        hide_axes: Remove axis spines/ticks when True
+
+    Returns:
+        Tuple of (Figure, Axes)
     """
     # Create a grid of points on a sphere
     samples = distribution.sample(jax.random.key(0), (10,))
-    u_samples = jax.vmap(cartesian_to_unitsphere)(samples)
+    u_samples = jax.vmap(cart2sph)(samples)
 
     u = np.linspace(0, 2 * np.pi, 200)
     u = np.concatenate([u, u_samples[:, 1]])
@@ -1198,12 +1343,24 @@ def plot_spherical_distribution_fod(
     y_surf = y * radius
     z_surf = z * radius
 
-    # Plot the surface
-    if ax is None:
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection="3d")
+    existing_ax = ax
+    fig, ax = _ensure_axis(ax, projection="3d", figsize=figsize)
+    surface_kwargs = dict(surface_kwargs or {})
 
-    ax.plot_surface(x_surf, y_surf, z_surf, alpha=alpha)
+    facecolors = None
+    if cmap is not None:
+        norm = (pdf_values - pdf_values.min()) / (np.ptp(pdf_values) + 1e-12)
+        cmap_obj = plt.get_cmap(cmap)
+        facecolors = cmap_obj(norm.reshape(x.shape))
+        surface_kwargs.setdefault("facecolors", facecolors)
+
+    ax.plot_surface(
+        x_surf,
+        y_surf,
+        z_surf,
+        alpha=alpha,
+        **surface_kwargs,
+    )
 
     # Plot the maxima of the PDF as stick
     # dir_max = points[np.argmax(pdf_values)]
@@ -1212,8 +1369,13 @@ def plot_spherical_distribution_fod(
     ax.set_ylim([-1, 1])
     ax.set_zlim([-1, 1])
     ax.set_box_aspect([1, 1, 1])  # Equal aspect ratio
-    ax.axis("off")
-    return ax
+    if hide_axes:
+        ax.axis("off")
+
+    if existing_ax is None:
+        fig.tight_layout()
+
+    return fig, ax
 
 
 def save_orthoview_html(fig, filepath, include_plotlyjs="cdn"):
@@ -1560,7 +1722,6 @@ def orthoview_ultracompact(
     return fig
 
 
-import numpy as np
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 
 
@@ -1655,7 +1816,17 @@ def plot_glyph_from_sticks(
     r_scale: float = 1.0,
     peak_nms_neighbors: int = 16,
     show_peaks: bool = False,
+    ax=None,
+    figsize: Optional[Tuple[float, float]] = (7, 7),
+    surface_kwargs: Optional[Dict[str, Any]] = None,
+    peaks_kwargs: Optional[Dict[str, Any]] = None,
+    hide_axes: bool = True,
 ):
+    """Render a spherical glyph built from discrete stick directions.
+
+    Returns:
+        Tuple of (Figure, Axes)
+    """
     V = normalize_rows(np.asarray(V, float))
     # grid on sphere
     G = fibonacci_sphere(grid_points)
@@ -1681,20 +1852,24 @@ def plot_glyph_from_sticks(
 
     tri = mtri.Triangulation(P2[:, 0], P2[:, 1])
 
-    fig = plt.figure(figsize=(7, 7))
-    ax = fig.add_subplot(111, projection="3d")
+    fig, ax = _ensure_axis(ax, projection="3d", figsize=figsize)
+    surface_kwargs = dict(surface_kwargs or {})
 
-    # draw surface
-    surf = ax.plot_trisurf(
-        verts[:, 0],
-        verts[:, 1],
-        verts[:, 2],
+    base_surface_kwargs = dict(
         triangles=tri.triangles,
         linewidth=0.1,
         antialiased=True,
         shade=True,
         alpha=1.0,
         edgecolor="none",
+    )
+    base_surface_kwargs.update(surface_kwargs)
+
+    surf = ax.plot_trisurf(
+        verts[:, 0],
+        verts[:, 1],
+        verts[:, 2],
+        **base_surface_kwargs,
     )
     # set vertex colors via face colors approximation
     # Map per-vertex RGB to per-triangle by averaging
@@ -1709,8 +1884,16 @@ def plot_glyph_from_sticks(
         K = min(6, len(peaks))
         top_idx = np.argsort(f[keep])[-K:]
         peaks = peaks[top_idx]
+        peaks_kwargs = dict(peaks_kwargs or {})
+        peaks_kwargs.setdefault("linewidth", 2)
+        peaks_kwargs.setdefault("color", "white")
         for p in peaks:
-            ax.plot([-p[0], p[0]], [-p[1], p[1]], [-p[2], p[2]], linewidth=2)
+            ax.plot(
+                [-p[0], p[0]],
+                [-p[1], p[1]],
+                [-p[2], p[2]],
+                **peaks_kwargs,
+            )
 
     # cosmetics
     lim = 1.25 * (0.2 + r_scale)
@@ -1722,10 +1905,12 @@ def plot_glyph_from_sticks(
     ax.set_yticks([])
     ax.set_zticks([])
     _set_view(ax, view)
-    plt.axis("off")
+    if hide_axes:
+        ax.set_axis_off()
+
+    return fig, ax
 
 
-import numpy as np
 from matplotlib.patches import Circle
 
 
@@ -1748,12 +1933,21 @@ def plot_stereographic_scatter(
     point_alpha=0.9,
     point_color="orientation",
     edge=True,
+    ax=None,
+    figsize: Optional[Tuple[float, float]] = (5, 5),
+    facecolor: Optional[str] = "black",
+    frame_color: str = "white",
+    draw_guides: bool = True,
 ):
     """
     Scatter-only stereographic plot with better visibility.
-    point_color:
-      - "orientation" -> color by |x|,|y|,|z| mapped to RGB
-      - any Matplotlib color string/tuple
+    Args:
+        point_color: "orientation" maps |x|,|y|,|z| to RGB, otherwise any Matplotlib color
+        facecolor: Background color for the stereographic disk (None to keep default)
+        frame_color: Color used for boundary, guides and annotations
+
+    Returns:
+        Tuple of (Figure, Axes)
     """
     V = _norm_rows(np.asarray(V, float))
     if axial:
@@ -1769,51 +1963,66 @@ def plot_stereographic_scatter(
     else:
         C = point_color
 
-    fig, ax = plt.subplots(figsize=(5, 5))
+    existing_ax = ax
+    fig, ax = _ensure_axis(ax, figsize=figsize)
+    if facecolor is not None:
+        ax.set_facecolor(facecolor)
 
     # circular frame
-    boundary = Circle((0, 0), 1.0, fill=False, lw=1.8, zorder=2, color="white")
+    boundary = Circle((0, 0), 1.0, fill=False, lw=1.8, zorder=2, color=frame_color)
     ax.add_artist(boundary)
 
     # concentric rings
-    for r in ring_radii:
-        ax.add_artist(
-            Circle(
-                (0, 0),
-                r,
-                fill=False,
-                lw=0.8,
+    if draw_guides:
+        for r in ring_radii:
+            ax.add_artist(
+                Circle(
+                    (0, 0),
+                    r,
+                    fill=False,
+                    lw=0.8,
+                    ls="--",
+                    alpha=0.6,
+                    zorder=1,
+                    color=frame_color,
+                )
+            )
+            ax.text(
+                r / np.sqrt(2),
+                r / np.sqrt(2),
+                f"{r:.2f}",
+                ha="left",
+                va="bottom",
+                fontsize=9,
+                alpha=0.7,
+                zorder=3,
+                color=frame_color,
+            )
+
+    # spokes
+    if draw_guides:
+        for deg in range(0, 360, angle_step):
+            th = np.deg2rad(deg)
+            ax.plot(
+                [0, np.cos(th)],
+                [0, np.sin(th)],
+                lw=0.6,
                 ls="--",
                 alpha=0.6,
                 zorder=1,
-                color="white",
+                color=frame_color,
             )
-        )
-        ax.text(
-            r / np.sqrt(2),
-            r / np.sqrt(2),
-            f"{r:.2f}",
-            ha="left",
-            va="bottom",
-            fontsize=9,
-            alpha=0.7,
-            zorder=3,
-        )
-
-    # spokes
-    for deg in range(0, 360, angle_step):
-        th = np.deg2rad(deg)
-        ax.plot([0, np.cos(th)], [0, np.sin(th)], lw=0.6, ls="--", alpha=0.6, zorder=1)
-        rlab = 1.1
-        ax.text(
-            rlab * np.cos(th),
-            rlab * np.sin(th),
-            f"{deg}°",
-            ha="center",
-            va="center",
-            fontsize=9,
-            zorder=3,
-        )
+            rlab = 1.1
+            ax.text(
+                rlab * np.cos(th),
+                rlab * np.sin(th),
+                f"{deg}°",
+                ha="center",
+                va="center",
+                fontsize=9,
+                zorder=3,
+                color=frame_color,
+            )
 
     # scatter on top
     zord = 5
@@ -1825,7 +2034,7 @@ def plot_stereographic_scatter(
             c=C,
             alpha=point_alpha,
             linewidths=0.3,
-            edgecolors="white",
+            edgecolors=frame_color,
             zorder=zord,
         )
     else:
@@ -1847,3 +2056,8 @@ def plot_stereographic_scatter(
     ax.set_aspect("equal")
     ax.set_xticks([])
     ax.set_yticks([])
+
+    if existing_ax is None:
+        fig.tight_layout()
+
+    return fig, ax
