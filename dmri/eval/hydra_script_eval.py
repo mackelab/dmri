@@ -1,6 +1,7 @@
 import logging
 import os
 import socket
+from types import SimpleNamespace
 
 import jax
 
@@ -24,7 +25,10 @@ from omegaconf import DictConfig, OmegaConf
 
 from dmri.eval.export_metrics import compute_reconstruction_error
 from dmri.eval.export_models import export_model_selection_to_files
-from dmri.eval.export_theta import export_thetas_to_files_ball3stick
+from dmri.eval.export_theta import (
+    export_thetas_raw,
+    export_thetas_to_files_ball3stick,
+)
 from dmri.eval.load_data import load_and_process_data
 from dmri.eval.sampling_methods import (
     build_mask_sample_fn,
@@ -147,7 +151,7 @@ def _build_slice_tuple(slice_cfg, volume_shape):
 def _apply_slice_to_brain(slice_cfg, brain_mask, data_norm, logger):
     slice_tuple = _build_slice_tuple(slice_cfg, brain_mask.shape)
     if slice_tuple is None:
-        return brain_mask, data_norm
+        return brain_mask, data_norm, None
 
     selection_mask = np.zeros_like(brain_mask, dtype=bool)
     selection_mask[slice_tuple] = True
@@ -176,7 +180,7 @@ def _apply_slice_to_brain(slice_cfg, brain_mask, data_norm, logger):
     )
 
     data_norm = np.where(brain_mask[..., None], data_norm, 0.0)
-    return brain_mask, data_norm
+    return brain_mask, data_norm, slice_tuple
 
 
 def main():
@@ -214,8 +218,13 @@ def _main(cfg: DictConfig):
     )
 
     # Optionally restrict processing to a sub-volume
-    brain_mask, data_norm = _apply_slice_to_brain(
+    brain_mask, data_norm, volume_slice = _apply_slice_to_brain(
         cfg.get("slice", None), brain_mask, data_norm, log
+    )
+    export_template = SimpleNamespace(
+        affine=data.affine,
+        shape=data.shape,
+        volume_slice=volume_slice,
     )
 
     # Only infer within the brain mask
@@ -308,7 +317,7 @@ def _main(cfg: DictConfig):
             cfg,
             models_selected_brain,
             out_path,
-            data,
+            export_template,
             brain_mask_flat,
             data_norm.shape[:-1],
             model,
@@ -319,16 +328,32 @@ def _main(cfg: DictConfig):
     # Export samples
     if model_parameters_brain is not None:
         out_path = os.path.join(cfg.path_checkpoint, cfg.model_name, cfg.export.name)
-        export_thetas_to_files_ball3stick(
-            cfg,
-            model_parameters_brain,
-            sim_type,
-            None,
-            brain_mask_flat,
-            data_norm.shape[:-1],
-            out_path,
-            data,
+        export_cfg = cfg.export
+        export_type = (
+            export_cfg.get("type", "ball3stick")
+            if isinstance(export_cfg, DictConfig)
+            else getattr(export_cfg, "type", "ball3stick")
         )
+        if export_type == "raw":
+            export_thetas_raw(
+                cfg,
+                model_parameters_brain,
+                brain_mask_flat,
+                data_norm.shape[:-1],
+                out_path,
+                export_template,
+            )
+        else:
+            export_thetas_to_files_ball3stick(
+                cfg,
+                model_parameters_brain,
+                sim_type,
+                None,
+                brain_mask_flat,
+                data_norm.shape[:-1],
+                out_path,
+                export_template,
+            )
 
     # Compute reconstruction error
     if cfg.export.export_reconstruction_error:
@@ -342,7 +367,7 @@ def _main(cfg: DictConfig):
             models_selected_brain,
             brain_mask_flat,
             data_norm,
-            data,
+            export_template,
             out_path,
         )
 

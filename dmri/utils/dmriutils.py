@@ -3,6 +3,7 @@ import os
 import jax
 import jax.numpy as jnp
 import nibabel as nb
+import numpy as np
 from jax.typing import ArrayLike
 
 
@@ -418,7 +419,46 @@ def sph2cart(theta: ArrayLike, phi: ArrayLike) -> ArrayLike:
     return jnp.stack([x, y, z], axis=-1)
 
 
-def export_nifti(data, orig_data, output_path, name):
+def _normalize_volume_slice(volume_slice, spatial_shape):
+    if volume_slice is None:
+        return ()
+    normalized = []
+    axes = min(len(volume_slice), len(spatial_shape))
+    for axis in range(axes):
+        axis_slice = volume_slice[axis]
+        axis_len = spatial_shape[axis]
+        if axis_slice is None:
+            normalized.append(slice(0, axis_len, 1))
+            continue
+        start, stop, step = axis_slice.indices(axis_len)
+        normalized.append(slice(start, stop, step))
+    return tuple(normalized)
+
+
+def _apply_volume_slice_to_data(data, normalized_slice):
+    if not normalized_slice:
+        return data
+    spatial_dims = min(len(normalized_slice), data.ndim)
+    slicing = normalized_slice[:spatial_dims] + (slice(None),) * (
+        data.ndim - spatial_dims
+    )
+    return data[slicing]
+
+
+def _adjust_affine_for_slice(affine, normalized_slice):
+    if not normalized_slice:
+        return affine
+    new_affine = np.array(affine, copy=True)
+    spatial_axes = min(len(normalized_slice), 3)
+    for axis in range(spatial_axes):
+        axis_slice = normalized_slice[axis]
+        basis = new_affine[:3, axis].copy()
+        new_affine[:3, 3] += basis * axis_slice.start
+        new_affine[:3, axis] = basis * axis_slice.step
+    return new_affine
+
+
+def export_nifti(data, orig_data, output_path, name, volume_slice=None):
     """
     Args:
         data:
@@ -427,7 +467,21 @@ def export_nifti(data, orig_data, output_path, name):
         name:
     """
     # Copy the header of the original image
-    aff_mat = orig_data.affine
+    vol_slice = (
+        volume_slice
+        if volume_slice is not None
+        else getattr(orig_data, "volume_slice", None)
+    )
+    spatial_shape = getattr(orig_data, "shape", data.shape)
+    normalized_slice = _normalize_volume_slice(vol_slice, spatial_shape)
+    aff_mat = (
+        np.array(orig_data.affine, copy=True)
+        if hasattr(orig_data, "affine")
+        else np.eye(4, dtype=float)
+    )
+    if normalized_slice:
+        data = _apply_volume_slice_to_data(data, normalized_slice)
+        aff_mat = _adjust_affine_for_slice(aff_mat, normalized_slice)
     nb.save(nb.Nifti2Image(data, affine=aff_mat), os.path.join(output_path, name))
 
 

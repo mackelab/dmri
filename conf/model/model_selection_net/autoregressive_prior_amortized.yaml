@@ -9,5 +9,6 @@ params:
   normalize_qk_cross_attn: false
   attn_size: 8
   dropout_rate: 0.0
+  label_smoothing: 0.0
   prior_params_embed_dim: 64  # Context dimension embedding
   mask_prior_dim: 1  # Model prior input dim

@@ -18,7 +18,7 @@ def compute_reconstruction_error(
     model_mask,
     brain_mask_flat,
     data_norm,
-    data,
+    orig_data,
     out_path,
 ):
     """Compute and export reconstruction error maps.
@@ -32,7 +32,7 @@ def compute_reconstruction_error(
         models_selected_brain: Selected models for each voxel (can be None)
         brain_mask_flat: Flattened brain mask
         data_norm: Normalized data
-        data: Original data
+        orig_data: Reference image (affine + shape info)
         out_path: Output path for the error maps
     """
 
@@ -63,4 +63,4 @@ def compute_reconstruction_error(
     full_error_maps = embed_in_full_brain_array(
         error_maps, brain_mask_flat.astype(np.bool), data_norm.shape[:-1]
     )
-    export_nifti(full_error_maps, data, out_path, "error_reconstruction.nii.gz")
+    export_nifti(full_error_maps, orig_data, out_path, "error_reconstruction.nii.gz")

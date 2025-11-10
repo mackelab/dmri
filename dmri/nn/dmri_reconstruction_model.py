@@ -122,7 +122,6 @@ class DMRIInferenceModel(nnx.Module):
             cfg.simulator,
             token_dim=cfg.model_dim,
             rngs=rngs,
-            **precision_defaults,
         )
 
         # Setup model selection network
@@ -237,8 +236,8 @@ class DMRIInferenceModel(nnx.Module):
         acq: AcquisitionSchemeLike,
         mask_prior: Optional[Array] = None,
         alpha_prior: Optional[Array] = None,
-        model_idx: Optional[List[int]] = None,
-        noise_idx: Optional[List[int]] = None,
+        model_idx: Optional[list[int]] = None,
+        noise_idx: Optional[list[int]] = None,
     ) -> Tuple[Array, Optional[Array], Array, Optional[Array]]:
         # Embed model configuration
         tokens_cfg = self.tokenizer.embed_cfgs(
@@ -260,8 +259,8 @@ class DMRIInferenceModel(nnx.Module):
     def theta_mask(
         self,
         model_mask: Array,
-        model_idx: Optional[List[int]] = None,
-        noise_idx: Optional[List[int]] = None,
+        model_idx: Optional[list[int]] = None,
+        noise_idx: Optional[list[int]] = None,
     ) -> Array:
         theta_token_mask = self.tokenizer.theta_token_mask(
             model_mask, model_idx=model_idx, noise_idx=noise_idx
@@ -271,8 +270,8 @@ class DMRIInferenceModel(nnx.Module):
     def marginalization_mask(
         self,
         model_mask: Array,
-        model_idx: Optional[List[int]] = None,
-        noise_idx: Optional[List[int]] = None,
+        model_idx: Optional[list[int]] = None,
+        noise_idx: Optional[list[int]] = None,
     ) -> Array:
         _model_mask_extended = self.tokenizer.theta_token_mask(
             model_mask, model_idx=model_idx, noise_idx=noise_idx
@@ -295,8 +294,8 @@ class DMRIInferenceModel(nnx.Module):
         mask_prior: Array | None = None,
         alpha_prior: Array | None = None,
         target_score: Array | None = None,
-        model_idx: Optional[List[int]] = None,
-        noise_idx: Optional[List[int]] = None,
+        model_idx: Optional[list[int]] = None,
+        noise_idx: Optional[list[int]] = None,
         permute_order: bool = False,
         use_loss_mask: bool = False,
         weight_by_complexity: bool = False,

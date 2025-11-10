@@ -1,5 +1,6 @@
 import os
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -18,28 +19,40 @@ def embed_in_full_brain_array(to_embed, brain_mask_flat, brain_shape):
 
 
 def export_model_selection_to_files(
-    cfg, model_mask, out_path, orig_data, brain_mask_flat, brain_shape, model, acq, data
+    cfg,
+    model_mask,
+    out_path,
+    orig_data,
+    brain_mask_flat,
+    brain_shape,
+    model,
+    acq,
+    data,
 ):
     """Export model selection results to files"""
     if not os.path.exists(out_path):
         os.makedirs(out_path)
 
+    def embed(values):
+        return embed_in_full_brain_array(values, brain_mask_flat, brain_shape)
+
+    def save(image, filename):
+        export_nifti(
+            image,
+            orig_data,
+            out_path,
+            filename,
+        )
+
     # Export the samples
-    full_model_mask = embed_in_full_brain_array(
-        model_mask, brain_mask_flat, brain_shape
+    full_model_mask = embed(
+        model_mask
     ).astype(np.float32)
-    export_nifti(full_model_mask, orig_data, out_path, "merged_model_mask.nii.gz")
+    save(full_model_mask, "merged_model_mask.nii.gz")
 
     marginal_probabilities = jnp.mean(model_mask, axis=1)
-    full_marginal_probabilities = embed_in_full_brain_array(
-        marginal_probabilities, brain_mask_flat, brain_shape
-    )
-    export_nifti(
-        full_marginal_probabilities,
-        orig_data,
-        out_path,
-        "mean_marginal_probabilities.nii.gz",
-    )
+    full_marginal_probabilities = embed(marginal_probabilities)
+    save(full_marginal_probabilities, "mean_marginal_probabilities.nii.gz")
 
     # Get feasible models from config
     feasible_models = jnp.array(
@@ -68,9 +81,5 @@ def export_model_selection_to_files(
     # Export probabilities for each feasible model
     for i in range(len(feasible_models)):
         p_model_i = probabilities[..., i]
-        full_p_model_i = embed_in_full_brain_array(
-            p_model_i, brain_mask_flat, brain_shape
-        )
-        export_nifti(
-            full_p_model_i, orig_data, out_path, f"p_feasible_model_{i}.nii.gz"
-        )
+        full_p_model_i = embed(p_model_i)
+        save(full_p_model_i, f"p_feasible_model_{i}.nii.gz")

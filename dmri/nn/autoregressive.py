@@ -321,6 +321,7 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         y: Array,
         rng: Optional[RngKey] = None,
         permute_order: bool = False,
+        label_smoothing: float = 0.0,
         mask_prior: Optional[Array] = None,
         additional_context: Optional[Array] = None,
         tokens_cfg: Optional[Array] = None,
@@ -358,6 +359,9 @@ class BinaryAutoregressiveDecoder(nnx.Module):
 
             # Target should be permuted
             model_mask = jax.vmap(permute_batch_element)(model_mask, batch_orders)
+
+        if label_smoothing > 0.0:
+            model_mask = model_mask * (1.0 - label_smoothing) + 0.5 * label_smoothing
 
         context_vec = self._prepare_context(
             tuple(batch_shape),
