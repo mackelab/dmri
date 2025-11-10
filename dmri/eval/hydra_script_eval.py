@@ -1,6 +1,7 @@
 import logging
 import os
 import socket
+from contextlib import nullcontext
 from types import SimpleNamespace
 
 import jax
@@ -50,6 +51,28 @@ logo = r"""
 | $$$$$$$/| $$ \/  | $$| $$  | $$ /$$$$$$
 |_______/ |__/     |__/|__/  |__/|______/
 """
+
+
+def _first_device(kind: str):
+    devices = jax.devices(kind)
+    return devices[0] if devices else None
+
+
+def _device_scope(device):
+    if device is None:
+        return nullcontext()
+    # Avoid forcing a single device when multiple accelerators are visible.
+    if len(jax.local_devices()) > 1:
+        return nullcontext()
+    return jax.default_device(device)
+
+
+def _to_cpu_array(value):
+    if value is None or isinstance(value, np.ndarray):
+        return value
+    if isinstance(value, jax.Array):
+        return np.asarray(value)
+    return value
 
 
 def _to_int(value):
@@ -229,6 +252,33 @@ def _main(cfg: DictConfig):
     log = logging.getLogger(__name__)
     log.info(OmegaConf.to_yaml(cfg))
 
+    cpu_device = _first_device("cpu")
+    gpu_device = _first_device("gpu")
+    heavy_device = gpu_device or cpu_device
+    eval_devices = _resolve_eval_devices()
+
+    log.info(f"CPU device: {cpu_device}")
+    log.info(f"GPU device: {gpu_device}")
+    log.info(f"Heavy compute device: {heavy_device}")
+    log.info(f"Eval devices: {eval_devices}")
+
+    with _device_scope(cpu_device):
+        _run_eval_pipeline(cfg, log, heavy_device, eval_devices)
+
+
+def _resolve_eval_devices():
+    """Return the preferred device set for heavy eval (GPUs > TPUs > default)."""
+    for kind in ("gpu", "tpu"):
+        available = tuple(jax.devices(kind))
+        if available:
+            return available
+    return tuple(jax.devices())
+
+
+def _run_eval_pipeline(
+    cfg: DictConfig, log: logging.Logger, heavy_device, eval_devices
+):
+    """Main evaluation pipeline executed under the CPU default device."""
     log.info(f"Model name: {cfg.model_name}")
     data_path = _resolve_data_path(cfg)
     checkpoint_root = _resolve_checkpoint_root(cfg)
@@ -294,10 +344,18 @@ def _main(cfg: DictConfig):
     # Sample masks if needed
     if cfg.sample_mask:
         log.info("Sampling masks")
-        models_sampled_brain = sample_mask(
-            cfg, key_masks, model, acq, full_data_flat_in_brain, log
-        )
-        avg_freq = jnp.mean(models_sampled_brain, axis=1).mean(0)
+        with _device_scope(heavy_device):
+            models_sampled_brain = sample_mask(
+                cfg,
+                key_masks,
+                model,
+                acq,
+                full_data_flat_in_brain,
+                log,
+                devices=eval_devices,
+            )
+        models_sampled_brain = _to_cpu_array(models_sampled_brain)
+        avg_freq = np.mean(models_sampled_brain, axis=(0, 1))
         log.info(f"Average frequency of all models: {avg_freq}")
     else:
         models_sampled_brain = None
@@ -308,16 +366,18 @@ def _main(cfg: DictConfig):
     # Run selection of models if needed
     if cfg.select_models:
         log.info("Selecting models")
-        models_selected_brain = select_models(
-            cfg,
-            key_masks,
-            full_data_flat_in_brain,
-            log,
-            model.tokenizer.simulator,
-            model,
-            acq,
-            model_mask_samples=models_sampled_brain,
-        )
+        with _device_scope(heavy_device):
+            models_selected_brain = select_models(
+                cfg,
+                key_masks,
+                full_data_flat_in_brain,
+                log,
+                model.tokenizer.simulator,
+                model,
+                acq,
+                model_mask_samples=models_sampled_brain,
+            )
+        models_selected_brain = _to_cpu_array(models_selected_brain)
     else:
         models_selected_brain = None
     log.info(
@@ -328,21 +388,29 @@ def _main(cfg: DictConfig):
     key, key_theta = jax.random.split(key)
     if cfg.sample_theta:
         log.info("Sampling thetas")
-        model_parameters_brain = sample_theta(
-            cfg,
-            key_theta,
-            model,
-            acq,
-            full_data_flat_in_brain,
-            log,
-            model_mask=models_selected_brain,
-        )
+        with _device_scope(heavy_device):
+            model_parameters_brain = sample_theta(
+                cfg,
+                key_theta,
+                model,
+                acq,
+                full_data_flat_in_brain,
+                log,
+                model_mask=models_selected_brain,
+                devices=eval_devices,
+            )
+        model_parameters_brain = _to_cpu_array(model_parameters_brain)
     else:
         model_parameters_brain = None
     log.info(
         f"Model parameters brain shape: {model_parameters_brain.shape if model_parameters_brain is not None else 'None'}"
     )
-    log.info(f"Model parameters nans: {np.isnan(model_parameters_brain).sum()}")
+    model_parameter_nans = (
+        int(np.isnan(model_parameters_brain).sum())
+        if model_parameters_brain is not None
+        else 0
+    )
+    log.info(f"Model parameters nans: {model_parameter_nans}")
 
     # Export model selection
     if models_selected_brain is not None:
@@ -394,21 +462,23 @@ def _main(cfg: DictConfig):
     # Compute reconstruction error
     if cfg.export.export_reconstruction_error:
         out_path = os.path.join(checkpoint_root, cfg.model_name, cfg.export.name)
-        compute_reconstruction_error(
-            cfg,
-            sim_type,
-            acq,
-            full_data_flat_in_brain,
-            model_parameters_brain,
-            models_selected_brain,
-            brain_mask_flat,
-            data_norm,
-            export_template,
-            out_path,
-        )
+        with _device_scope(heavy_device):
+            compute_reconstruction_error(
+                cfg,
+                sim_type,
+                acq,
+                full_data_flat_in_brain,
+                model_parameters_brain,
+                models_selected_brain,
+                brain_mask_flat,
+                data_norm,
+                export_template,
+                out_path,
+                devices=eval_devices,
+            )
 
 
-def sample_mask(cfg, key, model, acq, data, logger):
+def sample_mask(cfg, key, model, acq, data, logger, devices=None):
     """Sample a mask from the model"""
     sample_mask_fn = build_mask_sample_fn(
         cfg.mask_sample.method,
@@ -423,11 +493,12 @@ def sample_mask(cfg, key, model, acq, data, logger):
         data,
         batch_size=cfg.mask_sample.eval_batch_size,
         logger=logger,
+        devices=devices,
     )
     return models_sampled_brain
 
 
-def sample_theta(cfg, key, model, acq, data, logger, model_mask=None):
+def sample_theta(cfg, key, model, acq, data, logger, model_mask=None, devices=None):
     """Sample theta parameters"""
     sim_type = model.tokenizer.simulator
     num_comp = len(sim_type.model_types) + len(sim_type.noise_types)
@@ -473,6 +544,7 @@ def sample_theta(cfg, key, model, acq, data, logger, model_mask=None):
             model_mask,
             batch_size=cfg.theta_sample.eval_batch_size,
             logger=logger,
+            devices=devices,
         )
     else:
         thetas_full = eval_in_batches(
@@ -481,6 +553,7 @@ def sample_theta(cfg, key, model, acq, data, logger, model_mask=None):
             data,
             batch_size=cfg.theta_sample.eval_batch_size,
             logger=logger,
+            devices=devices,
         )
     return thetas_full
 

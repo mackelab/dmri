@@ -10,7 +10,7 @@ dataset:
     index: 0
 
 train_loader:
-  batch_size: 4096
+  batch_size: 2048
   shuffle: true
   drop_last: true
   loop: true

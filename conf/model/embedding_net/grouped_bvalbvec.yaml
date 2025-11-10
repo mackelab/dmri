@@ -1,4 +1,5 @@
-name: DMRIEmbeddingConfig
+name: GroupedDMRIEmbeddingConfig
+cls: GroupedBvalBvecSignalEmbeddingNet
 params:
   num_layers: 3
   num_heads: 4
@@ -24,3 +25,4 @@ params:
   precision: null
   dtype: null
   preferred_element_type: null
+  group_size: 4
