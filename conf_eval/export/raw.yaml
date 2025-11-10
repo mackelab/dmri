@@ -1,0 +1,3 @@
+name: "raw_inference_results"
+type: "raw"
+export_reconstruction_error: true
