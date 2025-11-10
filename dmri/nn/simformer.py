@@ -378,7 +378,7 @@ class EDMSimformer(EDM):
             (x, logp0),
             ts,
             method="heun",
-            collect_trace=True,
+            collect_trace=False,
         )
         x_final, logp_final = x_final
 
