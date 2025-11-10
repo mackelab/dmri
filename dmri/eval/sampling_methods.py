@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from functools import partial
 
 import jax
@@ -7,7 +8,42 @@ from blackjax import hmc, tempered_smc
 from blackjax.smc.resampling import systematic
 
 
-def eval_in_batches(fn, key, *data, batch_size=10_000, logger=None, min_batch_size=100):
+def _resolve_devices(
+    devices: Sequence[jax.Device] | str | None = None,
+    preferred_device_kinds: Sequence[str] | None = ("gpu", "tpu"),
+) -> tuple[jax.Device, ...]:
+    """Resolve an explicit device list, falling back to preferred kinds when unspecified."""
+    if isinstance(devices, str):
+        resolved = tuple(jax.devices(devices))
+        if not resolved:
+            raise ValueError(f"No JAX devices available for kind '{devices}'.")
+        return resolved
+    if devices is not None:
+        resolved = tuple(devices)
+        if not resolved:
+            raise ValueError("Device sequence is empty.")
+        return resolved
+    if preferred_device_kinds:
+        for kind in preferred_device_kinds:
+            available = jax.devices(kind)
+            if available:
+                return tuple(available)
+    available = tuple(jax.devices())
+    if not available:
+        raise RuntimeError("No JAX devices are available for evaluation.")
+    return available
+
+
+def eval_in_batches(
+    fn,
+    key,
+    *data,
+    batch_size=10_000,
+    logger=None,
+    min_batch_size=100,
+    devices: Sequence[jax.Device] | str | None = None,
+    preferred_device_kinds: Sequence[str] | None = ("gpu", "tpu"),
+):
     eval_results = []
     if logger is not None:
         print_fn = logger.info
@@ -17,24 +53,22 @@ def eval_in_batches(fn, key, *data, batch_size=10_000, logger=None, min_batch_si
     # Capture expected total size for safety check
     expected_total_size = data[0].shape[0]
 
-    # Check number of available devices
-    devices = jax.devices()
-    num_devices = len(devices)
+    resolved_devices = _resolve_devices(devices, preferred_device_kinds)
+    num_devices = len(resolved_devices)
 
     if num_devices > 1:
         # Use pmap when multiple devices are available
-        print_fn(f"Using pmap with {num_devices} devices")
+        device_desc = ", ".join(
+            f"{d.platform}:{d.id}" if hasattr(d, "id") else d.platform
+            for d in resolved_devices
+        )
+        print_fn(f"Using pmap across devices [{device_desc}]")
 
         # Split batch size across devices
-        device_batch_size = batch_size // num_devices
-        if device_batch_size < min_batch_size:
-            print_fn(
-                f"Warning: device batch size {device_batch_size} is below minimum {min_batch_size}"
-            )
-            device_batch_size = min_batch_size
+        device_batch_size = max(batch_size // num_devices, min_batch_size)
 
         # Create pmap function
-        @jax.pmap
+        @partial(jax.pmap, devices=resolved_devices)
         def pmap_fn(device_key, *device_data):
             # Split the device key for the batch
             batch_keys = jax.random.split(device_key, device_data[0].shape[0])
@@ -57,18 +91,16 @@ def eval_in_batches(fn, key, *data, batch_size=10_000, logger=None, min_batch_si
 
                 # Split batch data across devices
                 original_batch_size = batch_data[0].shape[0]
-                device_batch_size_actual = original_batch_size // num_devices
-
-                # Pad if necessary to make it divisible by num_devices
-                if original_batch_size % num_devices != 0:
-                    padding_size = num_devices - (original_batch_size % num_devices)
+                padding_size = (num_devices - (original_batch_size % num_devices)) % num_devices
+                if padding_size:
                     batch_data = jax.tree_util.tree_map(
                         lambda x: jnp.pad(
                             x, ((0, padding_size),) + ((0, 0),) * (x.ndim - 1)
                         ),
                         batch_data,
                     )
-                    device_batch_size_actual = batch_data[0].shape[0] // num_devices
+
+                device_batch_size_actual = batch_data[0].shape[0] // num_devices
 
                 # Reshape data for pmap (num_devices, device_batch_size, ...)
                 pmap_data = jax.tree_util.tree_map(
@@ -85,12 +117,9 @@ def eval_in_batches(fn, key, *data, batch_size=10_000, logger=None, min_batch_si
                 pmap_results = pmap_fn(device_keys, *pmap_data)
 
                 # Reshape results back and remove padding
-                batch_res = jax.tree_util.tree_map(
-                    lambda x: x.reshape(-1, *x.shape[2:])[:original_batch_size],
-                    pmap_results,
-                )
-
-                batch_res = np.array(batch_res)
+                np_results = np.asarray(pmap_results)
+                flat_results = np_results.reshape(-1, *np_results.shape[2:])
+                batch_res = flat_results[:original_batch_size]
                 eval_results.append(batch_res)
                 batch_start = batch_end
             except Exception as e:
@@ -104,13 +133,14 @@ def eval_in_batches(fn, key, *data, batch_size=10_000, logger=None, min_batch_si
                     # Clear caches
                     jax.clear_caches()
                     current_batch_size = current_batch_size // 2
-                    device_batch_size = current_batch_size // num_devices
+                    device_batch_size = max(current_batch_size // num_devices, min_batch_size)
                     continue
                 else:
                     raise e
     else:
         # Fallback to original single-device implementation
-        print_fn("Using single device implementation")
+        single_device = resolved_devices[0]
+        print_fn(f"Using single device implementation on {single_device}")
         current_batch_size = batch_size
         batch_start = 0
 

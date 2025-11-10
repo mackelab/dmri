@@ -21,13 +21,17 @@ from .autoregressive import (
 from .embedding_net import (
     BvalBvecSignalEmbeddingNet,
     DMRIEmbeddingConfig,
+    GroupedDMRIEmbeddingConfig,
+    GroupedBvalBvecSignalEmbeddingNet,
     SSFPEmbeddingNet,
     SSFPEmbeddingNetConfig,
 )
 from .simformer import DMRIThetaInferenceConfig, EDMSimformer
 from .tokenizer import DMRITokenizer, DMRITokenizerPP
 
-EmbeddingModule = BvalBvecSignalEmbeddingNet | SSFPEmbeddingNet
+EmbeddingModule = (
+    BvalBvecSignalEmbeddingNet | GroupedBvalBvecSignalEmbeddingNet | SSFPEmbeddingNet
+)
 TokenizerType = Type[DMRITokenizer]
 AcquisitionSchemeLike = acquisition_scheme | ssfp_acquisition_scheme
 
@@ -217,7 +221,9 @@ class DMRIInferenceModel(nnx.Module):
         deterministic: bool | None = None,
         decode: bool = False,
     ) -> tuple[Array | None, Array]:
-        if isinstance(self.encoder, BvalBvecSignalEmbeddingNet):
+        if isinstance(
+            self.encoder, (BvalBvecSignalEmbeddingNet, GroupedBvalBvecSignalEmbeddingNet)
+        ):
             if not isinstance(acq, acquisition_scheme):
                 raise TypeError(
                     "Expected a diffusion acquisition scheme for the diffusion encoder."

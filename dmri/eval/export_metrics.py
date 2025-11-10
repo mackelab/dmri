@@ -20,6 +20,8 @@ def compute_reconstruction_error(
     data_norm,
     orig_data,
     out_path,
+    *,
+    devices=None,
 ):
     """Compute and export reconstruction error maps.
 
@@ -57,7 +59,11 @@ def compute_reconstruction_error(
     )
 
     error_maps = eval_in_batches(
-        _reconstruction_error, jax.random.PRNGKey(0), *data_eval, batch_size=20_000
+        _reconstruction_error,
+        jax.random.PRNGKey(0),
+        *data_eval,
+        batch_size=20_000,
+        devices=devices,
     )
 
     full_error_maps = embed_in_full_brain_array(

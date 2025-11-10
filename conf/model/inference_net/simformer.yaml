@@ -4,9 +4,14 @@ params:
   num_heads: 4
   widening_factor: 4
   use_flash_attention: false
-  use_flash_cross_attention: false
+  use_flash_cross_attention: true
+  normalize_qk_attn: false
+  normalize_qk_cross_attn: false
   attn_size: 16
-  time_embed_dim: 64
+  time_embed_dim: 128
   gate_attention: false
   gate_mlp: false
   dropout_rate: 0.0
+  precision: null
+  dtype: null
+  preferred_element_type: null

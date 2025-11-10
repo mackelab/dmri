@@ -49,6 +49,11 @@ class DMRIEmbeddingConfig:
     out_norm: bool = False
 
 
+@dataclass
+class GroupedDMRIEmbeddingConfig(DMRIEmbeddingConfig):
+    group_size: int = 4
+
+
 class BvalBvecSignalEmbeddingNet(nnx.Module):
     model_dim: int = 64
     num_heads: int = 4
@@ -317,6 +322,163 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
         bvecs = jnp.repeat(bvecs, self.bvec_repeats, axis=-1)
         data = jnp.concatenate([bvals, signals, bvecs], axis=-1)
         tokens = self.initial_layer(data)
+        if using_summary:
+            expanded_summary = summary_token.reshape(
+                summary_token.shape[:-1] + (1, summary_token.shape[-1])
+            )
+            tokens = jnp.concatenate([expanded_summary, tokens], axis=-2)
+        out_tokens = self.transformer(
+            tokens, deterministic=deterministic, decode=decode
+        )
+        if using_summary:
+            global_summary = out_tokens[..., 0, :]
+            sequence_tokens = out_tokens[..., 1:, :]
+            global_summary = self.output_glob_layer(
+                self.global_summary_outnorm(global_summary)
+            )
+            global_summary = self.out_norm_glob(global_summary)
+            sequence_tokens = self.output_seq_layer(sequence_tokens)
+            sequence_tokens = self.out_norm_seq(sequence_tokens)
+        else:
+            global_summary = None
+            sequence_tokens = out_tokens
+            sequence_tokens = self.output_seq_layer(sequence_tokens)
+            sequence_tokens = self.out_norm_seq(sequence_tokens)
+        return global_summary, sequence_tokens
+
+
+class GroupedBvalBvecSignalEmbeddingNet(BvalBvecSignalEmbeddingNet):
+    def __init__(
+        self,
+        rngs: nnx.Rngs,
+        model_dim: int = 64,
+        num_heads: int = 4,
+        num_layers: int = 3,
+        widening_factor: int = 2,
+        attn_size: int = 16,
+        dropout_rate: float = 0.0,
+        bvals_embed_dim: int = 3,
+        signals_embed_dim: int = 3,
+        bvec_repeats: int = 1,
+        y_seq_dim: Optional[int] = None,
+        y_glob_dim: Optional[int] = None,
+        min_bval: float = 0.0,
+        max_bval: float = 4000.0,
+        min_signal: float = 0.0,
+        max_signal: float = 1.0,
+        log_transform_signals: bool = False,
+        use_flash_attention: bool = False,
+        embed_signals: str = "repeat",
+        embed_bvals: str = "fourier",
+        use_global_summary_token: bool = False,
+        global_summary_bins: int = 8,
+        dtype: DTypeLike | None = None,
+        param_dtype: DTypeLike | None = None,
+        precision: PrecisionLike | None = None,
+        preferred_element_type: DTypeLike | None = None,
+        out_norm: bool = False,
+        group_size: int = 6,
+    ) -> None:
+        super().__init__(
+            rngs=rngs,
+            model_dim=model_dim,
+            num_heads=num_heads,
+            num_layers=num_layers,
+            widening_factor=widening_factor,
+            attn_size=attn_size,
+            dropout_rate=dropout_rate,
+            bvals_embed_dim=bvals_embed_dim,
+            signals_embed_dim=signals_embed_dim,
+            bvec_repeats=bvec_repeats,
+            y_seq_dim=y_seq_dim,
+            y_glob_dim=y_glob_dim,
+            min_bval=min_bval,
+            max_bval=max_bval,
+            min_signal=min_signal,
+            max_signal=max_signal,
+            log_transform_signals=log_transform_signals,
+            use_flash_attention=use_flash_attention,
+            embed_signals=embed_signals,
+            embed_bvals=embed_bvals,
+            use_global_summary_token=use_global_summary_token,
+            global_summary_bins=global_summary_bins,
+            dtype=dtype,
+            param_dtype=param_dtype,
+            precision=precision,
+            preferred_element_type=preferred_element_type,
+            out_norm=out_norm,
+        )
+        if group_size <= 0:
+            raise ValueError("group_size must be a positive integer.")
+        self.group_size = int(group_size)
+
+    def _sort_measurements(
+        self, bvals: ArrayLike, bvecs: ArrayLike, signals: ArrayLike
+    ) -> tuple[Array, Array, Array]:
+        bvals_arr = jnp.asarray(bvals)
+        sort_idx = jnp.argsort(bvals_arr, axis=-1)
+        signals_arr = jnp.asarray(signals)
+        sorted_bvals = jnp.take_along_axis(bvals_arr, sort_idx, axis=-1)
+        sorted_signals = jnp.take_along_axis(signals_arr, sort_idx, axis=-1)
+        bvecs_arr = jnp.asarray(bvecs)
+        expanded_idx = jnp.expand_dims(sort_idx, axis=-1)
+        expanded_idx = jnp.broadcast_to(expanded_idx, bvecs_arr.shape)
+        sorted_bvecs = jnp.take_along_axis(bvecs_arr, expanded_idx, axis=-2)
+        return sorted_bvals, sorted_bvecs, sorted_signals
+
+    def _group_tokens(self, tokens: Array) -> Array:
+        seq_len = tokens.shape[-2]
+        if seq_len == 0:
+            raise ValueError("Cannot group tokens when no diffusion measurements exist.")
+        pad_len = (-seq_len) % self.group_size
+        mask = jnp.ones(tokens.shape[:-1], dtype=tokens.dtype)
+        if pad_len:
+            pad_width = [(0, 0)] * tokens.ndim
+            pad_width[-2] = (0, pad_len)
+            tokens = jnp.pad(tokens, pad_width)
+            mask_pad = [(0, 0)] * mask.ndim
+            mask_pad[-1] = (0, pad_len)
+            mask = jnp.pad(mask, mask_pad)
+        mask = mask[..., None]
+        seq_len = tokens.shape[-2]
+        num_groups = seq_len // self.group_size
+        new_shape = tokens.shape[:-2] + (num_groups, self.group_size, tokens.shape[-1])
+        tokens = tokens.reshape(new_shape)
+        mask = mask.reshape(mask.shape[:-2] + (num_groups, self.group_size, 1))
+        weighted = tokens * mask
+        counts = jnp.clip(mask.sum(axis=-2), a_min=1.0)
+        return weighted.sum(axis=-2) / counts
+
+    def __call__(
+        self,
+        acq: AcquisitionScheme,
+        x: ArrayLike,
+        deterministic: bool | None = None,
+        decode: bool = False,
+    ) -> tuple[Array | None, Array]:
+        raw_bvals = acq.bvals
+        raw_bvecs = acq.bvecs
+        signals = x
+        sorted_bvals, sorted_bvecs, sorted_signals = self._sort_measurements(
+            raw_bvals, raw_bvecs, signals
+        )
+
+        summary_token = None
+        if self.use_global_summary_token:
+            summary_token = self.global_summary_token(
+                sorted_bvals, sorted_bvecs, sorted_signals
+            )
+        using_summary = summary_token is not None
+
+        bvals = self.transform_bvals(sorted_bvals)
+        signals = self.transform_signals(sorted_signals)
+        bvals = self.embed_bvals(bvals[..., None])
+        signals = self.embed_signals(signals[..., None])
+        bvecs = jnp.asarray(sorted_bvecs)
+        bvecs = jnp.repeat(bvecs, self.bvec_repeats, axis=-1)
+        data = jnp.concatenate([bvals, signals, bvecs], axis=-1)
+        tokens = self.initial_layer(data)
+        tokens = self._group_tokens(tokens)
         if using_summary:
             expanded_summary = summary_token.reshape(
                 summary_token.shape[:-1] + (1, summary_token.shape[-1])

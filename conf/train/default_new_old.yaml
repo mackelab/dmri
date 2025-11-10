@@ -5,14 +5,14 @@ continue_training: false
 max_train_hours: 72
 model_selection_weight: 1.0
 model_inference_loss_weight: 1.0
-weight_by_complexity: False
+weight_by_complexity: True
 track_ema: true
 ema_decay: 0.999
 cut_off_tsm: 0.1
-label_smoothing: 0.01
-use_loss_mask: true
+label_smoothing: 0.0
+use_loss_mask: false
 restart_optimizer: false
-recovery_threshold: 5.0
+recovery_threshold: 10.0
 
 eval:
   nnl_theta:
