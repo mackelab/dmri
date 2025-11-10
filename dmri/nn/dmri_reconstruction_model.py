@@ -269,16 +269,17 @@ class DMRIInferenceModel(nnx.Module):
         model_idx: Optional[list[int]] = None,
         noise_idx: Optional[list[int]] = None,
     ) -> Array:
-        _model_mask_extended = self.tokenizer.theta_token_mask(
-            model_mask, model_idx=model_idx, noise_idx=noise_idx
-        )
-        attention_mask = (
-            _model_mask_extended[..., None, :] & _model_mask_extended[..., :, None]
-        )
-        attention_mask = attention_mask | jnp.eye(
-            _model_mask_extended.shape[-1], dtype=bool
-        )
-        return attention_mask
+        with jax.ensure_compile_time_eval():
+            _model_mask_extended = self.tokenizer.theta_token_mask(
+                model_mask, model_idx=model_idx, noise_idx=noise_idx
+            )
+            attention_mask = (
+                _model_mask_extended[..., None, :] & _model_mask_extended[..., :, None]
+            )
+            attention_mask = attention_mask | jnp.eye(
+                _model_mask_extended.shape[-1], dtype=bool
+            )
+            return attention_mask
 
     def loss_fn(
         self,

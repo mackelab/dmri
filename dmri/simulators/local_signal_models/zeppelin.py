@@ -4,11 +4,7 @@ from jax.typing import ArrayLike
 
 from dmri.simulators.base import SignalCompartment, acquisition_scheme
 from dmri.simulators.sphereical_distributions import TensorFOD
-from dmri.utils.dmriutils import (
-    cartesian_to_unitsphere,
-    fit_diffusion_tensor_linearized,
-    unitsphere_to_cartesian,
-)
+from dmri.utils.dmriutils import cart2sph, fit_diffusion_tensor_linearized, sph2cart
 
 
 class Zeppelin(SignalCompartment):
@@ -38,7 +34,7 @@ class Zeppelin(SignalCompartment):
         """Compute the log signal for given b-values and b-vectors."""
         bvals = acq.bvals
         bvecs = acq.bvecs
-        mu_cartesian = unitsphere_to_cartesian(mu)
+        mu_cartesian = sph2cart(mu)
         mu_perpendicular_plane = jnp.eye(3) - jnp.outer(mu_cartesian, mu_cartesian)
         magnitued_parallel = jnp.dot(bvecs, mu_cartesian)
         proj = jnp.einsum("...i,ij->...j", bvecs, mu_perpendicular_plane)
@@ -87,11 +83,11 @@ class Zeppelin(SignalCompartment):
         lambda_par = eigvals[idx]
         lambda_perp = jnp.mean(jnp.delete(eigvals, idx))
         mu_cartesian = eigvecs[:, idx]
-        mu = cartesian_to_unitsphere(mu_cartesian)
+        mu = cart2sph(mu_cartesian)
         return mu, lambda_par, lambda_perp
 
     def to_fod(self):
-        mu = unitsphere_to_cartesian(self.mu)
+        mu = sph2cart(self.mu)
         D = self.lambda_par * jnp.outer(mu, mu) + self.lambda_perp * (
             jnp.eye(3) - jnp.outer(mu, mu)
         )

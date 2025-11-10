@@ -10,10 +10,7 @@ from dipy.data import HemiSphere, get_sphere
 from jax.typing import ArrayLike
 
 from dmri.simulators.base import Compartment
-from dmri.utils.dmriutils import (
-    rotation_matrix_100_to_theta_phi_psi,
-    unitsphere_to_cartesian,
-)
+from dmri.utils.dmriutils import rotation_matrix_100_to_theta_phi_psi, sph2cart
 from dmri.utils.sample_fns import sample_watson_ar_1
 from dmri.utils.shm import real_sh
 from dmri.utils.viz import (
@@ -560,7 +557,7 @@ class Watson(SphericalDistribution):
         """
 
         kappa = odi2kappa(self.odi)
-        mu_cart = unitsphere_to_cartesian(self.mu)
+        mu_cart = sph2cart(self.mu)
         numerator = jnp.exp(kappa * jnp.dot(n, mu_cart) ** 2)
         denominator = 4 * jnp.pi * jax.scipy.special.hyp1f1(0.5, 1.5, kappa)
         Wn = numerator / denominator
@@ -571,7 +568,7 @@ class Watson(SphericalDistribution):
         Now defers to _sample_watson_distribution.
         """
         kappa = odi2kappa(self.odi)
-        mu_cart = unitsphere_to_cartesian(self.mu)
+        mu_cart = sph2cart(self.mu)
         _sample_fn = functools.partial(sample_watson_ar_1, mu=mu_cart, kappa=kappa)
         keys = jax.random.split(key, shape)
         for _ in range(keys.ndim):
@@ -644,7 +641,7 @@ class Bingham(SphericalDistribution):
         mu = self.mu
         psi = self.psi
 
-        mu_cart = unitsphere_to_cartesian(mu)
+        mu_cart = sph2cart(mu)
 
         R = rotation_matrix_100_to_theta_phi_psi(mu[0], mu[1], psi)
         mu_beta = jnp.dot(R, jnp.array([0.0, 1.0, 0.0]))
@@ -661,7 +658,7 @@ class Bingham(SphericalDistribution):
 
     def sample(self, key, shape):
         num_samples = math.prod(shape)
-        mu_cart = unitsphere_to_cartesian(self.mu)
+        mu_cart = sph2cart(self.mu)
         R = rotation_matrix_100_to_theta_phi_psi(self.mu[0], self.mu[1], self.psi)
         mu_beta = jnp.dot(R, jnp.array([0.0, 1.0, 0.0]))
         kappa = odi2kappa(self.odi)

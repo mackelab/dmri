@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 import nibabel as nb
 import numpy as np
+from jax import Array
 from jax.typing import ArrayLike
 
 
@@ -144,7 +145,7 @@ def freed_ssfp_signal_fn(
 
 
 def fit_diffusion_tensor_linearized(
-    logS: ArrayLike, bvals: ArrayLike, bvecs: ArrayLike
+    logS: Array, bvals: Array, bvecs: Array
 ) -> ArrayLike:
     """Linearized fit of the diffusion tensor.
 
@@ -176,22 +177,70 @@ def fit_diffusion_tensor_linearized(
     return D
 
 
-def cartesian_to_unitsphere(cartesian: ArrayLike) -> ArrayLike:
-    """Convert Cartesian coordinates to spherical coordinates."""
-    x, y, z = cartesian
+def _split_vector(vec: ArrayLike, size: int, *, name: str) -> tuple[Array, ...]:
+    arr = jnp.asarray(vec)
+    if arr.ndim == 0:
+        raise ValueError(f"{name} vector must have at least one dimension.")
+    if arr.shape[-1] == size:
+        components = tuple(arr[..., idx] for idx in range(size))
+    elif arr.shape[0] == size:
+        components = tuple(arr[idx] for idx in range(size))
+    else:
+        raise ValueError(
+            f"{name} vector must have length {size} along its leading or trailing axis."
+        )
+    return components  # type: ignore[return-value]
+
+
+def cart2sph(
+    x: ArrayLike,
+    y: ArrayLike | None = None,
+    z: ArrayLike | None = None,
+) -> Array | tuple[Array, Array]:
+    """Convert Cartesian coordinates to spherical coordinates.
+
+    Accepts either a single stacked array (..., 3) / (3, ...) or three separate
+    components. Returns a stacked output when the input is stacked, otherwise a
+    tuple ``(theta, phi)``.
+    """
+    stacked_input = y is None or z is None
+    if stacked_input:
+        x, y, z = _split_vector(x, 3, name="Cartesian")
+    else:
+        x, y, z = jnp.asarray(x), jnp.asarray(y), jnp.asarray(z)
+
     r = jnp.sqrt(x**2 + y**2 + z**2)
-    theta = jnp.arccos(z / r)
+    safe_ratio = jnp.where(r == 0, z, z / r)
+    theta = jnp.arccos(jnp.clip(safe_ratio, -1.0, 1.0))
     phi = jnp.arctan2(y, x)
-    return jnp.array([theta, phi])
+    if stacked_input:
+        return jnp.stack([theta, phi], axis=-1)
+    return theta, phi
 
 
-def unitsphere_to_cartesian(mu: ArrayLike) -> ArrayLike:
-    """Convert spherical coordinates to Cartesian coordinates."""
-    theta, phi = mu
-    x = jnp.sin(theta) * jnp.cos(phi)
-    y = jnp.sin(theta) * jnp.sin(phi)
+def sph2cart(
+    theta: ArrayLike,
+    phi: ArrayLike | None = None,
+) -> Array | tuple[Array, Array, Array]:
+    """Convert spherical coordinates to Cartesian coordinates.
+
+    Accepts stacked ``[..., 2]`` / ``(2, ...)`` inputs or two separate arrays.
+    Returns a stacked output when the input is stacked, otherwise a tuple
+    ``(x, y, z)``.
+    """
+    stacked_input = phi is None
+    if stacked_input:
+        theta, phi = _split_vector(theta, 2, name="Spherical")
+    else:
+        theta, phi = jnp.asarray(theta), jnp.asarray(phi)
+
+    sin_theta = jnp.sin(theta)
+    x = sin_theta * jnp.cos(phi)
+    y = sin_theta * jnp.sin(phi)
     z = jnp.cos(theta)
-    return jnp.array([x, y, z])
+    if stacked_input:
+        return jnp.stack([x, y, z], axis=-1)
+    return x, y, z
 
 
 def normalize_bvecs(bvecs: ArrayLike) -> ArrayLike:
@@ -242,7 +291,7 @@ def rotation_matrix_100_to_theta_phi(theta, phi):
     R : array, shape (3 x 3)
         Rotation matrix.
     """
-    x, y, z = unitsphere_to_cartesian([theta, phi])
+    x, y, z = sph2cart(theta, phi)
     return rotation_matrix_100_to_xyz(x, y, z)
 
 
@@ -339,8 +388,8 @@ def canonical_bingham_normalization_series(kappa, beta, max_terms=30):
 
 
 def make_dyads(
-    theta_samples: ArrayLike, phi_samples: ArrayLike, percentile: float = None
-) -> tuple[ArrayLike, float]:
+    theta_samples: Array, phi_samples: Array, percentile: float = None
+) -> tuple[Array, Array]:
     """
     Uses fibre orientation samples (in spherical coordinates) from the posterior to estimate the mean fibre orientation
     (in cartesian coordinates [x,y,z]) and the uncertainty (dispersion) around it.
@@ -380,43 +429,6 @@ def make_dyads(
         disp = jnp.percentile(angles, percentile)
 
     return v1, disp
-
-
-def cart2sph(x: float, y: float, z: float) -> tuple[float, float]:
-    """
-    Convert Cartesian coordinates to spherical coordinates.
-
-    Args:
-        x, y, z: Cartesian coordinates
-
-    Returns:
-        tuple: (theta, phi) spherical coordinates
-    """
-    r = jnp.sqrt(x**2 + y**2 + z**2)
-    theta = jnp.where(
-        r == 0,
-        jnp.arccos(z),  # To avoid NaN when r==0
-        jnp.arccos(z / r),
-    )
-    phi = jnp.arctan2(y, x)
-    return theta, phi
-
-
-def sph2cart(theta: ArrayLike, phi: ArrayLike) -> ArrayLike:
-    """
-    Convert spherical coordinates to Cartesian coordinates.
-
-    Args:
-        theta: Inclination angle
-        phi: Azimuthal angle
-
-    Returns:
-        Array: Cartesian coordinates [x, y, z]
-    """
-    x = jnp.sin(theta) * jnp.cos(phi)
-    y = jnp.sin(theta) * jnp.sin(phi)
-    z = jnp.cos(theta)
-    return jnp.stack([x, y, z], axis=-1)
 
 
 def _normalize_volume_slice(volume_slice, spatial_shape):
@@ -523,9 +535,9 @@ def reorder_angles_3fib(mu1, mu2, mu3, f1, f2, f3):
     # Process remaining samples
     for j in range(1, mu1.shape[0]):
         # Convert current sample to cartesian
-        v1 = sph2cart(mu1[j, 0], mu1[j, 1])
-        v2 = sph2cart(mu2[j, 0], mu2[j, 1])
-        v3 = sph2cart(mu3[j, 0], mu3[j, 1])
+        v1 = sph2cart(mu1[j, :])
+        v2 = sph2cart(mu2[j, :])
+        v3 = sph2cart(mu3[j, :])
 
         # Calculate dot products with v1_ref
         dots = jnp.array([

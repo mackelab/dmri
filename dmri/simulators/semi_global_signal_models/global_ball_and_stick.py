@@ -15,7 +15,7 @@ from dmri.simulators.base import SharedParameterState, SignalCompartment
 from dmri.simulators.semi_global_signal_models.fiber_prior import (
     FiberField,
 )
-from dmri.utils.dmriutils import cartesian_to_unitsphere
+from dmri.utils.dmriutils import cart2sph
 from dmri.utils.transform import dirichlet_to_normal, normal_to_dirichlet
 
 
@@ -198,7 +198,7 @@ class GlobalStick(Stick):
             mu_cart_override = jnp.where(
                 need_to_flip[..., None], -mu_cart_override, mu_cart_override
             )
-            mu_override = vmap3d(cartesian_to_unitsphere)(mu_cart_override)
+            mu_override = vmap3d(cart2sph)(mu_cart_override)
             # Convert to normalized theta
             mu0_normalized = 1 - jnp.cos(
                 mu_override[..., 0]
@@ -227,10 +227,10 @@ class GlobalStick(Stick):
             mu_cart_override = jnp.where(
                 need_to_flip[..., None], -mu_cart_override, mu_cart_override
             )
-            mu_override = vmap3d(cartesian_to_unitsphere)(mu_cart_override)
+            mu_override = vmap3d(cart2sph)(mu_cart_override)
             no_fiber_mask = jnp.all(mu_cart_override == 0, axis=-1)
 
-            mu_override = vmap3d(cartesian_to_unitsphere)(mu_cart_override)
+            mu_override = vmap3d(cart2sph)(mu_cart_override)
             mu_override = jnp.where(no_fiber_mask[..., None], mu_uncond, mu_override)
             return mu_override, lam_par
         else:
