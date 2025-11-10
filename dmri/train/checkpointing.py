@@ -57,19 +57,19 @@ class CheckpointManager:
         rng: Any = None,
     ) -> ocp.args.Composite:
         items: dict[str, ocp.args.CheckpointArgs] = {
-            "params": ocp.args.StandardSave(params),
-            "optimizer_state": ocp.args.StandardSave(optimizer_state),
-            "step": ocp.args.JsonSave(step),
-            "loss": ocp.args.JsonSave(loss),
+            "params": ocp.args.StandardSave(params),  # type: ignore
+            "optimizer_state": ocp.args.StandardSave(optimizer_state),  # type: ignore
+            "step": ocp.args.JsonSave(step),  # type: ignore
+            "loss": ocp.args.JsonSave(loss),  # type: ignore
         }
         if params_ema is not None:
-            items["params_ema"] = ocp.args.StandardSave(params_ema)
+            items["params_ema"] = ocp.args.StandardSave(params_ema)  # type: ignore
         if model_state is not None:
-            items["model_state"] = ocp.args.StandardSave(model_state)
+            items["model_state"] = ocp.args.StandardSave(model_state)  # type: ignore
         if ema_state is not None:
-            items["ema_state"] = ocp.args.StandardSave(ema_state)
+            items["ema_state"] = ocp.args.StandardSave(ema_state)  # type: ignore
         if rng is not None:
-            items["rng"] = ocp.args.ArraySave(rng)
+            items["rng"] = ocp.args.ArraySave(rng)  # type: ignore
         return ocp.args.Composite(**items)
 
     def _build_restore_args(
@@ -83,19 +83,19 @@ class CheckpointManager:
         rng: Any = None,
     ) -> ocp.args.Composite:
         items: dict[str, ocp.args.CheckpointArgs] = {
-            "params": ocp.args.StandardRestore(params),
-            "optimizer_state": ocp.args.StandardRestore(optimizer_state),
+            "params": ocp.args.StandardRestore(params),  # type: ignore
+            "optimizer_state": ocp.args.StandardRestore(optimizer_state),  # type: ignore
             "step": ocp.args.JsonRestore(),
             "loss": ocp.args.JsonRestore(),
         }
         if params_ema is not None:
-            items["params_ema"] = ocp.args.StandardRestore(params_ema)
+            items["params_ema"] = ocp.args.StandardRestore(params_ema)  # type: ignore
         if model_state is not None:
-            items["model_state"] = ocp.args.StandardRestore(model_state)
+            items["model_state"] = ocp.args.StandardRestore(model_state)  # type: ignore
         if ema_state is not None:
-            items["ema_state"] = ocp.args.StandardRestore(ema_state)
+            items["ema_state"] = ocp.args.StandardRestore(ema_state)  # type: ignore
         if rng is not None:
-            items["rng"] = ocp.args.ArrayRestore(rng)
+            items["rng"] = ocp.args.ArrayRestore(rng)  # type: ignore
         return ocp.args.Composite(**items)
 
     def save(
@@ -162,7 +162,11 @@ class CheckpointManager:
         if self.prev_metric is None:
             self.prev_metric = current_metric
             return False
-        recovery_threshold = self.recovery_threshold if recovery_threshold is None else recovery_threshold
+        recovery_threshold = (
+            self.recovery_threshold
+            if recovery_threshold is None
+            else recovery_threshold
+        )
 
         if (
             current_metric > recovery_threshold

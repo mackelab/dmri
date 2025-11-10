@@ -183,6 +183,40 @@ def _apply_slice_to_brain(slice_cfg, brain_mask, data_norm, logger):
     return brain_mask, data_norm, slice_tuple
 
 
+def _cfg_get(cfg, key, default=None):
+    value = OmegaConf.select(cfg, key)
+    return default if value is None else value
+
+
+def _resolve_data_path(cfg):
+    explicit_path = _cfg_get(cfg, "path")
+    if explicit_path not in (None, "", "null", "None"):
+        return os.path.expanduser(str(explicit_path))
+    data_folder = _cfg_get(cfg, "data_folder")
+    if data_folder in (None, "", "null", "None"):
+        raise ValueError(
+            "Please set either cfg.path or cfg.data_folder to select the input data."
+        )
+    data_root = _cfg_get(cfg, "data_root")
+    if data_root in (None, "", "null", "None"):
+        data_root = os.path.join(os.getcwd(), "data")
+    return os.path.join(os.path.expanduser(str(data_root)), str(data_folder))
+
+
+def _resolve_checkpoint_root(cfg):
+    explicit_path = _cfg_get(cfg, "path_checkpoint")
+    if explicit_path not in (None, "", "null", "None"):
+        return os.path.expanduser(str(explicit_path))
+    results_root = _cfg_get(cfg, "results_root")
+    if results_root in (None, "", "null", "None"):
+        results_root = os.path.join(os.getcwd(), "results")
+    results_root = os.path.expanduser(str(results_root))
+    results_folder = _cfg_get(cfg, "results_folder")
+    if results_folder in (None, "", "null", "None"):
+        return results_root
+    return os.path.join(results_root, str(results_folder))
+
+
 def main():
     """Main script function"""
     print(logo)
@@ -196,7 +230,9 @@ def _main(cfg: DictConfig):
     log.info(OmegaConf.to_yaml(cfg))
 
     log.info(f"Model name: {cfg.model_name}")
-    output_dir = os.path.join(cfg.path_checkpoint, cfg.model_name)
+    data_path = _resolve_data_path(cfg)
+    checkpoint_root = _resolve_checkpoint_root(cfg)
+    output_dir = os.path.join(checkpoint_root, cfg.model_name)
     log.info(f"Output directory: {output_dir}")
     log.info(f"Hostname: {socket.gethostname()}")
     log.info(f"Jax devices: {jax.devices()}")
@@ -205,11 +241,11 @@ def _main(cfg: DictConfig):
     log.info(f"Setting seed: {cfg.seed}")
     key = jax.random.PRNGKey(cfg.seed)
 
-    log.info(f"Loading data from {cfg.path}")
+    log.info(f"Loading data from {data_path}")
 
     # Load data
     data, data_norm, brain_mask, bvals, bvecs = load_and_process_data(
-        cfg.path,
+        data_path,
         cfg.brain_mask,
         cfg.mri_data,
         cfg.bvals_data,
@@ -245,8 +281,8 @@ def _main(cfg: DictConfig):
         full_data_flat_in_brain = np.clip(full_data_flat_in_brain, 0, exclude_outliers)
 
     # Build model and simulator
-    log.info(f"Loading model from {cfg.path_checkpoint}/{cfg.model_name}")
-    path_checkpoint = os.path.join(cfg.path_checkpoint, cfg.model_name)
+    log.info(f"Loading model from {checkpoint_root}/{cfg.model_name}")
+    path_checkpoint = os.path.join(checkpoint_root, cfg.model_name)
     checkpoint, model, _ = load_checkpoint(path_checkpoint)
     graphdef, params, static, state = nnx.split(model, nnx.Param, nnx.Intermediate, ...)
     params = checkpoint[cfg.params_name]
@@ -311,7 +347,7 @@ def _main(cfg: DictConfig):
     # Export model selection
     if models_selected_brain is not None:
         out_path = os.path.join(
-            cfg.path_checkpoint, cfg.model_name, cfg.export_model_selection.name
+            checkpoint_root, cfg.model_name, cfg.export_model_selection.name
         )
         export_model_selection_to_files(
             cfg,
@@ -327,7 +363,7 @@ def _main(cfg: DictConfig):
 
     # Export samples
     if model_parameters_brain is not None:
-        out_path = os.path.join(cfg.path_checkpoint, cfg.model_name, cfg.export.name)
+        out_path = os.path.join(checkpoint_root, cfg.model_name, cfg.export.name)
         export_cfg = cfg.export
         export_type = (
             export_cfg.get("type", "ball3stick")
@@ -357,7 +393,7 @@ def _main(cfg: DictConfig):
 
     # Compute reconstruction error
     if cfg.export.export_reconstruction_error:
-        out_path = os.path.join(cfg.path_checkpoint, cfg.model_name, cfg.export.name)
+        out_path = os.path.join(checkpoint_root, cfg.model_name, cfg.export.name)
         compute_reconstruction_error(
             cfg,
             sim_type,
