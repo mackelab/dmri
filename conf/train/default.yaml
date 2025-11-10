@@ -10,7 +10,7 @@ track_ema: true
 ema_decay: 0.999
 cut_off_tsm: 0.1
 restart_optimizer: false
-recovery_threshold: 2.0
+recovery_threshold: 10.0
 
 eval:
   nnl_theta:

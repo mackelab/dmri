@@ -168,16 +168,7 @@ class CheckpointManager:
             else recovery_threshold
         )
 
-        if (
-            current_metric > recovery_threshold
-            or np.isnan(current_metric)
-            or np.isinf(current_metric)
-        ):
-            self.prev_metric = current_metric
-            return True
-
-        if current_metric > self.prev_metric * 2:
-            self.prev_metric = current_metric
+        if current_metric > self.prev_metric * recovery_threshold:
             return True
 
         self.prev_metric = current_metric

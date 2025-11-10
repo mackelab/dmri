@@ -12,3 +12,6 @@ params:
   label_smoothing: 0.0
   prior_params_embed_dim: 128  # Context dimension embedding
   mask_prior_dim: 1  # Model prior input dim
+  precision: null
+  dtype: null
+  preferred_element_type: null
