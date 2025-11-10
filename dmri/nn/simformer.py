@@ -315,9 +315,10 @@ class EDMSimformer(EDM):
         context: Optional[ArrayLike] = None,
         attention_mask: Optional[ArrayLike] = None,
         sample_method: str = "ode",
-        t_min: float = 1e-3,
-        t_max: float = 80.0,
         num_steps: int = 64,
+        t_min: float | None = None,
+        t_max: float | None = None,
+
     ) -> Array:
         rng, rng_init = jax.random.split(rng)
         eps = jax.random.normal(rng_init, (dim,)) * self.marginal_std(self.train_cfg.t_max)
@@ -338,10 +339,14 @@ class EDMSimformer(EDM):
         context: Optional[ArrayLike] = None,
         attention_mask: Optional[ArrayLike] = None,
         model_mask: Optional[ArrayLike] = None,
-        t_min: float = 2e-3,
-        t_max: float = 80.0,
+        t_min: float | None = None,
+        t_max: float | None     = None,
         num_steps: int = 64,
     ) -> Array:
+        if t_min is None:
+            t_min = 1e-3
+        if t_max is None:
+            t_max = self.train_cfg.t_max
         ts = self.solver_cfg.solve_schedule(t_min, t_max, num_steps)[::-1]
 
         def dx_dt_fn(t, z):
@@ -368,15 +373,14 @@ class EDMSimformer(EDM):
             div = jnp.trace(jax.jacrev(lambda z: dx_dt_fn(t, z))(data))
             return (dx_dt, div)
 
-        state, _ = odeint(
+        x_final = odeint(
             drift,
             (x, logp0),
             ts,
             method="heun",
             collect_trace=True,
         )
-        x_final = state.y0
-        x_final, logp_final = x_final[:-1], x_final[-1]
+        x_final, logp_final = x_final
 
         sigma = self.marginal_std(t_max)
         base_logp = -0.5 * jnp.sum(x_final**2) / sigma**2

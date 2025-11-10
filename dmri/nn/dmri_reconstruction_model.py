@@ -399,6 +399,9 @@ class DMRIInferenceModel(nnx.Module):
         x: Array,
         model_mask: Array,
         sample_method: str = "ode",
+        num_steps: int = 64,
+        t_min: float | None = None,
+        t_max: float | None = None,
     ) -> Array:
         y_ctx, y = self._encode_observations(acq, x)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
@@ -416,6 +419,9 @@ class DMRIInferenceModel(nnx.Module):
             model_mask=model_mask,
             sample_method=sample_method,
             context=y_ctx,
+            t_max=t_max,
+            t_min=t_min,
+            num_steps=num_steps,
         )
 
         return theta
@@ -426,6 +432,9 @@ class DMRIInferenceModel(nnx.Module):
         acq: AcquisitionSchemeLike,
         x: Array,
         model_mask: Array,
+        num_steps: int = 64,
+        t_min: float | None = None,
+        t_max: float | None = None,
     ) -> Array:
         y_ctx, y = self._encode_observations(acq, x)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
@@ -440,6 +449,9 @@ class DMRIInferenceModel(nnx.Module):
             attention_mask=attention_mask,
             model_mask=model_mask,
             context=y_ctx,
+            num_steps=num_steps,
+            t_max=t_max,
+            t_min=t_min,
         )
 
         return log_prob
