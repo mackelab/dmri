@@ -416,6 +416,9 @@ def save_training_checkpoint(
     train_state: TrainState,
     loss_value: float,
     track_ema: bool,
+    *,
+    val_loss_value: Optional[float] = None,
+    write_standard: bool = True,
 ) -> None:
     """Persist the full training state via the checkpoint manager."""
     checkpoint_manager.save(
@@ -423,6 +426,8 @@ def save_training_checkpoint(
         params=train_state.params,
         optimizer_state=train_state.opt_state,
         loss=loss_value,
+        val_loss=val_loss_value,
+        write_standard=write_standard,
         params_ema=get_ema_params(train_state.ema_state) if track_ema else None,
         model_state=train_state.model_state,
         ema_state=train_state.ema_state if track_ema else None,
@@ -477,7 +482,7 @@ def resume_from_checkpoint(
     return train_state
 
 
-def build_loss_fn(cfg: DictConfig, graphdef: Any, static: Any):
+def build_loss_fn(cfg: DictConfig, graphdef: Any):
     """Create the loss function closure."""
 
     def loss_fn(params, state, data, rng):
@@ -490,7 +495,7 @@ def build_loss_fn(cfg: DictConfig, graphdef: Any, static: Any):
             raise ValueError("Expected at least one batch for loss computation.")
 
         rngs = jax.random.split(rng, num_batches)
-        model = nnx.merge(graphdef, params, static, state, copy=True)
+        model = nnx.merge(graphdef, params, state, copy=True)
         model.train()
 
         loss1 = []
@@ -501,6 +506,8 @@ def build_loss_fn(cfg: DictConfig, graphdef: Any, static: Any):
                 subkey,
                 **batch,
                 weight_by_complexity=cfg.train.weight_by_complexity,
+                label_smoothing=cfg.train.label_smoothing,
+                use_loss_mask=cfg.train.use_loss_mask,
                 cut_off_tsm=cfg.train.cut_off_tsm,
             )
             loss1.append(losses[0])
@@ -510,7 +517,7 @@ def build_loss_fn(cfg: DictConfig, graphdef: Any, static: Any):
         loss1 = cfg.train.model_selection_weight * normaliser * sum(loss1)
         loss2 = cfg.train.model_inference_loss_weight * normaliser * sum(loss2)
         total_loss = loss1 + loss2
-        _, _, _, new_state = nnx.split(model, nnx.Param, nnx.Intermediate, ...)
+        _, _, new_state = nnx.split(model, nnx.Param, ...)
         return total_loss, (loss1, loss2, new_state)
 
     return loss_fn
@@ -714,6 +721,15 @@ def train_loop(
                     "step": train_state.step,
                 })
             validation_metric = float(mask_nnl + theta_nnl)
+            if checkpoint_manager.keep_best:
+                save_training_checkpoint(
+                    checkpoint_manager,
+                    train_state,
+                    total_loss_value,
+                    track_ema,
+                    val_loss_value=validation_metric,
+                    write_standard=False,
+                )
             if checkpoint_manager.should_recover(
                 validation_metric,
             ):
@@ -824,9 +840,9 @@ def _main(cfg: DictConfig):
     model = build_model(cfg, sim_type)
     model.train()
     log.info(f"Model cfg: {model.cfg}")
-    graphdef, params, static, state = nnx.split(model, nnx.Param, nnx.Intermediate, ...)
+    graphdef, params, state = nnx.split(model, nnx.Param, ...)
 
-    evaluator = build_pure_eval_fns(graphdef, static, sim_type)
+    evaluator = build_pure_eval_fns(graphdef, sim_type)
 
     checkpoint_dir = os.path.join(output_super_dir, "checkpoints")
     os.makedirs(checkpoint_dir, exist_ok=True)
@@ -859,7 +875,7 @@ def _main(cfg: DictConfig):
         cfg, checkpoint_manager, optimizer, train_state, ema_transform, log
     )
 
-    loss_fn = build_loss_fn(cfg, graphdef, static)
+    loss_fn = build_loss_fn(cfg, graphdef)
     update_step = build_update_fn(
         optimizer, loss_fn, cfg.train.track_ema, ema_transform
     )

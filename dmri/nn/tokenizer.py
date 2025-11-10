@@ -1,5 +1,6 @@
 from abc import abstractmethod
 from collections.abc import Sequence
+from functools import partial
 from typing import (
     Any,
     Callable,
@@ -398,53 +399,6 @@ class DMRITokenizer(Tokenizer):
     def theta_fraction_mask(model_mask: Array) -> Array:
         return jnp.ones(model_mask.shape[:-1] + (1,), dtype=jnp.bool_)
 
-    def theta_mask(
-        self,
-        model_mask: Array,
-        model_idx: Optional[Sequence[int]] = None,
-        noise_idx: Optional[Sequence[int]] = None,
-    ) -> Array:
-        with jax.ensure_compile_time_eval():
-            if model_idx is None:
-                model_idx = self.model_indices
-            if noise_idx is None:
-                noise_idx = self.noise_indices
-
-            # First need to find active model fractions
-            model_component_mask = model_mask[..., : len(model_idx)]
-            active_thetas = eps_mask(model_component_mask)
-
-            # Next is the shared parameters which are always active
-            if self.simulator.shared_parameter_type is not None:
-                theta_dim = self.simulator.shared_parameter_type.theta_dim
-                active_thetas = jnp.concatenate(
-                    [
-                        active_thetas,
-                        jnp.ones(model_mask.shape[:-1] + (theta_dim,), dtype=jnp.bool_),
-                    ],
-                    axis=-1,
-                )
-
-            # Next are the model parameters, if model_mask is true it should be multiplied by the dimension of the parameter
-            for i in model_idx:
-                active_thetas = jnp.concatenate(
-                    [active_thetas]
-                    + [model_mask[..., i, None]]
-                    * self.simulator.model_types[i].theta_dim,
-                    axis=-1,
-                )
-
-            # Next are the noise parameters, if noise_mask is true it should be multiplied by the dimension of the parameter
-            for idx in noise_idx:
-                active_thetas = jnp.concatenate(
-                    [active_thetas]
-                    + [model_mask[..., self.num_models + idx, None]]
-                    * self.simulator.noise_types[idx].theta_dim,
-                    axis=-1,
-                )
-
-            return active_thetas
-
     def theta_token_mask(
         self,
         model_mask: Array,
@@ -456,7 +410,7 @@ class DMRITokenizer(Tokenizer):
                 model_idx = self.model_indices
             if noise_idx is None:
                 noise_idx = self.noise_indices
-                
+
         idx_with_params = [
             i for i in model_idx if self.simulator.model_types[i].theta_dim > 0
         ]
@@ -959,7 +913,7 @@ class DMRITokenizerPP(DMRITokenizer):
         model_mask: Optional[Array] = None,
         **kwargs: Any,
     ) -> Array:
-        del model_mask, kwargs
+        del kwargs
 
         if model_idx is None:
             model_idx = self.model_indices
@@ -1003,4 +957,11 @@ class DMRITokenizerPP(DMRITokenizer):
         )
         out = jnp.concatenate(x, axis=-1)
         out = jnp.squeeze(out, axis=-2)
+        if model_mask is not None:
+            # Note this will not break if model_idx and noise_idx are given...
+            mask_fn = partial(self.simulator.theta_mask)
+            for _ in range(model_mask.ndim - 1):
+                mask_fn = jax.vmap(mask_fn)
+            theta_mask = mask_fn(model_mask)
+            out = jnp.where(theta_mask, out, 0.0)
         return out

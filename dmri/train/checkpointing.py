@@ -2,7 +2,6 @@ import logging
 import os
 from typing import Any, Optional
 
-import numpy as np
 import orbax.checkpoint as ocp
 
 
@@ -33,7 +32,7 @@ class CheckpointManager:
         self.best_manager = ocp.CheckpointManager(self.best_ckpt_dir, options=best_opts)
 
         self.keep_best = keep_best
-        self.best_loss = float("inf")
+        self.best_val_loss = float("inf")
         self.recovery_threshold = recovery_threshold
         self.prev_metric: Optional[float] = None
 
@@ -51,6 +50,7 @@ class CheckpointManager:
         params: Any,
         optimizer_state: Any,
         loss: float,
+        val_loss: Optional[float] = None,
         params_ema: Any = None,
         model_state: Any = None,
         ema_state: Any = None,
@@ -62,6 +62,8 @@ class CheckpointManager:
             "step": ocp.args.JsonSave(step),  # type: ignore
             "loss": ocp.args.JsonSave(loss),  # type: ignore
         }
+        if val_loss is not None:
+            items["val_loss"] = ocp.args.JsonSave(val_loss)  # type: ignore
         if params_ema is not None:
             items["params_ema"] = ocp.args.StandardSave(params_ema)  # type: ignore
         if model_state is not None:
@@ -104,6 +106,8 @@ class CheckpointManager:
         params: Any,
         optimizer_state: Any,
         loss: float = float("inf"),
+        val_loss: Optional[float] = None,
+        write_standard: bool = True,
         params_ema: Any = None,
         model_state: Any = None,
         ema_state: Any = None,
@@ -114,14 +118,16 @@ class CheckpointManager:
             params=params,
             optimizer_state=optimizer_state,
             loss=loss,
+            val_loss=val_loss,
             params_ema=params_ema,
             model_state=model_state,
             ema_state=ema_state,
             rng=rng,
         )
-        self.manager.save(step, args=args)
-        if self.keep_best and loss < self.best_loss:
-            self.best_loss = loss
+        if write_standard:
+            self.manager.save(step, args=args)
+        if self.keep_best and val_loss is not None and val_loss < self.best_val_loss:
+            self.best_val_loss = val_loss
             self.best_manager.save(step, args=args)
 
     def restore(

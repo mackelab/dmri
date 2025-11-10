@@ -6,10 +6,10 @@ import jax.numpy as jnp
 from flax import nnx
 
 
-def build_pure_eval_fns(graphdef, static, sim_type):
+def build_pure_eval_fns(graphdef, sim_type):
     @jax.jit
     def sample_masks(params, state, rng, data):
-        model = nnx.merge(graphdef, params, static, state, copy=True)
+        model = nnx.merge(graphdef, params, state, copy=True)
         model.eval()
         p_mask = data["mask_prior"]
         thetas = data["theta"]
@@ -22,7 +22,7 @@ def build_pure_eval_fns(graphdef, static, sim_type):
 
     @jax.jit
     def log_prob_masks(params, state, data):
-        model = nnx.merge(graphdef, params, static, state, copy=True)
+        model = nnx.merge(graphdef, params,  state, copy=True)
         model.eval()
 
         p_mask = data["mask_prior"]
@@ -35,7 +35,7 @@ def build_pure_eval_fns(graphdef, static, sim_type):
     def sample_thetas(
         params, state, rng, data, num_steps=64, t_min=None, t_max=None,
     ):
-        model = nnx.merge(graphdef, params, static, state, copy=True)
+        model = nnx.merge(graphdef, params, state, copy=True)
         model.eval()
 
         model_mask = data["model_mask"]
@@ -58,7 +58,7 @@ def build_pure_eval_fns(graphdef, static, sim_type):
     def log_prob_thetas(
         params, state, data, num_steps=64, t_min=None, t_max=None,
     ):
-        model = nnx.merge(graphdef, params, static, state, copy=True)
+        model = nnx.merge(graphdef, params, state, copy=True)
         model.eval()
 
         model_mask = data["model_mask"]

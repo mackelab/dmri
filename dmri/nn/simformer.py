@@ -232,10 +232,9 @@ class EDMSimformer(EDM):
         cut_off_tsm: float = 0.1,
         context: Optional[ArrayLike] = None,
     ) -> Array:
-        assert loss_mask is None
         model_mask_arr = jnp.asarray(model_mask)
         rng0, rng1 = jax.random.split(rng)
-        t = self.noise_schedule(rng0, (theta.shape[0],))
+        t = self.train_cfg.sample_times(rng0, (theta.shape[0],))
         std = self.std_fn(t)
         eps = jax.random.normal(rng1, theta.shape)
         thetas_noisy = theta + std * eps
@@ -254,8 +253,11 @@ class EDMSimformer(EDM):
                 "Denoised output is not an ndarray"
             )
             weight = self.weight_fn(t)
+            diff = (theta_denoised - theta) ** 2
+            if loss_mask is not None:
+                diff = jnp.where(loss_mask, diff, 0.0)
             loss_denoised = weight * jnp.sum(
-                (theta_denoised - theta) ** 2, axis=-1, keepdims=True
+                diff, axis=-1, keepdims=True
             )
             loss = loss_denoised
         elif self.loss_type == "v":
@@ -280,7 +282,10 @@ class EDMSimformer(EDM):
             eps_pred = (thetas_noisy - theta_denoised) / std
             v = alpha_t * eps_pred - sigma_t * theta_denoised
             weight = self.weight_fn_v(t)
-            loss_v = weight * jnp.sum((v - v_target) ** 2, axis=-1, keepdims=True)
+            diff = (v - v_target) ** 2
+            if loss_mask is not None:
+                diff = jnp.where(loss_mask, diff, 0.0)
+            loss_v = weight * jnp.sum(diff, axis=-1, keepdims=True)
             loss = loss_v
         else:
             raise ValueError(f"Loss type {self.loss_type} not supported")
@@ -294,8 +299,11 @@ class EDMSimformer(EDM):
             weight_tsm = (
                 1 / target_score_norm * std**2 * jnp.where((std < cut_off_tsm), 1, 0)
             )  # Only use TSM for early times
+            diff = (score_est - target_score) ** 2
+            if loss_mask is not None:
+                diff = jnp.where(loss_mask, diff, 0.0)
             loss_score = weight_tsm * jnp.sum(
-                (score_est - target_score) ** 2, axis=-1, keepdims=True
+                diff, axis=-1, keepdims=True
             )
             loss += loss_score
 
