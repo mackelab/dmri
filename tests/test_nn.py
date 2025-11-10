@@ -161,6 +161,49 @@ def test_dmri_inference_model_without_mask_prior(simulator, data):
     assert theta_pred.shape == theta.shape
 
 
+def test_dmri_inference_model_mask_sampling_and_log_prob(rng, simulator, data):
+    """Sampling / log-prob APIs should work end-to-end on the high-level model."""
+    cfg = DMRIInferenceModelConfigMaskPriorAmortized(
+        simulator=simulator,
+        model_dim=64,
+        embedding_cfg=DMRIEmbeddingConfig(),
+        model_selection_cfg=DMRIModelSelectionAmortizedPriorConfig(),
+        theta_inference_cfg=DMRIThetaInferenceConfig(),
+    )
+    model = DMRIInferenceModel(cfg, rng)
+
+    model_mask, _, x, bvals, bvecs, _ = data
+    model_mask_single = model_mask[:1]
+    x_single = x[:1]
+    bvals_single = bvals[:1]
+    bvecs_single = bvecs[:1]
+
+    from dmri.simulators.acquisition_scheme import acquisition_scheme
+
+    acq_single = acquisition_scheme(bvals=bvals_single, bvecs=bvecs_single)
+
+    assert model.mask_prior_dim is not None
+    mask_prior_sample = jnp.zeros((model.mask_prior_dim,))
+    sampled_mask = model.sample_mask(
+        rng.next(),
+        acq_single,
+        x_single,
+        mask_prior=mask_prior_sample,
+    )
+    assert sampled_mask.shape == model_mask_single.shape[-1:]
+    assert sampled_mask.dtype == jnp.bool_
+
+    mask_prior_log_prob = jnp.zeros((model_mask_single.shape[0], model.mask_prior_dim))
+    log_prob = model.log_prob_mask(
+        model_mask_single,
+        acq_single,
+        x_single,
+        mask_prior=mask_prior_log_prob,
+    )
+    assert log_prob.shape == (model_mask_single.shape[0],)
+    assert jnp.all(jnp.isfinite(log_prob))
+
+
 def test_dmri_inference_model_with_gated_simformer(simulator, data):
     """Ensure gated transformer configuration integrates without errors."""
     cfg = DMRIInferenceModelConfig(

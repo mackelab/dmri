@@ -165,6 +165,7 @@ class DMRIInferenceModel(nnx.Module):
         t: Optional[ArrayLike] = None,
     ) -> tuple[Array, Array]:
         # Embed model configuration
+        batch_shape = model_mask.shape[:-1]
         tokens_cfg, y_ctx, y, mask_prior = self.embed_inputs(
             model_mask,
             x,
@@ -185,9 +186,10 @@ class DMRIInferenceModel(nnx.Module):
             additional_context=y_ctx,
         )
 
+
         # Get theta predictions
         if t is None:
-            t = jnp.ones((theta.shape[0], 1)) * 0.0001
+            t = jnp.ones(batch_shape + (1,)) * 0.001
         # Mask out non-selected models
         attention_mask = self.marginalization_mask(
             model_mask, model_idx=model_idx, noise_idx=noise_idx
@@ -248,12 +250,6 @@ class DMRIInferenceModel(nnx.Module):
         )
         # Embed observations and acquisition parameters
         y_ctx, y = self._encode_observations(acq, x)
-        if y.ndim == 2:
-            y = y[..., None, :]
-
-        print(
-            "cfg", tokens_cfg.shape, y.shape, y_ctx.shape if y_ctx is not None else None
-        )
         return tokens_cfg, y_ctx, y, mask_prior
 
     def theta_mask(
@@ -305,10 +301,8 @@ class DMRIInferenceModel(nnx.Module):
         tokens_cfg = self.tokenizer.embed_cfgs(
             model_mask, alpha_prior, model_idx=model_idx, noise_idx=noise_idx
         )
-        # Embed observatiosn
+
         y_ctx, y = self._encode_observations(acq, x)
-        if y.ndim == 2:
-            y = y[..., None, :]
 
         if permute_order:
             rng, permute_rng = jax.random.split(rng)
@@ -403,10 +397,6 @@ class DMRIInferenceModel(nnx.Module):
         acq: AcquisitionSchemeLike,
         x: Array,
         model_mask: Array,
-        num_steps: int = 16,
-        min_noise: Optional[float] = None,
-        max_noise: Optional[float] = None,
-        rho: float = 7,
         sample_method: str = "ode",
     ) -> Array:
         y_ctx, y = self._encode_observations(acq, x)
@@ -421,13 +411,9 @@ class DMRIInferenceModel(nnx.Module):
             tokenizer=self.tokenizer,
             dim=self.cfg.simulator.theta_dim,
             tokens_cfg=tokens_cfg,
-            num_steps=num_steps,
-            min_noise=min_noise,
-            max_noise=max_noise,
             attention_mask=attention_mask,
             model_mask=model_mask,
             sample_method=sample_method,
-            rho=rho,
             context=y_ctx,
         )
 
@@ -439,10 +425,6 @@ class DMRIInferenceModel(nnx.Module):
         acq: AcquisitionSchemeLike,
         x: Array,
         model_mask: Array,
-        num_steps: int = 16,
-        min_noise: Optional[float] = None,
-        max_noise: Optional[float] = None,
-        rho: float = 7,
     ) -> Array:
         y_ctx, y = self._encode_observations(acq, x)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
@@ -454,49 +436,12 @@ class DMRIInferenceModel(nnx.Module):
             y=y,
             tokenizer=self.tokenizer,
             tokens_cfg=tokens_cfg,
-            num_steps=num_steps,
-            min_noise=min_noise,
-            max_noise=max_noise,
             attention_mask=attention_mask,
             model_mask=model_mask,
-            rho=rho,
             context=y_ctx,
         )
 
         return log_prob
-
-    def sample_and_log_prob_theta(
-        self,
-        rng: RngKey,
-        acq: AcquisitionSchemeLike,
-        x: ArrayLike,
-        model_mask: Array,
-        num_steps: int = 16,
-        min_noise: Optional[float] = None,
-        max_noise: Optional[float] = None,
-        rho: float = 7,
-    ) -> tuple[Array, Array]:
-        y_ctx, y = self._encode_observations(acq, x)
-        tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
-
-        attention_mask = self.marginalization_mask(model_mask)
-
-        theta, log_prob = self.inference_decoder.sample_and_log_prob(
-            rng,
-            y=y,
-            tokenizer=self.tokenizer,
-            dim=self.cfg.simulator.theta_dim,
-            tokens_cfg=tokens_cfg,
-            num_steps=num_steps,
-            min_noise=min_noise,
-            max_noise=max_noise,
-            attention_mask=attention_mask,
-            model_mask=model_mask,
-            rho=rho,
-            context=y_ctx,
-        )
-
-        return theta, log_prob
 
     def score_theta(
         self,
