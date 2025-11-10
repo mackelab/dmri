@@ -21,3 +21,6 @@ params:
   y_seq_dim: null
   y_glob_dim: null
   out_norm: True
+  precision: null
+  dtype: null
+  preferred_element_type: null

@@ -20,3 +20,6 @@ params:
   global_summary_bins: 8
   y_seq_dim: null
   y_glob_dim: null
+  precision: null
+  dtype: null
+  preferred_element_type: null

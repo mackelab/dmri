@@ -714,9 +714,8 @@ def train_loop(
                     "step": train_state.step,
                 })
             validation_metric = float(mask_nnl + theta_nnl)
-            recovery_threshold = cfg.train.get("recovery_threshold", 2.0)
             if checkpoint_manager.should_recover(
-                validation_metric, recovery_threshold=recovery_threshold
+                validation_metric,
             ):
                 log.warning(
                     f"Recovery triggered at step {train_state.step} based on validation metrics. Restoring from checkpoint."

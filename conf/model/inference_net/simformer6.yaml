@@ -12,3 +12,6 @@ params:
   gate_attention: false
   gate_mlp: false
   dropout_rate: 0.0
+  precision: null
+  dtype: null
+  preferred_element_type: null
