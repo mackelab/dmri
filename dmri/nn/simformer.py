@@ -16,6 +16,9 @@ from probjax.nn.nets.denoising_diffusion_model import EDM
 from probjax.utils.odeint import odeint
 from probjax.utils.sdeint import sdeint
 from probjax.utils.typing import Array, ArrayLike, DTypeLike, PrecisionLike, RngKey
+from probjax.core import inverse_and_logabsdet
+
+from functools import partial
 
 from dmri.nn.tokenizer import Tokenizer
 
@@ -296,10 +299,6 @@ class EDMSimformer(EDM):
             )
             loss += loss_score
 
-            # print(
-            #     "Data loss: ", loss_denoised.mean(), "Score loss: ", loss_score.mean()
-            # )
-
         if weight_by_complexity:
             loss = loss * (model_mask_arr.sum(axis=-1, keepdims=True) + 0.01)
 
@@ -310,84 +309,20 @@ class EDMSimformer(EDM):
         rng: RngKey,
         tokenizer: Tokenizer,
         y: Array,
-        dim: Tuple[int, ...] | int,
+        dim: Tuple[int, ...],
         tokens_cfg: Optional[Array] = None,
         model_mask: Optional[ArrayLike] = None,
         context: Optional[ArrayLike] = None,
         attention_mask: Optional[ArrayLike] = None,
-        max_noise: Optional[float] = None,
-        min_noise: Optional[float] = None,
-        num_steps: int = 16,
         sample_method: str = "ode",
-        rho: float = 7,
     ) -> Array:
         rng, rng_init = jax.random.split(rng)
-        eps = jax.random.normal(rng_init, dim) * self.marginal_std(self.max_noise)
-        ts = self.solve_schedule(
-            num_steps, rho=rho, min_noise=min_noise, max_noise=max_noise
-        )
+        eps = jax.random.normal(rng_init, dim) * self.marginal_std(self.train_cfg.t_max)
 
         if sample_method == "ode":
-
-            def drift(t, x):
-                t = jnp.atleast_1d(t)
-                f = self.drift(t, x)
-                g = self.diffusion(t, x)
-                score = self.score(
-                    t,
-                    x,
-                    tokenizer=tokenizer,
-                    tokens_cfg=tokens_cfg,
-                    y=y,
-                    context=context,
-                    attention_mask=attention_mask,
-                    model_mask=model_mask,
-                )
-                return (f - 0.5 * g**2 * score).reshape(x.shape)
-
-            state, _ = odeint(
-                drift,
-                eps,
-                ts,
-                method="heun",
-                filter_state=lambda *args: None,
-                return_state=True,
-            )
-
-            x = state.y0
-            x += -drift(ts[-1], x) * ts[-1]
-            return x
+            return super().sample_ode(eps,tokenizer=tokenizer,y=y,model_mask=model_mask,tokens_cfg=tokens_cfg,context=context,attention_mask=attention_mask)
         elif sample_method == "sde":
-
-            def drift(t, x):
-                t = jnp.atleast_1d(t)
-                f = self.drift(t, x)
-                g = self.diffusion(t, x)
-                score = self.score(
-                    t,
-                    x,
-                    tokenizer=tokenizer,
-                    tokens_cfg=tokens_cfg,
-                    y=y,
-                    context=context,
-                    attention_mask=attention_mask,
-                    model_mask=model_mask,
-                )
-                return f - g**2 * score
-
-            diffusion = self.diffusion
-
-            state, _ = sdeint(
-                rng,
-                drift,
-                diffusion,
-                eps,
-                ts,
-                return_state=True,
-                # filter_state=lambda *args: None,
-            )
-            x = state.y0
-            return x
+            return super().sample_sde(rng,eps,tokenizer=tokenizer,y=y,model_mask=model_mask,tokens_cfg=tokens_cfg,context=context,attention_mask=attention_mask)
         else:
             raise ValueError(f"Sample method {sample_method} not recognized.")
 
@@ -400,119 +335,12 @@ class EDMSimformer(EDM):
         context: Optional[ArrayLike] = None,
         attention_mask: Optional[ArrayLike] = None,
         model_mask: Optional[ArrayLike] = None,
-        min_noise: Optional[float] = None,
-        max_noise: Optional[float] = None,
-        num_steps: int = 16,
-        rho: float = 7,
     ) -> Array:
-        ts = self.solve_schedule(
-            num_steps, rho=rho, min_noise=min_noise, max_noise=max_noise
-        )[::-1]
-        print(
-            x.shape, ts.shape, y.shape, context.shape if context is not None else None
-        )
-
-        def dx_dt_fn(t, z):
-            f_ = self.drift(t, z)
-            g_ = self.diffusion(t, z)
-            s_ = self.score(
-                t,
-                z,
-                tokenizer=tokenizer,
-                tokens_cfg=tokens_cfg,
-                y=y,
-                context=context,
-                attention_mask=attention_mask,
-                model_mask=model_mask,
-            )
-            return f_ - 0.5 * g_**2 * s_
-
-        x = x
-        logp0 = 0.0
-
-        def drift(t, state):
-            data, logp = state
-            dx_dt = dx_dt_fn(t, data)
-            div = jnp.trace(jax.jacrev(lambda z: dx_dt_fn(t, z))(data))
-            return (dx_dt, div)
-
-        state, _ = odeint(
-            drift,
-            (x, logp0),
-            ts,
-            method="heun",
-            filter_state=lambda *args: None,
-            return_state=True,
-        )
-        x_final = state.y0
-        x_final, logp_final = x_final[:-1], x_final[-1]
-
-        sigma = self.marginal_std(self.max_noise)
-        base_logp = -0.5 * jnp.sum(x_final**2) / sigma**2
-        base_logp += -0.5 * x_final.shape[-1] * jnp.log(2 * np.pi * sigma**2)
-        final = logp_final + base_logp
+        bij = partial(super().sample_ode,tokenizer=tokenizer,y=y,model_mask=model_mask,tokens_cfg=tokens_cfg,context=context,attention_mask=attention_mask)
+        x0, logdet = inverse_and_logabsdet(bij)(x)
+        sigma = self.marginal_std(self.train_cfg.t_max)
+        base_logp = -0.5 * jnp.sum(x0**2) / sigma**2
+        base_logp += -0.5 * x0.shape[-1] * jnp.log(2 * np.pi * sigma**2)
+        final = base_logp + logdet
         return jnp.squeeze(final)
 
-    def sample_and_log_prob(
-        self,
-        rng: RngKey,
-        tokenizer: Tokenizer,
-        y: Array,
-        dim: Tuple[int, ...] | int,
-        tokens_cfg: Optional[Array] = None,
-        model_mask: Optional[ArrayLike] = None,
-        context: Optional[ArrayLike] = None,
-        attention_mask: Optional[ArrayLike] = None,
-        min_noise: Optional[float] = None,
-        max_noise: Optional[float] = None,
-        num_steps: int = 16,
-        rho: float = 7,
-    ) -> Tuple[Array, Array]:
-        eps = jax.random.normal(rng, dim) * self.marginal_std(self.max_noise)
-        ts = self.solve_schedule(
-            num_steps, rho, min_noise=min_noise, max_noise=max_noise
-        )
-
-        def dx_dt_fn(t, x):
-            t = jnp.atleast_1d(t)
-            f = self.drift(t, x)
-            g = self.diffusion(t, x)
-            score = self.score(
-                t,
-                x,
-                tokenizer=tokenizer,
-                tokens_cfg=tokens_cfg,
-                y=y,
-                context=context,
-                attention_mask=attention_mask,
-                model_mask=model_mask,
-            )
-            return f - 0.5 * g**2 * score
-
-        def drift(t, state):
-            x, logp = state
-            dx_dt = dx_dt_fn(t, x)
-            div = jnp.trace(jax.jacrev(lambda z: dx_dt_fn(t, z))(x))
-            return (dx_dt, -div)
-
-        state, _ = odeint(
-            drift,
-            (eps, 0.0),
-            ts,
-            method="heun",
-            filter_state=lambda *args: None,
-            return_state=True,
-        )
-
-        y0 = state.y0
-        x, logp = y0[:-1], y0[-1]
-        # Leave out due to numerical instability
-        # dx_dt = dx_dt_fn(ts[-1], x)
-        # x += -dx_dt * ts[-1]
-
-        sigma = self.marginal_std(self.max_noise)
-        base_logp = -0.5 * jnp.sum(eps**2) / sigma**2
-        base_logp += -0.5 * eps.shape[-1] * jnp.log(2 * np.pi * sigma**2)
-        logp += base_logp
-
-        return x, jnp.squeeze(logp)
