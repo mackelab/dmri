@@ -296,6 +296,7 @@ class DMRIInferenceModel(nnx.Module):
         permute_order: bool = False,
         use_loss_mask: bool = False,
         weight_by_complexity: bool = False,
+        label_smoothing: float = 0.0,
         cut_off_tsm: float = 0.1,
     ) -> Array:
         # Embed model configuration
@@ -319,6 +320,7 @@ class DMRIInferenceModel(nnx.Module):
             rng=permute_rng,
             mask_prior=mask_prior,
             additional_context=y_ctx,
+            label_smoothing=label_smoothing,
         )
         if self.cfg.use_attention_mask:
             attention_mask = self.marginalization_mask(model_mask)
@@ -326,13 +328,9 @@ class DMRIInferenceModel(nnx.Module):
             attention_mask = None
 
         if use_loss_mask:
-            loss_mask = ~jax.vmap(
-                partial(
-                    self.tokenizer.theta_mask,
-                    model_idx=model_idx,
-                    noise_idx=noise_idx,
-                )
-            )(model_mask)
+            loss_mask = jax.vmap(self.tokenizer.simulator.theta_mask)(
+                model_mask
+            )
         else:
             loss_mask = None
 

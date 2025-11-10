@@ -177,13 +177,13 @@ def build_theta_sample_fn(
     method, num_samples, model, acq, model_mask, sim_type, params, params_corrector
 ):
     num_steps = params.get("num_steps", 25)
-    max_noise = params.get("max_noise", 80)
+    t_max = params.get("t_max", 80)
 
     def base_sample_fn(key, x, model_mask):
         K = num_samples
         in_axes_model_mask = 0 if model_mask.ndim == 2 else None
         sample_fn = jax.vmap(
-            partial(model.sample_theta, num_steps=num_steps, max_noise=max_noise),
+            partial(model.sample_theta, num_steps=num_steps, t_max=t_max),
             in_axes=(0, None, None, in_axes_model_mask),
         )
         keys = jax.random.split(key, K)

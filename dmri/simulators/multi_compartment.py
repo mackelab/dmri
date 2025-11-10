@@ -220,6 +220,55 @@ class MultiCompartment(SignalCompartment):
         return thetas_split
 
     @classmethod
+    def theta_mask(cls, model_mask, model_idx: Sequence[int] | None = None, noise_idx: Sequence[int] | None = None):
+        if model_idx is not None or noise_idx is not None:
+            cls = cls.sub_model(
+                model_idx=model_idx if model_idx is not None else [],
+                noise_idx=noise_idx if noise_idx is not None else [],
+            )
+        with jax.ensure_compile_time_eval():
+
+            if model_mask is None:
+                return jnp.ones((cls.theta_dim,), dtype=bool)
+
+            mask_list = []
+            # Model fractions
+            num_models = len(cls.model_types)
+            model_fraction_mask = model_mask[:num_models]
+            if num_models > 1:
+                model_fraction_mask = model_fraction_mask.at[-1].set(
+                    True
+                )  # Last fraction is implicit
+            mask_list.append(model_fraction_mask[:-1])
+
+            # Shared parameters
+            if cls._has_shared:
+                shared_param_mask = jnp.ones(
+                    (cls.shared_parameter_type.theta_dim,), dtype=bool
+                )
+                mask_list.append(shared_param_mask)
+
+            # Model compartments
+            for i, m in enumerate(cls.model_types):
+                compartment_mask = jnp.where(
+                    model_mask[num_models + i],
+                    jnp.ones((m.theta_dim,), dtype=bool),
+                    jnp.zeros((m.theta_dim,), dtype=bool),
+                )
+                mask_list.append(compartment_mask)
+
+            # Noise compartments
+            for i, n in enumerate(cls.noise_types):
+                compartment_mask = jnp.where(
+                    model_mask[num_models + len(cls.model_types) + i],
+                    jnp.ones((n.theta_dim,), dtype=bool),
+                    jnp.zeros((n.theta_dim,), dtype=bool),
+                )
+                mask_list.append(compartment_mask)
+
+            return jnp.concatenate(mask_list)
+
+    @classmethod
     def to_theta(
         cls,
         model_fractions: ArrayLike,
@@ -367,6 +416,7 @@ class MultiCompartment(SignalCompartment):
             for i in range(num_noise)
         ]
         stacked_ll = jnp.stack(ll_values, axis=0)
+        stacked_ll = jnp.nan_to_num(stacked_ll)
         mask_weights = self._mask_weights(noise_mask, stacked_ll.ndim, stacked_ll.dtype)
         return jnp.sum(stacked_ll * mask_weights, axis=0)
 
