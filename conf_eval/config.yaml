@@ -1,5 +1,7 @@
 # Loading data
-path: "/home/macke/mgloeckler90/dmri/data/data"
+data_root: ${hydra:runtime.cwd}/data
+data_folder: null
+path: null
 brain_mask: "nodif_brain_mask.nii.gz"
 mri_data: "data.nii.gz"
 bvals_data: "bvals"
@@ -12,7 +14,9 @@ slice:
   z: null
 
 # Loading model
-path_checkpoint: "/home/macke/mgloeckler90/dmri/results"
+results_root: ${hydra:runtime.cwd}/results
+results_folder: null
+path_checkpoint: null
 model_name: "dmri"
 params_name: "params_ema"
 
