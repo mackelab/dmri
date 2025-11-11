@@ -115,11 +115,11 @@ class DMRIInferenceModel(nnx.Module):
             model_dim=cfg.model_dim,
             **embedding_kwargs,
         )
-        self.y_seq_dim: int = getattr(self.encoder, "y_seq_dim", cfg.model_dim)
+        self.y_seq_dim: int = getattr(self.encoder, "y_seq_dim", cfg.model_dim // cfg.embedding_cfg.reduce_factor)
         self.use_y_ctx: bool = bool(
             getattr(self.encoder, "use_global_summary_token", False)
         )
-        self.y_glob_dim: int = getattr(self.encoder, "y_glob_dim", cfg.model_dim)
+        self.y_glob_dim: int = getattr(self.encoder, "y_glob_dim", cfg.model_dim // cfg.embedding_cfg.reduce_factor)
         self.y_ctx_dim: int = self.y_glob_dim if self.use_y_ctx else 0
         # Setup tokenizers
         self.tokenizer: DMRITokenizer = cfg.tokenizer_cls(

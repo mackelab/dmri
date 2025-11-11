@@ -47,6 +47,7 @@ class DMRIEmbeddingConfig:
     use_global_summary_token: bool = False
     global_summary_bins: int = 8
     out_norm: bool = False
+    reduce_factor: int = 1
 
 
 @dataclass
@@ -90,6 +91,7 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
         precision: PrecisionLike | None = None,
         preferred_element_type: DTypeLike | None = None,
         out_norm: bool = False,
+        reduce_factor: int = 1,
     ) -> None:
         self.model_dim = model_dim
         self.num_heads = num_heads
@@ -105,6 +107,8 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
         self.use_global_summary_token = use_global_summary_token
         self.global_summary_bins = global_summary_bins
         self.out_norm = out_norm
+        self.reduce_factor = reduce_factor
+        self.model_dim = model_dim // reduce_factor
 
         precision_kwargs = {
             "dtype": dtype,
