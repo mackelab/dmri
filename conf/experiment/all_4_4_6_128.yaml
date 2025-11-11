@@ -1,5 +1,5 @@
 # @package _global_
-name: all_2_6_8_256
+name: all_4_4_6_128
 use_wandb: true
 
 hydra:
@@ -7,11 +7,10 @@ hydra:
     params:
       wandb.project: all
       train.continue_training: true
-      model.model_dim: 256
+      model.embedding_net.params.num_layers: 4
+      model.inference_net.params.num_layers: 6
+      model.model_selection_net.params.num_layers: 4
       train.dataloader.train_loader.batch_size: 2048
-      model.embedding_net.params.num_layers: 2
-      model.inference_net.params.num_layers: 8
-      model.model_selection_net.params.num_layers: 6
 
 defaults:
   - _self_

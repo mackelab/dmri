@@ -38,7 +38,7 @@ from dmri.simulators.noise_compartments import (
 )
 from dmri.simulators.sphereical_distributions import MixtureOfFODs
 from dmri.utils.dmriutils import ssfp_signal_fn
-from dmri.utils.transform import dirichlet_to_normal, normal_to_dirichlet
+from dmri.utils.transform import dirichlet_to_normal, normal_to_dirichlet, eps_mask
 
 
 class MultiCompartment(SignalCompartment):
@@ -220,53 +220,69 @@ class MultiCompartment(SignalCompartment):
         return thetas_split
 
     @classmethod
-    def theta_mask(cls, model_mask, model_idx: Sequence[int] | None = None, noise_idx: Sequence[int] | None = None):
+    def theta_mask(
+        cls,
+        model_mask,
+        model_idx: Sequence[int] | None = None,
+        noise_idx: Sequence[int] | None = None,
+    ):
         if model_idx is not None or noise_idx is not None:
-            cls = cls.sub_model(
-                model_idx=model_idx if model_idx is not None else [],
-                noise_idx=noise_idx if noise_idx is not None else [],
-            )
+            if model_idx is None:
+                model_idx_tuple = tuple(range(len(cls.model_types)))
+            else:
+                model_idx_tuple = tuple(int(i) for i in model_idx)
+            if noise_idx is None:
+                noise_idx_tuple = tuple(range(len(cls.noise_types)))
+            else:
+                noise_idx_tuple = tuple(int(i) for i in noise_idx)
+            cls = cls.sub_model(model_idx=model_idx_tuple, noise_idx=noise_idx_tuple)
         with jax.ensure_compile_time_eval():
 
             if model_mask is None:
-                return jnp.ones((cls.theta_dim,), dtype=bool)
+                return jnp.ones((cls.theta_dim,), dtype=jnp.bool_)
+
+            mask_arr = jnp.ravel(jnp.asarray(model_mask, dtype=jnp.bool_))
+            num_models = len(cls.model_types)
+            num_noise = len(cls.noise_types)
+            expected = num_models + num_noise
+            if mask_arr.shape[0] < expected:
+                raise ValueError(
+                    f"model_mask has length {mask_arr.shape[0]}, but "
+                    f"{cls.__name__} expects at least {expected} entries."
+                )
 
             mask_list = []
-            # Model fractions
-            num_models = len(cls.model_types)
-            model_fraction_mask = model_mask[:num_models]
+            # Model fractions: only sticks that participate in active components
             if num_models > 1:
-                model_fraction_mask = model_fraction_mask.at[-1].set(
-                    True
-                )  # Last fraction is implicit
-            mask_list.append(model_fraction_mask[:-1])
+                fraction_mask = eps_mask(mask_arr[:num_models])
+            else:
+                fraction_mask = jnp.zeros((0,), dtype=jnp.bool_)
+            mask_list.append(fraction_mask)
 
             # Shared parameters
             if cls._has_shared:
                 shared_param_mask = jnp.ones(
-                    (cls.shared_parameter_type.theta_dim,), dtype=bool
+                    (cls.shared_parameter_type.theta_dim,), dtype=jnp.bool_
                 )
                 mask_list.append(shared_param_mask)
 
-            # Model compartments
-            for i, m in enumerate(cls.model_types):
-                compartment_mask = jnp.where(
-                    model_mask[num_models + i],
-                    jnp.ones((m.theta_dim,), dtype=bool),
-                    jnp.zeros((m.theta_dim,), dtype=bool),
+            # Model compartments (reuse the same mask slice as the fractions)
+            model_component_mask = mask_arr[:num_models]
+            for is_active, compartment in zip(model_component_mask, cls.model_types):
+                mask_list.append(
+                    jnp.full((compartment.theta_dim,), is_active, dtype=jnp.bool_)
                 )
-                mask_list.append(compartment_mask)
 
-            # Noise compartments
-            for i, n in enumerate(cls.noise_types):
-                compartment_mask = jnp.where(
-                    model_mask[num_models + len(cls.model_types) + i],
-                    jnp.ones((n.theta_dim,), dtype=bool),
-                    jnp.zeros((n.theta_dim,), dtype=bool),
+            # Noise compartments (occupy the tail of the mask)
+            noise_component_mask = mask_arr[num_models : num_models + num_noise]
+            for is_active, compartment in zip(noise_component_mask, cls.noise_types):
+                mask_list.append(
+                    jnp.full((compartment.theta_dim,), is_active, dtype=jnp.bool_)
                 )
-                mask_list.append(compartment_mask)
 
-            return jnp.concatenate(mask_list)
+            return jnp.concatenate(mask_list) if mask_list else jnp.ones(
+                (0,), dtype=jnp.bool_
+            )
 
     @classmethod
     def to_theta(

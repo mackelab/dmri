@@ -24,3 +24,4 @@ params:
   precision: null
   dtype: null
   preferred_element_type: null
+  reduce_factor: 1
