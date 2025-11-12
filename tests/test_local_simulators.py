@@ -34,6 +34,8 @@ from dmri.simulators.multi_compartment import (
     MultiShellBall3StickSharedDiffusivity,
     MultiShellBall3StickSharedDiffusivityGammaPrior,
     MultiShellBall3StickSharedDiffusivityUniformFraction,
+    AllGaussianModels,
+    AllGaussianAndConvolvedModels,
 )
 
 
@@ -74,6 +76,23 @@ from dmri.simulators.multi_compartment import (
     ]
 )
 def compartment_model(request):
+    model_class = request.param
+    theta = np.random.randn(model_class.theta_dim)
+    return model_class.from_theta(theta)
+
+@pytest.fixture(
+    params=[
+        Ball3Stick,
+        BallStickSharedDiffusivity,
+        Ball3StickSharedDiffusivity,
+        Ball3StickSharedDiffusivityUniformFraction,
+        MultiShellBall3StickSharedDiffusivity,
+        MultiShellBall3StickSharedDiffusivityUniformFraction,
+        AllGaussianModels,
+        AllGaussianAndConvolvedModels,
+    ]
+)
+def multi_compartment_model(request):
     model_class = request.param
     theta = np.random.randn(model_class.theta_dim)
     return model_class.from_theta(theta)
@@ -161,6 +180,49 @@ def test_signal_properties(compartment_model):
     assert jnp.all(signal >= -0.05), "Signal should be non-negative"
     assert jnp.all(signal <= 1 + 0.05), "Signal should be bounded by 1"
     assert jnp.allclose(signal[0], 1.0, atol=0.2), "Signal at b=0 should be 1"
+
+def test_correct_theta_masking(multi_compartment_model):
+    """Test that theta masking works correctly in multi-compartment models."""
+    model = multi_compartment_model
+    theta_dim = model.theta_dim
+    num_compartments = model.num_compartments()
+
+    model_mask = jnp.ones((num_compartments,), dtype=bool)
+    theta_masks = model.theta_mask(model_mask=model_mask)
+
+    assert len(theta_masks) == theta_dim, "Theta masks length should match theta dimension"
+    assert jnp.all(theta_masks), "All theta components should be included when model_mask is all False"
+
+    # Correct masked reconstruction
+    def test_correct_rec(theta, model_mask):
+        theta_mask = model.theta_mask(model_mask=model_mask)
+        params1 = type(multi_compartment_model).from_theta(theta, model_mask=model_mask).params
+        params2 = type(multi_compartment_model).from_theta(theta*theta_mask, model_mask=model_mask).params
+        fraction1 = params1["model_fractions"]
+        fraction2 = params2["model_fractions"]
+        assert jnp.allclose(
+            fraction1, fraction2
+        ), "Model fractions should match after masking"
+        comp1 = params1["model_compartments"] + params1.get("noise_compartments", [])
+        comp2 = params2["model_compartments"] + params2.get("noise_compartments", [])
+        # params1 and params2 should be the same at the active compartments
+        for i, m in enumerate(model_mask):
+            if m and comp1[i].theta_dim > 0:
+                comp1_i, _ = jax.tree_util.tree_flatten(comp1[i].params)
+                comp2_i, _ = jax.tree_util.tree_flatten(comp2[i].params)
+                check = jax.tree_util.tree_reduce(
+                    jnp.logical_and,
+                    jax.tree_util.tree_map(
+                        lambda a, b: jnp.allclose(a, b), comp1_i, comp2_i
+                    ),
+                    True,
+                )
+                assert check, f"Compartment {i} parameters should match after masking"
+    for i in range(5):
+        theta = np.random.randn(theta_dim)
+        model_mask = np.random.choice([True, False], size=(num_compartments,))
+        test_correct_rec(theta, model_mask)
+
 
 
 def test_gradient_computation(compartment_model):
