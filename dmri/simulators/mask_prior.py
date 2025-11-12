@@ -236,6 +236,223 @@ class BetaBernoulliMaskPrior(MaskPrior):
         log_weight = -jnp.log(self._num_forced_combos)
         return logsumexp(log_prob_cond + log_weight)
 
+class BetaBernoulliParamCountScaledPrior(MaskPrior):
+    """Independent Bernoulli masks with per-component Dirichlet(2) (i.e., Beta) priors."""
+
+    mask_prior_dim: int = 1  # shared p
+
+    def __init__(
+        self,
+        num_model_components: int,
+        num_noise_components: int,
+        num_model_parameters: list[int],
+        *,
+        gamma: float = 1.0,
+        kappa: float = 2.0,
+        p_alpha: float = 1.0,
+        p_beta: float = 1.0,
+        eps: float = 1e-3,
+    ) -> None:
+        super().__init__(num_model_components, num_noise_components)
+        if len(num_model_parameters) != self.num_model_components:
+            raise ValueError("len(num_model_parameters) must equal num_model_components.")
+        if any(n <= 0 for n in num_model_parameters):
+            raise ValueError("All entries in num_model_parameters must be positive.")
+        if gamma < 0 or kappa <= 0 or p_alpha <= 0 or p_beta <= 0 or eps <= 0:
+            raise ValueError("Invalid hyperparameters.")
+        self._sizes = jnp.asarray(num_model_parameters, dtype=jnp.float32)
+        self.gamma = float(gamma)
+        self.kappa = float(kappa)
+        self.p_alpha = float(p_alpha)
+        self.p_beta = float(p_beta)
+        self._eps = float(eps)
+
+    def sample_hyperparameters(self, rng: jax.random.PRNGKey) -> jax.Array:
+        return jax.random.beta(rng, a=self.p_alpha, b=self.p_beta, shape=(1,))
+
+    def _alpha_beta(self, hyperparameters: ArrayLike) -> Tuple[jax.Array, jax.Array]:
+        p = jnp.clip(jnp.asarray(hyperparameters), self._eps, 1.0 - self._eps)
+        s = jnp.power(self._sizes, self.gamma)              # [K]
+        alpha = jnp.clip(self.kappa * (p / s), self._eps, jnp.inf)     # [K]
+        beta_scalar = jnp.clip(self.kappa * (1.0 - p), self._eps, jnp.inf)  # []
+        beta = jnp.broadcast_to(beta_scalar, alpha.shape)   # [K]
+        return alpha, beta
+
+    def sample_model_components(
+        self, rng: jax.random.KeyArray, hyperparameters: ArrayLike
+    ) -> jax.Array:
+        alpha, beta = self._alpha_beta(hyperparameters)     # both [K]
+        conc = jnp.stack([alpha, beta], axis=-1)            # [K, 2]
+        probs_on_off = jax.random.dirichlet(rng, conc)      # [K, 2], batched Dirichlet
+        pi_on = probs_on_off[:, 0]                          # [K]
+        mask = jax.random.bernoulli(rng, p=pi_on, shape=(self.num_model_components,))
+        return mask.astype(jnp.bool_)
+
+    def log_prob_model_components(
+        self, model_mask: ArrayLike, hyperparameters: ArrayLike
+    ) -> jax.Array:
+        # Use the Beta–Bernoulli predictive (integrating out Dirichlet(2))
+        mask = jnp.asarray(model_mask, dtype=jnp.bool_)
+        alpha, beta = self._alpha_beta(hyperparameters)
+        # Predictive Bernoulli mean = alpha/(alpha+beta)
+        pi = alpha / (alpha + beta)
+        pi = jnp.clip(pi, self._eps, 1.0 - self._eps)
+        log_on = jnp.log(pi)
+        log_off = jnp.log1p(-pi)
+        return jnp.sum(jnp.where(mask, log_on, log_off))
+
+
+
+
+class TotalParamPenalizedPrior(MaskPrior):
+    """Global-complexity prior (scan version) with fixed p0 and Beta-scaled penalty.
+
+    Conditionals:
+        logit P(z_i=1 | T) = logit(p0) - lam * (2*T*s_i + s_i**2)
+
+    Hyperparameters:
+      - u ~ Beta(lam_alpha, lam_beta)   (raw in (0,1))
+      - lam = ((penalty_min + u*(penalty_max - penalty_min)) / max_delta)
+        so that the *maximum possible* per-step logit penalty is in
+        [penalty_min, penalty_max].
+
+    Args:
+      p0: fixed baseline inclusion in (0,1).
+      lam_alpha, lam_beta: Beta prior on raw penalty u.
+      penalty_min, penalty_max: desired range for the *max* step penalty on the
+        logit scale (nonnegative, penalty_max >= penalty_min).
+    """
+    mask_prior_dim: int = 1  # hyperparameters = [u]
+
+    def __init__(
+        self,
+        num_model_components: int,
+        num_noise_components: int,
+        num_model_parameters: list[int],
+        *,
+        p0: float = 0.8,            # fixed baseline inclusion
+        # If you want to *sample* u, set u_alpha/u_beta and call sample_hyperparameters
+        u_alpha: float = .8,
+        u_beta: float = .6,
+        penalty_min: float = 0.0,   # min worst-case logit penalty
+        penalty_max: float = 100.0,   # max worst-case logit penalty
+        eps: float = 1e-3,
+    ) -> None:
+        super().__init__(num_model_components, num_noise_components)
+
+        if len(num_model_parameters) != self.num_model_components:
+            raise ValueError("len(num_model_parameters) must equal num_model_components.")
+        # Allow zero-sized components
+        if any(n < 0 for n in num_model_parameters):
+            raise ValueError("All entries in num_model_parameters must be non-negative.")
+        if not (0.0 < p0 < 1.0):
+            raise ValueError("p0 must be in (0,1).")
+        if u_alpha <= 0 or u_beta <= 0:
+            raise ValueError("u_alpha and u_beta must be positive.")
+        if penalty_min < 0 or penalty_max < penalty_min:
+            raise ValueError("Require 0 <= penalty_min <= penalty_max.")
+        if eps <= 0:
+            raise ValueError("eps must be positive.")
+
+        self._sizes = jnp.asarray(np.asarray(num_model_parameters, dtype=np.float32))  # [K]
+        self._S_total = jnp.sum(self._sizes)
+
+        # Order-agnostic conservative upper bound on a single step's delta:
+        # max_i max_T (2*T*s_i + s_i^2) with T in [0, S - s_i] => take T = S - s_i
+        max_delta = jnp.max(2.0 * self._S_total * self._sizes - self._sizes ** 2)
+        self._max_delta = jnp.maximum(max_delta, jnp.array(eps, dtype=jnp.float32))
+
+        self.p0 = float(p0)
+        self.u_alpha = float(u_alpha)
+        self.u_beta = float(u_beta)
+        self.penalty_min = float(penalty_min)
+        self.penalty_max = float(penalty_max)
+        self._eps = float(eps)
+
+        # Precompute baseline logit
+        p0_clip = np.clip(self.p0, eps, 1.0 - eps)
+        self._base_logit = float(np.log(p0_clip) - np.log1p(-p0_clip))
+
+    # ----- Hyperparameters (u only) -----
+
+    def sample_hyperparameters(self, rng: jax.random.KeyArray) -> jax.Array:
+        """Sample u ~ Beta(u_alpha, u_beta). Caller may also pass a fixed u instead."""
+        u = jax.random.beta(rng, a=self.u_alpha, b=self.u_beta, shape=(1,))
+        return u  # shape [1]
+
+    def _u_to_lambda(self, u: jax.Array) -> jax.Array:
+        """Map u∈[0,1] to λ so that worst-case step logit penalty is within range.
+
+        u=0 -> δ*(u)=penalty_max  (hardest penalty)
+        u=1 -> δ*(u)=penalty_min  (no/low penalty; 0 gives pure p0)
+        """
+        u = jnp.clip(jnp.asarray(u), 0.0, 1.0)
+        delta_star = self.penalty_min + (1.0 - u) * (self.penalty_max - self.penalty_min)
+        lam = delta_star / self._max_delta
+        return lam
+
+    # ----- Sampling with jax.scan -----
+
+    def sample_model_components(
+        self,
+        rng: jax.random.PRNGKey,
+        hyperparameters: ArrayLike,  # expects [u]
+    ) -> jax.Array:
+        u = jnp.asarray(hyperparameters)
+        lam = self._u_to_lambda(u)
+        base_logit = jnp.array(self._base_logit, dtype=jnp.float32)
+
+        keys = jax.random.split(rng, self.num_model_components)
+        sizes = self._sizes  # [K]
+
+        def step(T, inputs):
+            s_i, key_i = inputs
+            penalty = lam * (2.0 * T * s_i + s_i * s_i)
+            logit_i = base_logit - penalty
+            p_i = jax.nn.sigmoid(logit_i)
+            z_i = jax.random.bernoulli(key_i, p=p_i)
+            T_new = T + s_i * z_i.astype(T.dtype)
+            T_new = jnp.squeeze(T_new)
+            z_i = jnp.squeeze(z_i)
+            return T_new, z_i.astype(jnp.bool_)
+
+        T0 = jnp.array(0.0, dtype=jnp.float32)
+        _, zs = jax.lax.scan(step, T0, (sizes, keys))
+        return zs
+
+    # ----- Log probability with jax.scan -----
+
+    def log_prob_model_components(
+        self,
+        model_mask: ArrayLike,
+        hyperparameters: ArrayLike,  # expects [u]
+    ) -> jax.Array:
+        mask = jnp.asarray(model_mask, dtype=jnp.bool_)[: self.num_model_components]
+        u = jnp.asarray(hyperparameters)
+        lam = self._u_to_lambda(u)
+        base_logit = jnp.array(self._base_logit, dtype=jnp.float32)
+        sizes = self._sizes
+
+        def step(carry, inputs):
+            T, logp = carry
+            s_i, z_i = inputs
+            penalty = lam * (2.0 * T * s_i + s_i * s_i)
+            logit_i = base_logit - penalty
+            p_i = jax.nn.sigmoid(logit_i)
+            p_i = jnp.clip(p_i, self._eps, 1.0 - self._eps)
+            logp_i = jnp.where(z_i, jnp.log(p_i), jnp.log1p(-p_i))
+            T_new = T + s_i * z_i.astype(T.dtype)
+            T_new = jnp.squeeze(T_new)
+            logp_i = jnp.squeeze(logp_i)
+            return (T_new, logp + logp_i), None
+
+        (T_final, logp_sum), _ = jax.lax.scan(
+            step,
+            (jnp.array(0.0, dtype=jnp.float32), jnp.array(0.0, dtype=jnp.float32)),
+            (sizes, mask),
+        )
+        del T_final
+        return logp_sum
 
 class MarkovMaskPrior(MaskPrior):
     """Binary masks generated by a fixed-length Markov walk."""
@@ -486,7 +703,7 @@ class MarkovMaskPrior(MaskPrior):
 
 def sample_mask_and_prior(
     mask_prior: MaskPrior,
-    rng: jax.random.KeyArray,
+    rng: jax.random.PRNGKey,
 ) -> Tuple[jax.Array, jax.Array]:
     """Utility helper to sample `(mask_prior, mask)` pairs."""
     sample = mask_prior.sample(rng)
