@@ -64,8 +64,6 @@ def build_simulator(cfg: DictConfig):
                 mask_prior_overrides["u_alpha"] = prior_mask_u_alpha
             if prior_mask_u_beta is not None:
                 mask_prior_overrides["u_beta"] = prior_mask_u_beta
-            mask_prior_overrides["num_model_components"] = len(sim_type.model_types)
-            mask_prior_overrides["num_noise_components"] = len(sim_type.noise_types)
             mask_prior_overrides["num_model_parameters"] = [mt.theta_dim for mt in sim_type.model_types]
 
 
