@@ -34,7 +34,6 @@ from dmri.simulators.local_signal_models.stick import (
     StaticStick,
     Stick,
 )
-from dmri.simulators.local_signal_models.temporal_zeppelin import TemporalZeppelin
 from dmri.simulators.local_signal_models.zeppelin import Zeppelin
 
 __all__ = [
@@ -50,7 +49,6 @@ __all__ = [
     "ZeppelinKernel",
     "NODDIKernel",
     "SimpleSANDIKernel",
-    "TemporalZeppelin",
     "WatsonStick",
     "WatsonZeppelin",
     "BinghamStick",
