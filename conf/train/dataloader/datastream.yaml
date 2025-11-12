@@ -10,7 +10,7 @@ dataset:
     index: 0
 
 train_loader:
-  batch_size: 4096
+  batch_size: 2048
   shuffle: true
   drop_last: true
   loop: true
@@ -19,7 +19,8 @@ train_loader:
   num_async_workers: 1
 
 val_dataset:
-  buffer_size: 512
+  buffer_size: 1024
+  simulation_batch_size: 64
 
 val_loader:
   batch_size: 128

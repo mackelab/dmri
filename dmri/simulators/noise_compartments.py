@@ -24,13 +24,25 @@ class RicianNoise(NoiseCompartment):
         return add_rician_noise(rng, signal, 1 / self.snr)
 
     def log_likelihood(cls, signal_pred, signal_true):
-        log_likelihood = jnp.log(signal_true) - 2 * jnp.log(cls.snr)
-        std = 1 / cls.snr
-        log_likelihood -= 0.5 * (signal_true**2 + signal_pred**2) / std**2
-        x = signal_true * signal_pred / std**2
-        log_i0_value = x + jnp.log(jax.scipy.special.i0e(x))
-        log_likelihood += log_i0_value
-        return log_likelihood.sum(-1)
+        sigma = 1.0 / cls.snr
+        z = signal_true
+        nu = signal_pred
+
+        # Avoid log(0); clamp if needed:
+        z = jnp.clip(z, 1e-12, None)
+
+        x = z * nu / sigma**2  # argument for I0
+
+        log_i0 = jnp.log(jax.scipy.special.i0e(x)) + jnp.abs(x)
+
+        log_p = (
+            jnp.log(z)
+            - 2.0 * jnp.log(sigma)
+            - 0.5 * (z**2 + nu**2) / sigma**2
+            + log_i0
+        )
+
+        return log_p.sum(-1)
 
     @classmethod
     def to_theta(cls, snr: ArrayLike) -> ArrayLike:
