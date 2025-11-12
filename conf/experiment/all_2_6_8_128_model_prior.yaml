@@ -1,0 +1,19 @@
+# @package _global_
+name: all_2_6_8_128_model_prior
+use_wandb: true
+
+hydra:
+  sweeper:
+    params:
+      wandb.project: all
+      train.continue_training: true
+      model.embedding_net.params.num_layers: 2
+      model.inference_net.params.num_layers: 8
+      model.model_selection_net.params.num_layers: 6
+
+defaults:
+  - _self_
+  - override /partition: h100_long
+  - override /simulator: all_gaussian_param_count_reg
+  - override /simulator/acquisition_scheme: multi
+  - override /model: dmri
