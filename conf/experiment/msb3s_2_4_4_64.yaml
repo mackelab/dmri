@@ -5,7 +5,7 @@ use_wandb: true
 hydra:
   sweeper:
     params:
-      wandb.project: msb3s
+      wandb.project: msb3s1
       train.continue_training: true
       model.model_dim: 64
       model.embedding_net.params.num_layers: 2

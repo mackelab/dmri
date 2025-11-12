@@ -170,7 +170,7 @@ class DMRIInferenceModel(nnx.Module):
     ) -> tuple[Array, Array]:
         # Embed model configuration
         batch_shape = model_mask.shape[:-1]
-        tokens_cfg, y_ctx, y, mask_prior = self.embed_inputs(
+        tokens_cfg, y_ctx, y_seq, mask_prior = self.embed_inputs(
             model_mask,
             x,
             acq,
@@ -184,7 +184,7 @@ class DMRIInferenceModel(nnx.Module):
         model_mask_logits = self.model_decoder(
             model_mask,
             self.tokenizer,
-            y=y,
+            y=y_seq,
             tokens_cfg=tokens_cfg,
             mask_prior=mask_prior,
             additional_context=y_ctx,
@@ -204,7 +204,7 @@ class DMRIInferenceModel(nnx.Module):
                 t,
                 theta,
                 self.tokenizer,
-                y=y,
+                y=y_seq,
                 tokens_cfg=tokens_cfg,
                 attention_mask=attention_mask,
                 model_mask=model_mask,
@@ -228,7 +228,7 @@ class DMRIInferenceModel(nnx.Module):
                 raise TypeError(
                     "Expected a diffusion acquisition scheme for the diffusion encoder."
                 )
-            return self.encoder(acq, x, deterministic=deterministic, decode=decode)
+            return self.encoder(acq=acq, x=x, deterministic=deterministic, decode=decode)
         if isinstance(self.encoder, SSFPEmbeddingNet):
             if not isinstance(acq, ssfp_acquisition_scheme):
                 raise TypeError(
