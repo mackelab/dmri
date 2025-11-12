@@ -115,6 +115,11 @@ class MultiCompartment(SignalCompartment):
         # assert [type(m) for m in model_compartments] == self.model_types, "Wrong model"
         assert [type(m) for m in noise_compartments] == self.noise_types, "Wrong noise"
 
+
+    @classmethod
+    def num_compartments(cls):
+        return len(cls.model_types) + len(cls.noise_types)
+
     def get_all_params(self):
         all_params = {}
         all_params["model_fractions"] = self.model_fractions
