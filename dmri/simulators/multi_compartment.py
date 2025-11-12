@@ -14,6 +14,7 @@ from probjax.utils.special import gammaincinv
 from dmri.simulators import acquisition_scheme
 from dmri.simulators.base import SharedParameterState, SignalCompartment
 from dmri.simulators.local_signal_models import (
+    Dot,
     Ball,
     Dti,
     NoddiB,
@@ -24,12 +25,19 @@ from dmri.simulators.local_signal_models import (
     StaticStick,
     Stick,
     Zeppelin,
+    WatsonStick,
+    WatsonZeppelin,
+    BinghamStick,
+    BinghamZeppelin,
+    SandiW,
+    SandiB,
+    NoddiW,
 )
 from dmri.simulators.local_signal_models.ball import (
     MultiShellStaticBall,
 )
 from dmri.simulators.local_signal_models.stick import MultiShellStaticStick
-from dmri.simulators.mask_prior import BetaBernoulliMaskPrior, MaskPrior
+from dmri.simulators.mask_prior import BetaBernoulliMaskPrior, MaskPrior, TotalParamPenalizedPrior
 from dmri.simulators.noise_compartments import (
     BoundedGaussianNoise,
     BoundedRicianNoise,
@@ -723,20 +731,36 @@ class AllGaussianModels(MultiCompartment):
     ]
     fraction_prior = jnp.ones(1 + 3 + 3 + 3)
 
+class AllGaussianModelsParamCountPrior(MultiCompartment):
+    model_types = [Ball] + 3 * [Stick] + 3 * [Zeppelin] + 3 * [Dti]
+    noise_types = [
+        BoundedGaussianNoise,
+        BoundedRicianNoise,
+    ]
+    fraction_prior = jnp.ones(1 + 3 + 3 + 3)
+    mask_prior_cls = TotalParamPenalizedPrior
+
 
 class AllGaussianAndConvolvedModels(MultiCompartment):
     model_types = (
         [Ball]
         + 3 * [Stick]
         + 3 * [Zeppelin]
-        + 1 * [NoddiB]
-        # + 1 * [NoddiW]
-        + 1 * [SandiB]
-        # + 1 * [SandiW]
+        + 3 * [Dti]
+        + [Dot]
+        + [WatsonStick]
+        + [WatsonZeppelin]
+        + [BinghamStick]
+        + [BinghamZeppelin]
+        + [NoddiB]
+        + [NoddiW]
+        + [SandiB]
+        + [SandiW]
     )
     noise_types = [
         BoundedGaussianNoise,
     ] + [
         BoundedRicianNoise,
     ]
-    fraction_prior = jnp.ones(1 + 3 + 3 + 1 + 1)
+    fraction_prior = jnp.ones(1 + 3 + 3 + 3 + 9)
+    mask_prior_cls = TotalParamPenalizedPrior

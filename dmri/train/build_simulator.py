@@ -12,7 +12,7 @@ from dmri.simulators.acquisition_scheme import (
     random_hcp_large_acquisition,
     random_ssfp_acquisition,
 )
-from dmri.simulators.mask_prior import BetaBernoulliMaskPrior
+from dmri.simulators.mask_prior import BetaBernoulliMaskPrior, TotalParamPenalizedPrior
 
 
 def build_simulator(cfg: DictConfig):
@@ -54,6 +54,20 @@ def build_simulator(cfg: DictConfig):
                 mask_prior_overrides["alpha"] = prior_mask_alpha
             if prior_mask_beta is not None:
                 mask_prior_overrides["beta"] = prior_mask_beta
+        elif issubclass(sim_type.mask_prior_cls, TotalParamPenalizedPrior):
+            prior_mask_p0 = getattr(cfg.simulator, "prior_mask_p0", None)
+            prior_mask_u_alpha = getattr(cfg.simulator, "prior_mask_u_alpha", None)
+            prior_mask_u_beta = getattr(cfg.simulator, "prior_mask_u_beta", None)
+            if prior_mask_p0 is not None:
+                mask_prior_overrides["p0"] = prior_mask_p0
+            if prior_mask_u_alpha is not None:
+                mask_prior_overrides["u_alpha"] = prior_mask_u_alpha
+            if prior_mask_u_beta is not None:
+                mask_prior_overrides["u_beta"] = prior_mask_u_beta
+            mask_prior_overrides["num_model_components"] = len(sim_type.model_types)
+            mask_prior_overrides["num_noise_components"] = len(sim_type.noise_types)
+            mask_prior_overrides["num_model_parameters"] = [mt.theta_dim for mt in sim_type.model_types]
+
 
         def create_simulator(acq_fn):
             mask_prior_dist = sim_type.create_mask_prior(**mask_prior_overrides)
