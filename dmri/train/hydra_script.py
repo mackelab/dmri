@@ -261,6 +261,11 @@ def create_dataloaders(
         params["batch_size"] = int(batch_size)
         if params.get("seed") is None:
             params["seed"] = seed
+        if "devices" in params:
+            devices = [_resolve_device_spec(dev_spec) for dev_spec in params.get("devices", [])]
+        else:
+            devices = [jax.devices()[0]]
+        params["devices"] = devices
         return params
 
     base_seed = int(cfg.seed)
@@ -273,6 +278,7 @@ def create_dataloaders(
         simulators, train_dataset_overrides, train_rngs
     ):
         dataset_params = build_dataset_params(dataset_base_cfg, override, rng)
+        logging.info(f"Creating training dataset with params: {dataset_params}")
         init = jax.vmap(simulator)(jax.random.split(rng, 2**14))
         dataset = dataset_type(simulator, **dataset_params)
         dataset.set_data(init)
