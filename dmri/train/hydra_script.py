@@ -547,13 +547,6 @@ def build_update_fn(
     return update
 
 
-def get_queue_size(loader: Any) -> int:
-    """Fetch loader queue size if available."""
-    if hasattr(loader, "queue") and hasattr(loader.queue, "qsize"):
-        return int(loader.queue.qsize())
-    return 0
-
-
 def train_loop(
     cfg: DictConfig,
     log: logging.Logger,
@@ -631,7 +624,6 @@ def train_loop(
         loss_mask = float(sum(loss_mask) / len(loss_mask))
         loss_theta = float(sum(loss_theta) / len(loss_theta))
         total_loss_value = float(loss_mask + loss_theta)
-        queue_size = sum(get_queue_size(loader) for loader in loaders)
 
         # Collect and average dataset stats from training loaders
         dataset_stats = {}
@@ -640,28 +632,27 @@ def train_loop(
             # Collect stats from all training datasets
             all_stats = []
             for dataset in train_datasets:
-                if hasattr(dataset, "get_stats"):
-                    all_stats.append(dataset.get_stats())
+                all_stats.append(dataset.get_stats())
 
             # Compute averaged production time across datasets
-            if all_stats:
-                avg_times = [
-                    stats.get("avg_production_time")
-                    for stats in all_stats
-                    if stats and "avg_production_time" in stats
-                ]
-                if avg_times:
-                    dataset_stats["train_dataset/avg_production_time"] = (
-                        sum(avg_times) / len(avg_times)
-                    )
-
-        # Log dataset stats locally
-        if dataset_stats:
-            avg_time = dataset_stats.get("train_dataset/avg_production_time", 0.0)
-            log.info(f"Dataset avg production time: {avg_time:.4f}s")
-
+            avg_times = [
+                stats.get("avg_production_time_per_batch")
+                for stats in all_stats
+                if stats and "avg_production_time_per_batch" in stats
+            ]
+            dataset_stats["avg_production_time"] = (
+                sum(avg_times) / len(avg_times)
+            )
+            samples_written = sum(
+                stats.get("samples_written", 0) for stats in all_stats if stats
+            )
+            samples_read = sum(
+                stats.get("samples_requested", 0) for stats in all_stats if stats
+            )
+            dataset_stats["samples_read/samples_written"] = samples_read/samples_written
+        print(dataset_stats)
         log.info(
-            f"Step {train_state.step}, Loss mask: {loss_mask}, Loss theta: {loss_theta}, data_queue_size: {queue_size}"
+            f"Step {train_state.step}, Loss mask: {loss_mask}, Loss theta: {loss_theta}, sim. time: {dataset_stats.get('avg_production_time', 0.0):.4f}s, read/wrt: {dataset_stats.get('samples_read/samples_written', 0.0):.4f}"
         )
 
         if restart_every and train_state.step % restart_every == 0:
@@ -675,8 +666,9 @@ def train_loop(
             wandb_dict = {
                 "loss mask": loss_mask,
                 "loss theta": loss_theta,
-                "queue_size": queue_size,
                 "step": train_state.step,
+                "sim_time": dataset_stats.get("avg_production_time", 0.0),
+                "sim_read_write_ratio": dataset_stats.get("samples_read/samples_written", 0.0),
             }
             # Add dataset stats to wandb
             wandb_dict.update(dataset_stats)
