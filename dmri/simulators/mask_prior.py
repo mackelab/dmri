@@ -303,25 +303,28 @@ class BetaBernoulliParamCountScaledPrior(MaskPrior):
 
 
 
-
 class TotalParamPenalizedPrior(MaskPrior):
-    """Global-complexity prior (scan version) with fixed p0 and Beta-scaled penalty.
+    """Global-complexity prior (scan) with fixed p0 and u∈[0,1] controlling penalty.
 
     Conditionals:
-        logit P(z_i=1 | T) = logit(p0) - lam * (2*T*s_i + s_i**2)
+      - quadratic mode (default):
+          logit P(z_i=1 | T) = logit(p0) - λ * (2*T*s_i + s_i**2)
+        (global coupling via T; stricter as the model grows)
 
-    Hyperparameters:
-      - u ~ Beta(lam_alpha, lam_beta)   (raw in (0,1))
-      - lam = ((penalty_min + u*(penalty_max - penalty_min)) / max_delta)
-        so that the *maximum possible* per-step logit penalty is in
-        [penalty_min, penalty_max].
+      - linear mode (AIC/BIC-like):
+          logit P(z_i=1) = logit(p0) - λ * s_i
+        (independent across components; fixed linear size penalty)
 
-    Args:
-      p0: fixed baseline inclusion in (0,1).
-      lam_alpha, lam_beta: Beta prior on raw penalty u.
-      penalty_min, penalty_max: desired range for the *max* step penalty on the
-        logit scale (nonnegative, penalty_max >= penalty_min).
+    Hyperparameter:
+      - u ~ Beta(u_alpha, u_beta), or pass a fixed u in [0,1] when calling.
+      - u=1 → no penalty (reverts to p0). u=0 → strongest penalty.
+      - We map u to a desired worst-case logit drop delta* and set
+            λ = delta* / scale_max,
+        where scale_max depends on the mode:
+          * quadratic: scale_max = max_i (2*S*s_i - s_i**2), S = sum_j s_j
+          * linear:    scale_max = max_i s_i
     """
+
     mask_prior_dim: int = 1  # hyperparameters = [u]
 
     def __init__(
@@ -330,12 +333,12 @@ class TotalParamPenalizedPrior(MaskPrior):
         num_noise_components: int,
         num_model_parameters: list[int],
         *,
-        p0: float = 0.8,            # fixed baseline inclusion
-        # If you want to *sample* u, set u_alpha/u_beta and call sample_hyperparameters
-        u_alpha: float = .8,
-        u_beta: float = .6,
-        penalty_min: float = 0.0,   # min worst-case logit penalty
-        penalty_max: float = 100.0,   # max worst-case logit penalty
+        p0: float = 0.5,
+        u_alpha: float = 1.,
+        u_beta: float = 1.,
+        penalty_min: float = 0.0,     # min worst-case logit penalty (often 0)
+        penalty_max: float = 5.0,   # max worst-case logit penalty
+        penalty_mode: str = "linear",  # "quadratic" or "linear"
         eps: float = 1e-3,
     ) -> None:
         super().__init__(num_model_components, num_noise_components)
@@ -351,23 +354,30 @@ class TotalParamPenalizedPrior(MaskPrior):
             raise ValueError("u_alpha and u_beta must be positive.")
         if penalty_min < 0 or penalty_max < penalty_min:
             raise ValueError("Require 0 <= penalty_min <= penalty_max.")
+        if penalty_mode not in ("quadratic", "linear"):
+            raise ValueError('penalty_mode must be "quadratic" or "linear".')
         if eps <= 0:
             raise ValueError("eps must be positive.")
 
         self._sizes = jnp.asarray(np.asarray(num_model_parameters, dtype=np.float32))  # [K]
         self._S_total = jnp.sum(self._sizes)
-
-        # Order-agnostic conservative upper bound on a single step's delta:
-        # max_i max_T (2*T*s_i + s_i^2) with T in [0, S - s_i] => take T = S - s_i
-        max_delta = jnp.max(2.0 * self._S_total * self._sizes - self._sizes ** 2)
-        self._max_delta = jnp.maximum(max_delta, jnp.array(eps, dtype=jnp.float32))
-
         self.p0 = float(p0)
         self.u_alpha = float(u_alpha)
         self.u_beta = float(u_beta)
         self.penalty_min = float(penalty_min)
         self.penalty_max = float(penalty_max)
+        self.penalty_mode = penalty_mode
         self._eps = float(eps)
+
+        # mode-dependent worst-case scale for one step
+        if self.penalty_mode == "quadratic":
+            # max over T∈[0,S−s_i] of (2*T*s_i + s_i^2) occurs at T=S−s_i → 2*S*s_i − s_i^2
+            raw = 2.0 * self._S_total * self._sizes - self._sizes ** 2
+        else:  # "linear"
+            # worst case step is simply the largest s_i
+            raw = self._sizes
+
+        self._scale_max = jnp.maximum(jnp.max(raw), jnp.array(eps, dtype=jnp.float32))
 
         # Precompute baseline logit
         p0_clip = np.clip(self.p0, eps, 1.0 - eps)
@@ -380,79 +390,87 @@ class TotalParamPenalizedPrior(MaskPrior):
         u = jax.random.beta(rng, a=self.u_alpha, b=self.u_beta, shape=(1,))
         return u  # shape [1]
 
-    def _u_to_lambda(self, u: jax.Array) -> jax.Array:
-        """Map u∈[0,1] to λ so that worst-case step logit penalty is within range.
-
-        u=0 -> δ*(u)=penalty_max  (hardest penalty)
-        u=1 -> δ*(u)=penalty_min  (no/low penalty; 0 gives pure p0)
-        """
-        u = jnp.clip(jnp.asarray(u), 0.0, 1.0)
+    def _u_to_lambda(self, u: ArrayLike) -> jax.Array:
+        """Map u∈[0,1] to λ using mode-dependent worst-case scaling."""
+        u = jnp.clip(jnp.asarray(u).reshape(-1)[0], 0.0, 1.0)
+        # desired worst-case logit drop (u=1 → penalty_min; u=0 → penalty_max)
         delta_star = self.penalty_min + (1.0 - u) * (self.penalty_max - self.penalty_min)
-        lam = delta_star / self._max_delta
-        return lam
+        lam = delta_star / self._scale_max
+        return lam  # scalar
 
     # ----- Sampling with jax.scan -----
 
     def sample_model_components(
-        self,
-        rng: jax.random.PRNGKey,
-        hyperparameters: ArrayLike,  # expects [u]
+    self,
+    rng: jax.random.PRNGKey,
+    hyperparameters: ArrayLike,  # expects u
     ) -> jax.Array:
-        u = jnp.asarray(hyperparameters)
-        lam = self._u_to_lambda(u)
+        lam = self._u_to_lambda(hyperparameters)
         base_logit = jnp.array(self._base_logit, dtype=jnp.float32)
 
-        keys = jax.random.split(rng, self.num_model_components)
-        sizes = self._sizes  # [K]
+        if self.penalty_mode == "quadratic":
+            # (unchanged) autoregressive via scan
+            sizes = self._sizes
+            keys = jax.random.split(rng, self.num_model_components)
 
-        def step(T, inputs):
-            s_i, key_i = inputs
-            penalty = lam * (2.0 * T * s_i + s_i * s_i)
-            logit_i = base_logit - penalty
-            p_i = jax.nn.sigmoid(logit_i)
-            z_i = jax.random.bernoulli(key_i, p=p_i)
-            T_new = T + s_i * z_i.astype(T.dtype)
-            T_new = jnp.squeeze(T_new)
-            z_i = jnp.squeeze(z_i)
-            return T_new, z_i.astype(jnp.bool_)
+            def step(T, inputs):
+                s_i, key_i = inputs
+                penalty = lam * (2.0 * T * s_i + s_i * s_i)
+                logit_i = base_logit - penalty
+                p_i = jax.nn.sigmoid(logit_i)
+                z_i = jax.random.bernoulli(key_i, p=p_i)
+                T_new = T + s_i * z_i.astype(T.dtype)
+                return T_new, z_i.astype(jnp.bool_)
 
-        T0 = jnp.array(0.0, dtype=jnp.float32)
-        _, zs = jax.lax.scan(step, T0, (sizes, keys))
-        return zs
-
-    # ----- Log probability with jax.scan -----
+            T0 = jnp.array(0.0, dtype=jnp.float32)
+            _, zs = jax.lax.scan(step, T0, (sizes, keys))
+            return zs
+        else:
+            # --- LINEAR MODE: no scan needed, vectorized & order-invariant ---
+            logits = base_logit - lam * self._sizes                    # [K]
+            probs  = jax.nn.sigmoid(logits)                            # [K]
+            zs     = jax.random.bernoulli(rng, p=probs, shape=probs.shape)
+            return zs.astype(jnp.bool_)
 
     def log_prob_model_components(
         self,
         model_mask: ArrayLike,
-        hyperparameters: ArrayLike,  # expects [u]
+        hyperparameters: ArrayLike,  # expects u
     ) -> jax.Array:
         mask = jnp.asarray(model_mask, dtype=jnp.bool_)[: self.num_model_components]
-        u = jnp.asarray(hyperparameters)
-        lam = self._u_to_lambda(u)
+        lam = self._u_to_lambda(hyperparameters)
         base_logit = jnp.array(self._base_logit, dtype=jnp.float32)
-        sizes = self._sizes
 
-        def step(carry, inputs):
-            T, logp = carry
-            s_i, z_i = inputs
-            penalty = lam * (2.0 * T * s_i + s_i * s_i)
-            logit_i = base_logit - penalty
-            p_i = jax.nn.sigmoid(logit_i)
-            p_i = jnp.clip(p_i, self._eps, 1.0 - self._eps)
-            logp_i = jnp.where(z_i, jnp.log(p_i), jnp.log1p(-p_i))
-            T_new = T + s_i * z_i.astype(T.dtype)
-            T_new = jnp.squeeze(T_new)
-            logp_i = jnp.squeeze(logp_i)
-            return (T_new, logp + logp_i), None
+        if self.penalty_mode == "quadratic":
+            # (unchanged) autoregressive via scan
+            sizes = self._sizes
 
-        (T_final, logp_sum), _ = jax.lax.scan(
-            step,
-            (jnp.array(0.0, dtype=jnp.float32), jnp.array(0.0, dtype=jnp.float32)),
-            (sizes, mask),
-        )
-        del T_final
-        return logp_sum
+            def step(carry, inputs):
+                T, logp = carry
+                s_i, z_i = inputs
+                penalty = lam * (2.0 * T * s_i + s_i * s_i)
+                logit_i = base_logit - penalty
+                p_i = jax.nn.sigmoid(logit_i)
+                p_i = jnp.clip(p_i, self._eps, 1.0 - self._eps)
+                logp_i = jnp.where(z_i, jnp.log(p_i), jnp.log1p(-p_i))
+                T_new = T + s_i * z_i.astype(T.dtype)
+                return (T_new, logp + logp_i), None
+
+            (T_final, logp_sum), _ = jax.lax.scan(
+                step,
+                (jnp.array(0.0, dtype=jnp.float32), jnp.array(0.0, dtype=jnp.float32)),
+                (self._sizes, mask),
+            )
+            del T_final
+            return logp_sum
+        else:
+            # --- LINEAR MODE: no scan, independent Bernoullis ---
+            logits = base_logit - lam * self._sizes                    # [K]
+            probs  = jax.nn.sigmoid(logits)                            # [K]
+            probs  = jnp.clip(probs, self._eps, 1.0 - self._eps)
+            logp   = jnp.where(mask, jnp.log(probs), jnp.log1p(-probs))
+            return jnp.sum(logp)
+
 
 class MarkovMaskPrior(MaskPrior):
     """Binary masks generated by a fixed-length Markov walk."""

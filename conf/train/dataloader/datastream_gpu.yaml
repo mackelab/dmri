@@ -1,8 +1,8 @@
 name: SimulationDataset
 
 dataset:
-  simulation_batch_size: 1024
-  buffer_size: 524288
+  simulation_batch_size: 4096
+  buffer_size: 786432
   jit_simulator: true
   return_numpy: false
   simulation_device:
@@ -10,21 +10,22 @@ dataset:
     index: 0
 
 train_loader:
-  batch_size: 2048
+  batch_size: 1024
   shuffle: true
   drop_last: true
   loop: true
   num_prefetch_host: 8
-  num_prefetch_device: 8
+  num_prefetch_device: 4
   num_async_workers: 1
 
 val_dataset:
-  buffer_size: 512
+  buffer_size: 2048
+  simulation_batch_size: 64
 
 val_loader:
   batch_size: 128
   shuffle: false
   drop_last: false
   loop: true
-  num_prefetch_host: 8
+  num_prefetch_host: 4
   num_prefetch_device: 2

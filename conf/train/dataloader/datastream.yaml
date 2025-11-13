@@ -19,7 +19,7 @@ train_loader:
   num_async_workers: 1
 
 val_dataset:
-  buffer_size: 1024
+  buffer_size: 2048
   simulation_batch_size: 64
 
 val_loader:
