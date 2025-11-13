@@ -24,7 +24,7 @@ import numpy as np
 from flax import nnx
 from omegaconf import DictConfig, OmegaConf
 
-from dmri.eval.export_metrics import compute_reconstruction_error
+from dmri.eval.export_metrics import compute_reconstruction_error, compute_posterior_nll_metric
 from dmri.eval.export_models import export_model_selection_to_files
 from dmri.eval.export_theta import (
     export_thetas_raw,
@@ -383,6 +383,9 @@ def _run_eval_pipeline(
     log.info(
         f"Models selected brain shape: {models_selected_brain.shape if models_selected_brain is not None else 'None'}"
     )
+    default_mask = _cfg_get(cfg, "default_mask", None)
+    if default_mask is not None:
+        default_mask = jnp.array(default_mask, dtype=jnp.bool)
 
     # Sample theta
     key, key_theta = jax.random.split(key)
@@ -398,6 +401,7 @@ def _run_eval_pipeline(
                 log,
                 model_mask=models_selected_brain,
                 devices=eval_devices,
+                default_mask=default_mask,
             )
         model_parameters_brain = _to_cpu_array(model_parameters_brain)
     else:
@@ -460,10 +464,29 @@ def _run_eval_pipeline(
             )
 
     # Compute reconstruction error
+    if models_selected_brain is None:
+        models_selected_brain = default_mask
     if cfg.export.export_reconstruction_error:
         out_path = os.path.join(checkpoint_root, cfg.model_name, cfg.export.name)
         with _device_scope(heavy_device):
             compute_reconstruction_error(
+                cfg,
+                sim_type,
+                acq,
+                full_data_flat_in_brain,
+                model_parameters_brain,
+                models_selected_brain,
+                brain_mask_flat,
+                data_norm,
+                export_template,
+                out_path,
+                devices=eval_devices,
+            )
+    if cfg.export.export_nll:
+        out_path = os.path.join(checkpoint_root, cfg.model_name, cfg.export.name)
+        with _device_scope(heavy_device):
+
+            compute_posterior_nll_metric(
                 cfg,
                 sim_type,
                 acq,
@@ -498,7 +521,7 @@ def sample_mask(cfg, key, model, acq, data, logger, devices=None):
     return models_sampled_brain
 
 
-def sample_theta(cfg, key, model, acq, data, logger, model_mask=None, devices=None):
+def sample_theta(cfg, key, model, acq, data, logger, model_mask=None, devices=None, default_mask=None):
     """Sample theta parameters"""
     sim_type = model.tokenizer.simulator
     num_comp = len(sim_type.model_types) + len(sim_type.noise_types)
@@ -509,7 +532,11 @@ def sample_theta(cfg, key, model, acq, data, logger, model_mask=None, devices=No
     )
 
     if model_mask is None:
-        model_mask = jnp.ones(num_comp, dtype=jnp.bool)
+        if default_mask is not None:
+            model_mask = default_mask
+            logger.info("Using default mask from config.")
+        else:
+            model_mask = jnp.ones(num_comp, dtype=jnp.bool)
     else:
         model_mask = jnp.array(model_mask, dtype=jnp.bool)
 
