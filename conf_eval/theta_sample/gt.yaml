@@ -1,9 +1,9 @@
-num_samples: 1024
+num_samples: 2048
 eval_batch_size: 1024
 
 params:
   num_steps: 64
-  max_noise: 80
+  t_max: 80
 
 defaults:
   - corrector: smc_high

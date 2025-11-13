@@ -25,6 +25,7 @@ seed: 1
 sample_mask: true
 sample_theta: true
 select_models: true
+default_mask: null
 
 
 defaults:

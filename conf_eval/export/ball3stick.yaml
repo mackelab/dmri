@@ -4,3 +4,4 @@ sort_by_fractions: true
 reorder_dyads: true
 export_stds: false
 export_reconstruction_error: true
+export_nll: true
