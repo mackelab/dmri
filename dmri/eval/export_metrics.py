@@ -203,8 +203,8 @@ def _compute_reconstruction_mse(
     sim_type = context.sim_type
     acq = context.acq
 
-    def reconstruction_error(_, x, theta, mask):
-        simulator = sim_type.from_theta(theta, model_mask=mask)
+    def reconstruction_error(_, x, theta, model_mask):
+        simulator = sim_type.from_theta(theta, model_mask=model_mask)
         signal = simulator.signal(acq)
         return jnp.mean(jnp.abs(signal - x), axis=-1)
 
