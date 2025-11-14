@@ -210,14 +210,17 @@ def build_theta_sample_fn(
     t_max = params.get("t_max", 80)
 
     def base_sample_fn(key, x, model_mask):
-        K = num_samples
-        in_axes_model_mask = 0 if model_mask.ndim == 2 else None
-        sample_fn = jax.vmap(
-            partial(model.sample_theta, num_steps=num_steps, t_max=t_max),
-            in_axes=(0, None, None, in_axes_model_mask),
-        )
-        keys = jax.random.split(key, K)
-        theta = sample_fn(keys, acq, x, model_mask)
+        if num_steps > 0:
+            K = num_samples
+            in_axes_model_mask = 0 if model_mask.ndim == 2 else None
+            sample_fn = jax.vmap(
+                partial(model.sample_theta, num_steps=num_steps, t_max=t_max),
+                in_axes=(0, None, None, in_axes_model_mask),
+            )
+            keys = jax.random.split(key, K)
+            theta = sample_fn(keys, acq, x, model_mask)
+        else:
+            theta = jax.random.normal(key, (num_samples, model.tokenizer.simulator.theta_dim))
         return theta
 
     corrector = build_corrector(
@@ -248,11 +251,17 @@ def build_model_fn(sim_type):
         ll = jnp.where(jnp.isfinite(ll), ll, -jnp.inf)
         return ll
 
-    def log_prior_fn(theta):
-        return jax.scipy.stats.norm.logpdf(theta, 0, 1).sum()
-
+    def log_prior_fn(theta, mask):
+        if mask is not None:
+            theta_mask = sim_type.theta_mask(model_mask=mask)
+            logpdf = jax.scipy.stats.norm.logpdf(theta, 0, 1)
+            logpdf = jnp.where(theta_mask, logpdf, 0.0)
+            return jnp.sum(logpdf, axis=-1)
+        else:
+            return jax.scipy.stats.norm.logpdf(theta, 0, 1).sum()
+    
     def log_posterior_fn(theta, mask, acq, x):
-        return log_prior_fn(theta) + log_likelihood_fn(theta, mask, acq, x)
+        return log_prior_fn(theta, mask) + log_likelihood_fn(theta, mask, acq, x)
 
     return log_posterior_fn, log_prior_fn, log_likelihood_fn
 
@@ -290,8 +299,9 @@ def build_corrector(method, model, acq, model_mask, sim_type, params):
             )
             resampling_fn = systematic
             _log_likelihood_fn = partial(likelihood_fn, mask=model_mask, acq=acq, x=x)
+            _prior_fn = partial(prior_fn, mask=model_mask)
             smc = tempered_smc(
-                prior_fn,
+                _prior_fn,
                 _log_likelihood_fn,
                 hmc_kernel,
                 hmc.init,
