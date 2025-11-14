@@ -1,3 +1,4 @@
+import copy
 from dataclasses import dataclass, field
 from functools import partial
 from typing import Any, List, Optional, Tuple, Type, cast
@@ -87,74 +88,9 @@ class DMRIInferenceModel(nnx.Module):
             "precision",
             "preferred_element_type",
         )
-
-        precision_defaults = {
-            key: getattr(cfg, key, None)
-            for key in self.precision_fields
-            if getattr(cfg, key, None) is not None
-        }
-
-        def _config_kwargs(source_cfg: Any) -> dict[str, Any]:
-            kwargs: dict[str, Any] = {
-                key: value
-                for key, value in vars(source_cfg).items()
-                if value is not None and key not in self.precision_fields
-            }
-            for key, value in precision_defaults.items():
-                kwargs.setdefault(key, value)
-            for key in self.precision_fields:
-                explicit_value = getattr(source_cfg, key, None)
-                if explicit_value is not None:
-                    kwargs[key] = explicit_value
-            return kwargs
-
-        # Setup embedding net observations
-        embedding_kwargs = _config_kwargs(cfg.embedding_cfg)
-        self.encoder = cfg.embedding_cls(
-            rngs,
-            model_dim=cfg.model_dim,
-            **embedding_kwargs,
-        )
-        self.y_seq_dim: int = getattr(self.encoder, "y_seq_dim", cfg.model_dim // cfg.embedding_cfg.reduce_factor)
-        self.use_y_ctx: bool = bool(
-            getattr(self.encoder, "use_global_summary_token", False)
-        )
-        self.y_glob_dim: int = getattr(self.encoder, "y_glob_dim", cfg.model_dim // cfg.embedding_cfg.reduce_factor)
-        self.y_ctx_dim: int = self.y_glob_dim if self.use_y_ctx else 0
-        # Setup tokenizers
-        self.tokenizer: DMRITokenizer = cfg.tokenizer_cls(
-            cfg.simulator,
-            token_dim=cfg.model_dim,
-            rngs=rngs,
-        )
-
-        # Setup model selection network
-        selection_cfg = cfg.model_selection_cfg
-        selection_kwargs = _config_kwargs(selection_cfg)
-        prior_params_embed_dim = selection_kwargs["prior_params_embed_dim"]
-        self.requires_mask_prior = prior_params_embed_dim > 0
-        selection_kwargs["additional_context_dim"] = self.y_ctx_dim
-        selection_kwargs["kv_in_features"] = self.y_seq_dim
-
-        self.model_decoder = BinaryAutoregressiveDecoder(
-            rngs,
-            model_dim=cfg.model_dim,
-            **selection_kwargs,
-        )
-        self.mask_prior_dim = self.model_decoder.mask_prior_dim
-
-        # Inference decoder
-        theta_cfg = cfg.theta_inference_cfg
-        theta_kwargs = _config_kwargs(theta_cfg)
-        theta_kwargs["additional_context_dim"] = self.y_ctx_dim
-        theta_kwargs["kv_in_features"] = self.y_seq_dim
-        simformer = EDMSimformer(
-            rngs=rngs,
-            model_dim=cfg.model_dim,
-            loss_type=cfg.inference_loss_type,
-            **theta_kwargs,
-        )
-        self.inference_decoder = simformer
+        self._precision_defaults: dict[str, Any] = {}
+        self._update_precision_defaults()
+        self._initialize_modules(rngs)
 
     def __call__(
         self,
@@ -213,6 +149,143 @@ class DMRIInferenceModel(nnx.Module):
         )
 
         return model_mask_logits, theta_pred
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+
+    def _update_precision_defaults(self) -> None:
+        self._precision_defaults = {
+            key: getattr(self.cfg, key, None)
+            for key in self.precision_fields
+            if getattr(self.cfg, key, None) is not None
+        }
+
+    def _config_kwargs(self, source_cfg: Any) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {
+            key: value
+            for key, value in vars(source_cfg).items()
+            if value is not None and key not in self.precision_fields
+        }
+        for key, value in self._precision_defaults.items():
+            kwargs.setdefault(key, value)
+        for key in self.precision_fields:
+            explicit_value = getattr(source_cfg, key, None)
+            if explicit_value is not None:
+                kwargs[key] = explicit_value
+        return kwargs
+
+    def _initialize_modules(self, rngs: nnx.Rngs) -> None:
+        cfg = self.cfg
+
+        embedding_kwargs = self._config_kwargs(cfg.embedding_cfg)
+        self.encoder = cfg.embedding_cls(
+            rngs,
+            model_dim=cfg.model_dim,
+            **embedding_kwargs,
+        )
+        reduce_factor = getattr(cfg.embedding_cfg, "reduce_factor", 1) or 1
+        default_dim = cfg.model_dim // reduce_factor
+        self.y_seq_dim = getattr(self.encoder, "y_seq_dim", default_dim)
+        self.use_y_ctx = bool(getattr(self.encoder, "use_global_summary_token", False))
+        self.y_glob_dim = getattr(self.encoder, "y_glob_dim", default_dim)
+        self.y_ctx_dim = self.y_glob_dim if self.use_y_ctx else 0
+
+        self.tokenizer = cfg.tokenizer_cls(
+            cfg.simulator,
+            token_dim=cfg.model_dim,
+            rngs=rngs,
+        )
+
+        selection_cfg = cfg.model_selection_cfg
+        selection_kwargs = self._config_kwargs(selection_cfg)
+        prior_params_embed_dim = selection_kwargs.get("prior_params_embed_dim", 0)
+        self.requires_mask_prior = prior_params_embed_dim > 0
+        selection_kwargs["additional_context_dim"] = self.y_ctx_dim
+        selection_kwargs["kv_in_features"] = self.y_seq_dim
+
+        self.model_decoder = BinaryAutoregressiveDecoder(
+            rngs,
+            model_dim=cfg.model_dim,
+            **selection_kwargs,
+        )
+        self.mask_prior_dim = self.model_decoder.mask_prior_dim
+
+        theta_cfg = cfg.theta_inference_cfg
+        theta_kwargs = self._config_kwargs(theta_cfg)
+        theta_kwargs["additional_context_dim"] = self.y_ctx_dim
+        theta_kwargs["kv_in_features"] = self.y_seq_dim
+        self.inference_decoder = EDMSimformer(
+            rngs=rngs,
+            model_dim=cfg.model_dim,
+            loss_type=cfg.inference_loss_type,
+            **theta_kwargs,
+        )
+
+    def set_precision(
+        self,
+        rngs: Optional[nnx.Rngs],
+        *,
+        dtype: DTypeLike | None = None,
+        param_dtype: DTypeLike | None = None,
+        precision: PrecisionLike | None = None,
+        preferred_element_type: DTypeLike | None = None,
+        use_flash_attention: bool | None = None,
+        use_flash_cross_attention: bool | None = None,
+    ) -> None:
+        """Reinitialize the model with updated precision/attention settings.
+
+        Args:
+            rngs: Fresh RNG container used for reinitialization.
+            dtype, param_dtype, precision, preferred_element_type: Optional
+                overrides for the corresponding precision attributes.
+            use_flash_attention: Optional override applied to every sub-config
+                that exposes a ``use_flash_attention`` flag.
+            use_flash_cross_attention: Optional override applied to every
+                sub-config exposing ``use_flash_cross_attention``.
+
+        Note:
+            Calling this method discards the current parameter values because
+            all modules are rebuilt from scratch.
+        """
+
+        if rngs is None:
+            raise ValueError("set_precision requires a valid nnx.Rngs instance.")
+
+        updated_cfg = copy.deepcopy(self.cfg)
+        precision_updates = {
+            "dtype": dtype,
+            "param_dtype": param_dtype,
+            "precision": precision,
+            "preferred_element_type": preferred_element_type,
+        }
+
+        nested_cfgs = (
+            updated_cfg.embedding_cfg,
+            updated_cfg.model_selection_cfg,
+            updated_cfg.theta_inference_cfg,
+        )
+
+        for key, value in precision_updates.items():
+            if value is None:
+                continue
+            setattr(updated_cfg, key, value)
+            for nested in nested_cfgs:
+                if hasattr(nested, key):
+                    setattr(nested, key, value)
+
+        def _maybe_set_flag(target: Any, attr: str, value: bool | None) -> None:
+            if value is not None and hasattr(target, attr):
+                setattr(target, attr, value)
+
+        for nested in nested_cfgs:
+            _maybe_set_flag(nested, "use_flash_attention", use_flash_attention)
+            _maybe_set_flag(
+                nested, "use_flash_cross_attention", use_flash_cross_attention
+            )
+
+        self.cfg = updated_cfg
+        self._update_precision_defaults()
+        self._initialize_modules(rngs)
 
     def _encode_observations(
         self,

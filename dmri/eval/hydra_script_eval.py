@@ -24,7 +24,7 @@ import numpy as np
 from flax import nnx
 from omegaconf import DictConfig, OmegaConf
 
-from dmri.eval.export_metrics import compute_reconstruction_error, compute_posterior_nll_metric
+from dmri.eval.export_metrics import MetricContext, run_configured_metrics
 from dmri.eval.export_models import export_model_selection_to_files
 from dmri.eval.export_theta import (
     export_thetas_raw,
@@ -463,41 +463,30 @@ def _run_eval_pipeline(
                 export_template,
             )
 
-    # Compute reconstruction error
     if models_selected_brain is None:
         models_selected_brain = default_mask
-    if cfg.export.export_reconstruction_error:
-        out_path = os.path.join(checkpoint_root, cfg.model_name, cfg.export.name)
-        with _device_scope(heavy_device):
-            compute_reconstruction_error(
-                cfg,
-                sim_type,
-                acq,
-                full_data_flat_in_brain,
-                model_parameters_brain,
-                models_selected_brain,
-                brain_mask_flat,
-                data_norm,
-                export_template,
-                out_path,
-                devices=eval_devices,
-            )
-    if cfg.export.export_nll:
-        out_path = os.path.join(checkpoint_root, cfg.model_name, cfg.export.name)
-        with _device_scope(heavy_device):
 
-            compute_posterior_nll_metric(
-                cfg,
-                sim_type,
-                acq,
-                full_data_flat_in_brain,
-                model_parameters_brain,
-                models_selected_brain,
-                brain_mask_flat,
-                data_norm,
-                export_template,
+    metrics_cfg = getattr(cfg.export, "metrics", None)
+    if metrics_cfg:
+        out_path = os.path.join(checkpoint_root, cfg.model_name, cfg.export.name)
+        metric_context = MetricContext(
+            cfg=cfg,
+            sim_type=sim_type,
+            acq=acq,
+            full_data_flat_in_brain=full_data_flat_in_brain,
+            model_parameters_brain=model_parameters_brain,
+            model_mask=models_selected_brain,
+            brain_mask_flat=brain_mask_flat,
+            data_norm=data_norm,
+            orig_data=export_template,
+        )
+        with _device_scope(heavy_device):
+            run_configured_metrics(
+                metrics_cfg,
+                metric_context,
                 out_path,
                 devices=eval_devices,
+                logger=log,
             )
 
 

@@ -252,6 +252,13 @@ Key configuration components:
 - Training parameters
 - Evaluation metrics
 
+  Evaluation artefacts (error maps, posterior NLL, …) are now driven by the
+  metric definitions in `conf_eval/export/metrics`.  Each export configuration
+  (e.g. `conf_eval/export/ball3stick.yaml`) includes one or more metrics via its
+  local defaults, so disabling or extending the exported metrics simply requires
+  editing those YAML files.  Each metric writes a NIfTI volume alongside a JSON
+  summary that captures the configured aggregations (mean, median, percentiles).
+
 Just using the command-line interface, you can use the following command to see the available configurations: `dmri` will run the training with the default configuration. But you can also use some other predefined configurations using `dmri +experiment=ball3stick` for example.
 
 
