@@ -308,7 +308,7 @@ def _evaluate_metric_function(
         raise ValueError("Metric evaluation requires theta samples; none provided.")
 
     if model_mask is None or getattr(model_mask, "ndim", 0) <= 1:
-        metrics_fn = jax.tree_util.Partial(metric_fn, mask=model_mask)
+        metrics_fn = partial(metric_fn, model_mask=model_mask)
         in_axes1 = (0, 0, 0)
         in_axes2 = (None, None, 0)
         data_eval = (full_data_flat_in_brain, model_parameters_brain)
