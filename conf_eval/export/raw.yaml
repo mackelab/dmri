@@ -1,4 +1,7 @@
+defaults:
+  - _self_
+  - metrics@metrics.reconstruction_mse: reconstruction_mse
+  - metrics@metrics.posterior_nll: nll
+
 name: "raw_inference_results"
 type: "raw"
-export_reconstruction_error: true
-export_nll: true
