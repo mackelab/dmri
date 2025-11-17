@@ -775,6 +775,30 @@ def train_loop(
                     "step": train_state.step,
                 })
             validation_metric = float(mask_nnl + theta_nnl)
+            ksd_metrics = None
+            ksd_cfg = cfg.train.eval.get("ksd", None)
+            if ksd_cfg:
+                ksd_metrics = evaluator.eval_ksd(
+                    params_eval,
+                    train_state.model_state,
+                    eval_loader,
+                    iters=ksd_cfg.get("iters", 1),
+                    num_samples=ksd_cfg.get("num_samples", 32),
+                    bandwidths=ksd_cfg.get("bandwidths", (0.05, 0.1, 0.5)),
+                    n_bootstrap=ksd_cfg.get("n_bootstrap", 128),
+                    ksd_seed=ksd_cfg.get("seed", cfg.seed),
+                )
+                log.info(
+                    f"KSD: {ksd_metrics.get('ksd')}, p-value: {ksd_metrics.get('ksd_pvalue')}"
+                )
+                if wandb_active:
+                    wandb.log(
+                        {
+                            "ksd": float(ksd_metrics.get("ksd", float("nan"))),
+                            "ksd_pvalue": float(ksd_metrics.get("ksd_pvalue", float("nan"))),
+                            "step": train_state.step,
+                        }
+                    )
             if checkpoint_manager.keep_best:
                 save_training_checkpoint(
                     checkpoint_manager,

@@ -304,7 +304,6 @@ def _compute_ksd_metric(
         raise ValueError(
             f"Metric '{spec.key}' expects n_bootstrap > 0, got {n_bootstrap}."
         )
-    mask_threshold = float(options.get("mask_threshold", 0.5))
     max_samples = options.get("max_samples", options.get("num_samples"))
     seed = int(options.get("random_seed", getattr(context.cfg, "seed", 0)))
     export_pvalue = bool(options.get("export_pvalue", True))
@@ -327,10 +326,14 @@ def _compute_ksd_metric(
 
     sim_type = context.sim_type
     num_voxels = theta.shape[0]
-    num_components = len(sim_type.model_types) + len(sim_type.noise_types)
-    model_mask = _normalize_model_mask_for_ksd(
-        context.model_mask, num_voxels, num_components, mask_threshold
-    )
+    model_mask = context.model_mask
+    if model_mask is not None:
+        mask_arr = np.asarray(model_mask)
+        if mask_arr.ndim == 1:
+            mask_arr = np.broadcast_to(mask_arr, (num_voxels, mask_arr.shape[-1]))
+        elif mask_arr.shape[0] != num_voxels:
+            mask_arr = np.broadcast_to(mask_arr, (num_voxels,) + mask_arr.shape[1:])
+        model_mask = mask_arr.astype(np.bool_)
 
     bandwidths_jnp = jnp.asarray(bandwidths)
 
@@ -347,17 +350,32 @@ def _compute_ksd_metric(
         )
         return jnp.stack((ksd2, p_value))
 
-    ksd_fn = jax.vmap(_ksd_single, in_axes=(0, 0, 0, 0))
-    values = eval_in_batches(
-        ksd_fn,
-        jax.random.PRNGKey(seed),
-        theta,
-        data,
-        model_mask,
-        batch_size=spec.batch_size,
-        devices=devices,
-        preferred_device_kinds=spec.preferred_device_kinds,
-    )
+    if model_mask is None:
+        def _ksd_single_no_mask(key, theta_voxel, x_voxel):
+            return _ksd_single(key, theta_voxel, x_voxel, None)
+
+        ksd_fn = jax.vmap(_ksd_single_no_mask, in_axes=(0, 0, 0))
+        values = eval_in_batches(
+            ksd_fn,
+            jax.random.PRNGKey(seed),
+            theta,
+            data,
+            batch_size=spec.batch_size,
+            devices=devices,
+            preferred_device_kinds=spec.preferred_device_kinds,
+        )
+    else:
+        ksd_fn = jax.vmap(_ksd_single, in_axes=(0, 0, 0, 0))
+        values = eval_in_batches(
+            ksd_fn,
+            jax.random.PRNGKey(seed),
+            theta,
+            data,
+            model_mask,
+            batch_size=spec.batch_size,
+            devices=devices,
+            preferred_device_kinds=spec.preferred_device_kinds,
+        )
     values = np.asarray(values, dtype=np.float32)
     ksd_values = values[..., 0]
     p_values = values[..., 1]
@@ -615,47 +633,6 @@ def _normalize_device_kinds(value: Any) -> tuple[str, ...]:
     if isinstance(value, Sequence):
         return tuple(str(v) for v in value)
     raise TypeError(f"preferred_device_kinds must be a string or sequence, got {value!r}")
-
-
-def _normalize_model_mask_for_ksd(
-    model_mask: Any,
-    num_voxels: int,
-    num_components: int,
-    threshold: float,
-) -> np.ndarray:
-    """Broadcast and clean the model mask for KSD evaluation."""
-
-    if model_mask is None:
-        return np.ones((num_voxels, num_components), dtype=np.bool_)
-
-    mask = np.asarray(model_mask)
-    if mask.ndim == 1:
-        if mask.shape[0] != num_components:
-            raise ValueError(
-                f"Model mask has length {mask.shape[0]}, expected {num_components}."
-            )
-        return np.broadcast_to(mask.astype(np.bool_), (num_voxels, mask.shape[-1]))
-
-    if mask.ndim == 2:
-        if mask.shape[-1] != num_components:
-            raise ValueError(
-                f"Model mask shape {mask.shape} is incompatible with expected components {num_components}."
-            )
-        if mask.shape[0] == num_voxels:
-            return mask.astype(np.bool_)
-        return np.broadcast_to(mask.astype(np.bool_), (num_voxels, mask.shape[-1]))
-
-    # If we have a sample dimension, average and threshold to get a deterministic mask.
-    if mask.ndim >= 3:
-        if mask.shape[-1] != num_components:
-            raise ValueError(
-                f"Model mask shape {mask.shape} is incompatible with expected components {num_components}."
-            )
-        mask = np.mean(mask, axis=1) >= float(threshold)
-        mask = mask.astype(np.bool_)
-        return np.broadcast_to(mask, (num_voxels, mask.shape[-1]))
-
-    raise ValueError(f"Unsupported model mask shape {mask.shape} for KSD metric.")
 
 
 def _load_reference_theta_samples(path: str) -> np.ndarray:

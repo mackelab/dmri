@@ -324,22 +324,49 @@ class EDMSimformer(EDM):
         attention_mask: Optional[ArrayLike] = None,
         sample_method: str = "ode",
         num_steps: int = 64,
-        last_euler_step: bool = True,
+        last_euler_step: bool = False,
         t_min: float | None = None,
         t_max: float | None = None,
 
     ) -> Array:
         rng, rng_init = jax.random.split(rng)
         eps = jax.random.normal(rng_init, (dim,)) * self.marginal_std(self.train_cfg.t_max)
+        t_min = t_min if t_min is not None else self.train_cfg.t_min
+        t_max = t_max if t_max is not None else self.train_cfg.t_max
+        ts = self.solver_cfg.solve_schedule(t_max=t_max, t_min=t_min, num_steps=num_steps)
+
 
         if sample_method == "ode":
-            out = super().sample_ode(eps,t_max=t_max, t_min=t_min, num_steps=num_steps, tokenizer=tokenizer,y=y,model_mask=model_mask,tokens_cfg=tokens_cfg,context=context,attention_mask=attention_mask)
+            drift = self.solver_cfg.build_ode_drift(self, tokenizer, y=y, tokens_cfg=tokens_cfg, model_mask=model_mask, context=context, attention_mask=attention_mask)
+            out = odeint(drift, eps, ts, collect_trace=False, method=self.solver_cfg.ode_method)
+            if last_euler_step and t_min is not None and t_min > 0.0:
+                # One last Euler step at t_min
+                dt = -ts[-1]  # ts are in decreasing order
+                f_tmin = drift(ts[-1], out)
+                out = out + f_tmin * dt
+            return out
         elif sample_method == "sde":
-            out = super().sample_sde(rng,eps,t_max=t_max, t_min=t_min, num_steps=num_steps, tokenizer=tokenizer,y=y,model_mask=model_mask,tokens_cfg=tokens_cfg,context=context,attention_mask=attention_mask)
+            sde_drift, sde_diffusion = self.solver_cfg.build_sde(self, tokenizer, y=y, tokens_cfg=tokens_cfg, model_mask=model_mask, context=context, attention_mask=attention_mask)
+            out = sdeint(
+                sde_drift,
+                sde_diffusion,
+                eps,
+                ts,
+                rng=rng,
+                method=self.solver_cfg.sde_method,
+            )
+            if last_euler_step and t_min is not None and t_min > 0.0:
+                # One last Euler step at t_min
+                dt = -ts[-1]  # ts are in decreasing order
+                f_tmin = sde_drift(ts[-1], out)
+                g_tmin = sde_diffusion(ts[-1], out)
+                z = jax.random.normal(rng, out.shape)
+                out = out + f_tmin * dt + g_tmin * jnp.sqrt(-dt) * z
+            return out
+
         else:
             raise ValueError(f"Sample method {sample_method} not recognized.")
 
-        return out
 
     def log_prob(
         self,
