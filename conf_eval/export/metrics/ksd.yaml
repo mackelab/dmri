@@ -2,7 +2,7 @@
 key: ksd
 type: ksd
 output_filename: metric_ksd.nii.gz
-batch_size: 10_000
+batch_size: 2048
 sample_reduction: none
 sample_axis: 1
 requires_theta_samples: true
@@ -10,7 +10,7 @@ write_summary: true
 summary_filename: ksd_summary.json
 options:
   # Bandwidths (in preconditioned space) used for the multi-scale KSD kernel.
-  bandwidths: [0.001,0.05, 0.1, 0.5, 1.0, 3.]
+  bandwidths: [0.05, 0.1, 0.5, 1.0, 2.]
   # Number of wild-bootstrap replicates for the test statistic.
   n_bootstrap: 256
   # If a probabilistic model mask is present, threshold it to a deterministic mask.

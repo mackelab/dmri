@@ -593,7 +593,7 @@ def sample_theta(cfg, key, model, acq, data, logger, model_mask=None, devices=No
     if model_mask is None:
         if default_mask is not None:
             model_mask = default_mask
-            logger.info("Using default mask from config.")
+            logger.info(f"Using default mask from config {default_mask}.")
         else:
             model_mask = jnp.ones(num_comp, dtype=jnp.bool)
     else:
@@ -611,6 +611,7 @@ def sample_theta(cfg, key, model, acq, data, logger, model_mask=None, devices=No
         )
 
     name = cfg.theta_sample.corrector.name
+    logger.info(f"Using theta sampling corrector: {name}")
     sample_theta_fn = build_theta_sample_fn(
         name,
         cfg.theta_sample.num_samples,
