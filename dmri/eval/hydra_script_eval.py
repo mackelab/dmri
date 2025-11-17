@@ -1,6 +1,7 @@
 import logging
 import os
 import socket
+from collections.abc import Mapping
 from contextlib import nullcontext
 from types import SimpleNamespace
 
@@ -22,7 +23,7 @@ import hydra
 import jax.numpy as jnp
 import numpy as np
 from flax import nnx
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, ListConfig, OmegaConf
 
 from dmri.eval.export_metrics import MetricContext, run_configured_metrics
 from dmri.eval.export_models import export_model_selection_to_files
@@ -209,6 +210,69 @@ def _apply_slice_to_brain(slice_cfg, brain_mask, data_norm, logger):
 def _cfg_get(cfg, key, default=None):
     value = OmegaConf.select(cfg, key)
     return default if value is None else value
+
+
+def _default_ksd_metric(seed):
+    return {
+        "key": "ksd",
+        "type": "ksd",
+        "output_filename": "metric_ksd.nii.gz",
+        "batch_size": 512,
+        "sample_reduction": "none",
+        "sample_axis": 1,
+        "requires_theta_samples": True,
+        "write_summary": True,
+        "summary_filename": "ksd_summary.json",
+        "options": {
+            "bandwidths": (0.05, 0.1, 0.5),
+            "n_bootstrap": 256,
+            "mask_threshold": 0.5,
+            "max_samples": None,
+            "random_seed": seed,
+        },
+        "aggregations": [
+            {"type": "mean", "name": "mean"},
+            {"type": "median", "name": "median"},
+            {"type": "percentile", "q": [5, 95], "name": "p{q}"},
+        ],
+    }
+
+
+def _ensure_default_ksd_metric(metrics_cfg, seed):
+    """Ensure the KSD metric is present without mutating the Hydra config."""
+
+    if metrics_cfg is None:
+        return None, False
+    if isinstance(metrics_cfg, (DictConfig, ListConfig)) and len(metrics_cfg) == 0:
+        return metrics_cfg, False
+
+    metrics_py = metrics_cfg
+    if isinstance(metrics_cfg, (DictConfig, ListConfig)):
+        metrics_py = OmegaConf.to_container(metrics_cfg, resolve=True)
+        if metrics_py in (None, {}, []):
+            return metrics_cfg, False
+
+    def _is_ksd(spec):
+        if spec is None:
+            return False
+        if isinstance(spec, Mapping):
+            spec_type = spec.get("type")
+            spec_key = spec.get("key")
+            return spec_type == "ksd" or spec_key == "ksd"
+        return False
+
+    added = False
+    if isinstance(metrics_py, Mapping):
+        if not any(_is_ksd(spec) for spec in metrics_py.values()):
+            metrics_py = dict(metrics_py)
+            metrics_py["ksd"] = _default_ksd_metric(seed)
+            added = True
+    elif isinstance(metrics_py, list):
+        if not any(_is_ksd(spec) for spec in metrics_py):
+            metrics_py = list(metrics_py) + [_default_ksd_metric(seed)]
+            added = True
+
+    return metrics_py, added
 
 
 def _resolve_data_path(cfg):
@@ -466,7 +530,10 @@ def _run_eval_pipeline(
     if models_selected_brain is None:
         models_selected_brain = default_mask
 
-    metrics_cfg = getattr(cfg.export, "metrics", None)
+    metrics_cfg_raw = getattr(cfg.export, "metrics", None)
+    metrics_cfg, added_ksd_metric = _ensure_default_ksd_metric(
+        metrics_cfg_raw, seed=cfg.seed
+    )
     if metrics_cfg:
         out_path = os.path.join(checkpoint_root, cfg.model_name, cfg.export.name)
         metric_context = MetricContext(
@@ -479,6 +546,7 @@ def _run_eval_pipeline(
             brain_mask_flat=brain_mask_flat,
             data_norm=data_norm,
             orig_data=export_template,
+            out_path=out_path,
         )
         with _device_scope(heavy_device):
             run_configured_metrics(
@@ -488,6 +556,8 @@ def _run_eval_pipeline(
                 devices=eval_devices,
                 logger=log,
             )
+        if added_ksd_metric:
+            log.info("Added default KSD metric to export metrics configuration.")
 
 
 def sample_mask(cfg, key, model, acq, data, logger, devices=None):
