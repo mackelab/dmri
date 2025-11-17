@@ -477,6 +477,7 @@ class DMRIInferenceModel(nnx.Module):
         model_mask: Array,
         sample_method: str = "ode",
         num_steps: int = 64,
+        last_euler_step: bool = True,
         t_min: float | None = None,
         t_max: float | None = None,
     ) -> Array:
@@ -499,6 +500,7 @@ class DMRIInferenceModel(nnx.Module):
             t_max=t_max,
             t_min=t_min,
             num_steps=num_steps,
+            last_euler_step=last_euler_step,
         )
 
         return theta

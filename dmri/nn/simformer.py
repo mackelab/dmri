@@ -324,6 +324,7 @@ class EDMSimformer(EDM):
         attention_mask: Optional[ArrayLike] = None,
         sample_method: str = "ode",
         num_steps: int = 64,
+        last_euler_step: bool = True,
         t_min: float | None = None,
         t_max: float | None = None,
 
@@ -332,11 +333,13 @@ class EDMSimformer(EDM):
         eps = jax.random.normal(rng_init, (dim,)) * self.marginal_std(self.train_cfg.t_max)
 
         if sample_method == "ode":
-            return super().sample_ode(eps,t_max=t_max, t_min=t_min, num_steps=num_steps, tokenizer=tokenizer,y=y,model_mask=model_mask,tokens_cfg=tokens_cfg,context=context,attention_mask=attention_mask)
+            out = super().sample_ode(eps,t_max=t_max, t_min=t_min, num_steps=num_steps, tokenizer=tokenizer,y=y,model_mask=model_mask,tokens_cfg=tokens_cfg,context=context,attention_mask=attention_mask)
         elif sample_method == "sde":
-            return super().sample_sde(rng,eps,t_max=t_max, t_min=t_min, num_steps=num_steps, tokenizer=tokenizer,y=y,model_mask=model_mask,tokens_cfg=tokens_cfg,context=context,attention_mask=attention_mask)
+            out = super().sample_sde(rng,eps,t_max=t_max, t_min=t_min, num_steps=num_steps, tokenizer=tokenizer,y=y,model_mask=model_mask,tokens_cfg=tokens_cfg,context=context,attention_mask=attention_mask)
         else:
             raise ValueError(f"Sample method {sample_method} not recognized.")
+
+        return out
 
     def log_prob(
         self,

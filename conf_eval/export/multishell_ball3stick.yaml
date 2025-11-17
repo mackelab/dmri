@@ -2,6 +2,7 @@ defaults:
   - _self_
   - metrics@metrics.reconstruction_mse: reconstruction_mse
   - metrics@metrics.posterior_nll: nll
+  - metrics@metrics.ksd: ksd
 
 name: "multishell_ball3stick_inference_results"
 sort_by_fractions: true

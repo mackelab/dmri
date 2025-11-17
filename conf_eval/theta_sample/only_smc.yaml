@@ -1,5 +1,5 @@
 num_samples: 2048
-eval_batch_size: 1024
+eval_batch_size: 3841
 
 params:
   num_steps: 0

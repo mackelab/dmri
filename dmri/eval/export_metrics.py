@@ -88,11 +88,13 @@ class MetricContext:
     brain_mask_flat: np.ndarray
     data_norm: np.ndarray
     orig_data: Any
+    out_path: str | None = None
 
 
 DEFAULT_OUTPUT_FILENAMES: Mapping[str, str] = {
     "reconstruction_mse": "error_reconstruction.nii.gz",
     "posterior_nll": "metric_posterior_nll.nii.gz",
+    "ksd": "metric_ksd.nii.gz",
 }
 
 
@@ -279,6 +281,98 @@ def _compute_swd_metric(
     return distances.astype(np.float32)
 
 
+def _compute_ksd_metric(
+    spec: MetricSpec,
+    context: MetricContext,
+    devices: Sequence[jax.Device] | str | None,
+) -> np.ndarray:
+    """Compute the (preconditioned, multi-scale) KSD per voxel."""
+
+    if context.model_parameters_brain is None:
+        raise ValueError(
+            f"Metric '{spec.key}' requires theta samples but none are available."
+        )
+
+    options = dict(spec.options or {})
+    bandwidths = np.asarray(
+        options.get("bandwidths", (0.05, 0.1, 0.5)), dtype=np.float32
+    ).reshape(-1)
+    if bandwidths.size == 0:
+        raise ValueError(f"Metric '{spec.key}' requires at least one bandwidth.")
+    n_bootstrap = int(options.get("n_bootstrap", 256))
+    if n_bootstrap <= 0:
+        raise ValueError(
+            f"Metric '{spec.key}' expects n_bootstrap > 0, got {n_bootstrap}."
+        )
+    mask_threshold = float(options.get("mask_threshold", 0.5))
+    max_samples = options.get("max_samples", options.get("num_samples"))
+    seed = int(options.get("random_seed", getattr(context.cfg, "seed", 0)))
+    export_pvalue = bool(options.get("export_pvalue", True))
+    pvalue_filename = options.get(
+        "pvalue_output_filename", "metric_ksd_pvalue.nii.gz"
+    )
+
+    theta = np.asarray(context.model_parameters_brain)
+    sample_axis = 1 if spec.sample_axis is None else spec.sample_axis
+    theta = np.moveaxis(theta, sample_axis, 1)
+    if max_samples is not None:
+        theta = theta[:, : int(max_samples)]
+    if theta.shape[1] < 2:
+        return np.full(theta.shape[0], np.nan, dtype=np.float32)
+    theta = np.nan_to_num(theta, nan=0.0, posinf=0.0, neginf=0.0)
+    theta = theta.reshape(theta.shape[0], theta.shape[1], -1)
+
+    data = np.asarray(context.full_data_flat_in_brain)
+    data = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
+
+    sim_type = context.sim_type
+    num_voxels = theta.shape[0]
+    num_components = len(sim_type.model_types) + len(sim_type.noise_types)
+    model_mask = _normalize_model_mask_for_ksd(
+        context.model_mask, num_voxels, num_components, mask_threshold
+    )
+
+    bandwidths_jnp = jnp.asarray(bandwidths)
+
+    def _ksd_single(key, theta_voxel, x_voxel, mask_voxel):
+        ksd2, p_value = multiscale_preconditioned_ksd_and_pvalue(
+            sim_type=sim_type,
+            thetas=theta_voxel,
+            mask=mask_voxel,
+            acq=context.acq,
+            x=x_voxel,
+            key=key,
+            bandwidths=bandwidths_jnp,
+            n_bootstrap=n_bootstrap,
+        )
+        return jnp.stack((ksd2, p_value))
+
+    ksd_fn = jax.vmap(_ksd_single, in_axes=(0, 0, 0, 0))
+    values = eval_in_batches(
+        ksd_fn,
+        jax.random.PRNGKey(seed),
+        theta,
+        data,
+        model_mask,
+        batch_size=spec.batch_size,
+        devices=devices,
+        preferred_device_kinds=spec.preferred_device_kinds,
+    )
+    values = np.asarray(values, dtype=np.float32)
+    ksd_values = values[..., 0]
+    p_values = values[..., 1]
+
+    if export_pvalue and context.out_path:
+        full_map = embed_in_full_brain_array(
+            p_values,
+            context.brain_mask_flat.astype(np.bool_),
+            context.data_norm.shape[:-1],
+        )
+        export_nifti(full_map, context.orig_data, context.out_path, pvalue_filename)
+
+    return ksd_values
+
+
 _METRIC_REGISTRY: Mapping[
     str,
     Callable[[MetricSpec, MetricContext, Sequence[jax.Device] | str | None], np.ndarray | None],
@@ -286,6 +380,7 @@ _METRIC_REGISTRY: Mapping[
     "posterior_nll": _compute_posterior_nll,
     "reconstruction_mse": _compute_reconstruction_mse,
     "sliced_wasserstein": lambda spec, context, devices: _compute_swd_metric(spec, context),
+    "ksd": _compute_ksd_metric,
 }
 
 
@@ -522,6 +617,47 @@ def _normalize_device_kinds(value: Any) -> tuple[str, ...]:
     raise TypeError(f"preferred_device_kinds must be a string or sequence, got {value!r}")
 
 
+def _normalize_model_mask_for_ksd(
+    model_mask: Any,
+    num_voxels: int,
+    num_components: int,
+    threshold: float,
+) -> np.ndarray:
+    """Broadcast and clean the model mask for KSD evaluation."""
+
+    if model_mask is None:
+        return np.ones((num_voxels, num_components), dtype=np.bool_)
+
+    mask = np.asarray(model_mask)
+    if mask.ndim == 1:
+        if mask.shape[0] != num_components:
+            raise ValueError(
+                f"Model mask has length {mask.shape[0]}, expected {num_components}."
+            )
+        return np.broadcast_to(mask.astype(np.bool_), (num_voxels, mask.shape[-1]))
+
+    if mask.ndim == 2:
+        if mask.shape[-1] != num_components:
+            raise ValueError(
+                f"Model mask shape {mask.shape} is incompatible with expected components {num_components}."
+            )
+        if mask.shape[0] == num_voxels:
+            return mask.astype(np.bool_)
+        return np.broadcast_to(mask.astype(np.bool_), (num_voxels, mask.shape[-1]))
+
+    # If we have a sample dimension, average and threshold to get a deterministic mask.
+    if mask.ndim >= 3:
+        if mask.shape[-1] != num_components:
+            raise ValueError(
+                f"Model mask shape {mask.shape} is incompatible with expected components {num_components}."
+            )
+        mask = np.mean(mask, axis=1) >= float(threshold)
+        mask = mask.astype(np.bool_)
+        return np.broadcast_to(mask, (num_voxels, mask.shape[-1]))
+
+    raise ValueError(f"Unsupported model mask shape {mask.shape} for KSD metric.")
+
+
 def _load_reference_theta_samples(path: str) -> np.ndarray:
     if not os.path.exists(path):
         raise FileNotFoundError(f"Reference sample file '{path}' does not exist.")
@@ -582,6 +718,7 @@ def compute_swd_to_reference(
         brain_mask_flat=brain_mask_flat,
         data_norm=data_norm,
         orig_data=orig_data,
+        out_path=out_path,
     )
     spec = MetricSpec(
         key="sliced_wasserstein",
@@ -607,3 +744,179 @@ def compute_swd_to_reference(
     )
     export_nifti(full_map, orig_data, out_path, output_filename)
     return os.path.join(out_path, output_filename)
+
+
+def multiscale_preconditioned_ksd_and_pvalue(
+    sim_type,
+    thetas,
+    mask,
+    acq,
+    x,
+    key,
+    bandwidths,
+    sigma=0.1,
+    precond_matrix=None,
+    n_bootstrap: int = 512,
+    eps: float = 1e-8,
+):
+    """
+    Multi-scale, preconditioned Kernel Stein Discrepancy (KSD^2) + wild-bootstrap p-value,
+    restricted to the dimensions indicated by `theta_mask`.
+
+    If `precond_matrix` is None, we estimate a whitening preconditioner from the
+    empirical covariance of `thetas` (only over masked dimensions):
+        cov ≈ Cov(theta_masked),  L L^T = cov + jitter
+        P = L^{-1}
+    and work in z = P @ theta coordinates.
+
+    Args
+    ----
+    sim_type :
+        Object that provides theta_mask(mask) and from_theta(theta, model_mask=mask).
+    thetas : (N, D) array
+        Samples in parameter space theta.
+    mask, acq, x :
+        Extra arguments forwarded to log_posterior(theta, mask, acq, x).
+    key : PRNGKey
+        Random key for wild bootstrap.
+    bandwidths : array-like, shape (M,) or scalar
+        Fixed RBF bandwidths h in z-space.
+    precond_matrix : (D, D) array or None
+        Constant preconditioner P. If None, build P as a whitening transform
+        from the sample covariance of `thetas` (masked).
+    n_bootstrap : int
+        Number of wild-bootstrap replicates.
+    eps : float
+        Small constant to avoid numerical issues.
+
+    Returns
+    -------
+    ksd2_obs : scalar
+        Observed (preconditioned, multi-scale) KSD^2 (U-statistic).
+    p_value : scalar
+        Wild-bootstrap p-value (right-tailed).
+    """
+
+    thetas = jnp.asarray(thetas)
+    n, d = thetas.shape
+
+    # theta_mask indicates which dimensions are relevant (shape: (D,))
+    # assume 0/1 or bool; convert to float for arithmetic
+    theta_mask = sim_type.theta_mask(mask)
+    theta_mask = theta_mask.astype(thetas.dtype)        # (D,)
+    d_eff = jnp.sum(theta_mask)                        # effective dimension
+
+    def log_posterior(theta, mask, acq, x):
+        simulator = sim_type.from_theta(theta, model_mask=mask)
+        prior = jax.scipy.stats.norm.logpdf(theta, loc=0.0, scale=1.0)
+        # Only apply prior on masked dimensions
+        prior = jnp.sum(prior * theta_mask, axis=-1)
+        ll = simulator.log_likelihood(acq, x)
+        return ll + prior
+
+    # ---------- 0. Build / use preconditioner P ----------
+    if precond_matrix is None:
+        # Empirical covariance over *masked* dimensions
+        theta_mean = jnp.mean(thetas, axis=0)
+        theta_centered = thetas - theta_mean
+
+        # Zero out irrelevant dims before covariance
+        theta_centered_masked = theta_centered * theta_mask  # (N, D)
+        cov = (theta_centered_masked.T @ theta_centered_masked) / jnp.maximum(
+            n - 1, 1
+        )                                                   # (D, D)
+
+        # Cholesky + jitter for stability
+        jitter = 1e-6 * jnp.eye(d, dtype=thetas.dtype)
+        L = jnp.linalg.cholesky(cov + jitter)
+
+        # Whitening: P = L^{-1}
+        P = jnp.linalg.inv(L)
+        # For score transform we need P^{-T} = (P^{-1})^T = L^T
+        P_inv_T = L.T
+    else:
+        P = jnp.asarray(precond_matrix)
+        P_inv_T = jnp.linalg.inv(P).T
+
+    # Normalize bandwidths
+    bandwidths = jnp.atleast_1d(bandwidths).astype(thetas.dtype)
+    h2s = jnp.maximum(bandwidths**2, eps)  # (M,)
+
+    # ---------- 1. Score in theta, then transform to z coordinates ----------
+    def score_theta(theta):
+        # theta: (D,)
+        g = jax.grad(log_posterior, argnums=0)(theta, mask, acq, x)  # (D,)
+        # Ensure irrelevant dimensions are ignored (should already be 0 from prior mask,
+        # but this makes it explicit)
+        return g * theta_mask
+
+    scores_theta = jax.vmap(score_theta)(thetas)        # (N, D)
+
+    # s_z = P^{-T} s_theta   (chain rule for z = P theta)
+    scores_z = scores_theta @ P_inv_T                   # (N, D)
+    # Mask again in z-space to be completely safe
+    scores_z = scores_z * theta_mask                    # (N, D)
+
+    # ---------- 2. Transform samples to z-space for distances ----------
+    # z_i = P theta_i
+    z = thetas @ P.T                                    # (N, D)
+
+    # Only use masked dimensions in distances
+    z_masked = z * theta_mask                           # (N, D)
+    diff_z = z_masked[:, None, :] - z_masked[None, :, :]  # (N, N, D)
+    sq_dist_z = jnp.sum(diff_z**2, axis=-1)             # (N, N)
+
+    # ---------- 3. Stein kernel for one bandwidth in z-space ----------
+    def stein_kernel_single_h2(h2):
+        k = jnp.exp(-sq_dist_z / (2.0 * h2))            # (N, N)
+
+        s = scores_z                                   # (N, D)
+        # Term 1: s_i^T s_j * k_ij
+        s_dot = s @ s.T                                # (N, N)
+        term1 = s_dot * k
+
+        # RBF derivatives in z (masked):
+        # ∇_z k = -k * (z_i - z_j) / h2  on relevant dims only
+        grad_zprime = k[..., None] * diff_z / h2       # (N, N, D)
+        grad_z      = -grad_zprime                     # (N, N, D)
+
+        # Term 2: s_i^T ∇_{z'} k(z_i, z_j)
+        term2 = jnp.einsum("id,ijd->ij", s, grad_zprime)
+
+        # Term 3: s_j^T ∇_z k(z_i, z_j)
+        term3 = jnp.einsum("jd,ijd->ij", s, grad_z)
+
+        # Term 4: trace ∇_{z,z'} k
+        # For masked dimensions, the effective dimension is d_eff.
+        # trace = k * (d_eff / h2 - ||z_i - z_j||^2 / h2^2)
+        trace_hess = k * (d_eff / h2 - sq_dist_z / (h2**2))
+
+        H = term1 + term2 + term3 + trace_hess         # (N, N)
+        return H
+
+    # ---------- 4. Multi-scale Stein kernel (average over bandwidths) ----------
+    Hs = jax.vmap(stein_kernel_single_h2)(h2s)         # (M, N, N)
+    weights = sigma / h2s[:, None, None]**2                # (M, 1, 1)
+    weights = weights            # Normalize weights
+    Hs = Hs * weights                                   # Weighted kernels
+    H = jnp.sum(Hs, axis=0)                           # (N, N)
+
+    # Remove diagonal for U-statistic
+    H_no_diag = H - jnp.diag(jnp.diag(H))
+    ksd2_obs = jnp.sum(H_no_diag) / (n * (n - 1))
+
+    # ---------- 5. Wild bootstrap for p-value ----------
+    keys = jax.random.split(key, n_bootstrap)
+
+    def one_bootstrap(k_boot):
+        # Rademacher weights ξ_i ∈ {-1, +1}
+        xi = jax.random.choice(k_boot, jnp.array([-1.0, 1.0]), shape=(n,))
+        xi_outer = xi[:, None] * xi[None, :]           # (N, N)
+        H_star = H_no_diag * xi_outer                  # diag stays zero
+        T_star = jnp.sum(H_star) / (n * (n - 1))
+        return T_star
+
+    boot_stats = jax.vmap(one_bootstrap)(keys)         # (n_bootstrap,)
+    p_value = (1.0 + jnp.sum(boot_stats >= ksd2_obs)) / (n_bootstrap + 1.0)
+
+    return ksd2_obs, p_value

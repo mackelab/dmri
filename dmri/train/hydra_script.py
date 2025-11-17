@@ -496,6 +496,8 @@ def build_loss_fn(cfg: DictConfig, graphdef: Any):
             batches = tuple(data)
         else:
             batches = (data,)
+        # ENSURE NO NaNs IN THE BATCHES
+        batches = jax.tree_util.tree_map(jax.numpy.nan_to_num, batches)
         num_batches = len(batches)
         if num_batches == 0:
             raise ValueError("Expected at least one batch for loss computation.")
@@ -579,6 +581,43 @@ def train_loop(
     datastreams = [iter(loader) for loader in loaders]
     start_time = time.time()
 
+    def recover_from_latest_checkpoint(reason: str) -> bool:
+        nonlocal train_state, datastreams
+        log.warning(reason)
+        try:
+            latest_step = checkpoint_manager.get_latest_step()
+            if latest_step is None:
+                log.warning("No checkpoints available for recovery. Cannot reset.")
+                return False
+            checkpoint = checkpoint_manager.restore(
+                step=latest_step,
+                params=train_state.params,
+                optimizer_state=train_state.opt_state,
+                params_ema=get_ema_params(train_state.ema_state) if track_ema else None,
+                model_state=train_state.model_state,
+                ema_state=train_state.ema_state if track_ema else None,
+                rng=train_state.rng,
+            )
+            if checkpoint is None:
+                log.warning("Failed to restore recovery checkpoint. Cannot reset.")
+                return False
+            train_state = apply_checkpoint_to_state(
+                train_state=train_state,
+                checkpoint=checkpoint,
+                cfg=cfg,
+                optimizer=optimizer,
+                ema_transform=ema_transform,
+                log=log,
+                rebuild_optimizer=False,
+            )
+            datastreams = [iter(loader) for loader in loaders]
+            log.info(f"Recovered to step {train_state.step}")
+            return True
+        except Exception as err:  # pragma: no cover - defensive logging
+            log.error(f"Error during recovery: {err}")
+            log.warning("Continuing without recovery.")
+            return False
+
     log.info("Compiling training and evaluation step...")
     _ = update_step(
         train_state.params,
@@ -630,6 +669,23 @@ def train_loop(
         loss_mask = float(sum(loss_mask) / len(loss_mask))
         loss_theta = float(sum(loss_theta) / len(loss_theta))
         total_loss_value = float(loss_mask + loss_theta)
+
+        if not (
+            np.isfinite(loss_mask)
+            and np.isfinite(loss_theta)
+            and np.isfinite(total_loss_value)
+        ):
+            if recover_from_latest_checkpoint(
+                (
+                    f"Non-finite loss detected at step {train_state.step}. "
+                    f"loss_mask={loss_mask}, loss_theta={loss_theta}. Resetting to latest checkpoint."
+                )
+            ):
+                continue
+            log.error(
+                "Non-finite loss encountered but no checkpoint could be restored. Stopping training."
+            )
+            break
 
         # Collect and average dataset stats from training loaders
         dataset_stats = {}
@@ -728,49 +784,10 @@ def train_loop(
                     val_loss_value=validation_metric,
                     write_standard=False,
                 )
-            if checkpoint_manager.should_recover(
-                validation_metric,
-            ):
-                log.warning(
+            if checkpoint_manager.should_recover(validation_metric):
+                recover_from_latest_checkpoint(
                     f"Recovery triggered at step {train_state.step} based on validation metrics. Restoring from checkpoint."
                 )
-                try:
-                    latest_step = checkpoint_manager.get_latest_step()
-                    if latest_step is None:
-                        log.warning(
-                            "No checkpoints available for recovery. Continuing without recovery."
-                        )
-                    else:
-                        checkpoint = checkpoint_manager.restore(
-                            step=latest_step,
-                            params=train_state.params,
-                            optimizer_state=train_state.opt_state,
-                            params_ema=get_ema_params(train_state.ema_state)
-                            if track_ema
-                            else None,
-                            model_state=train_state.model_state,
-                            ema_state=train_state.ema_state if track_ema else None,
-                            rng=train_state.rng,
-                        )
-                        if checkpoint is None:
-                            log.warning(
-                                "Failed to restore recovery checkpoint. Continuing without recovery."
-                            )
-                        else:
-                            train_state = apply_checkpoint_to_state(
-                                train_state=train_state,
-                                checkpoint=checkpoint,
-                                cfg=cfg,
-                                optimizer=optimizer,
-                                ema_transform=ema_transform,
-                                log=log,
-                                rebuild_optimizer=False,
-                            )
-                            log.info(f"Recovered to step {train_state.step}")
-                            datastreams = [iter(loader) for loader in loaders]
-                except Exception as err:  # pragma: no cover - defensive logging
-                    log.error(f"Error during recovery: {err}")
-                    log.warning("Continuing without recovery.")
 
         if (
             checkpoint_freq
