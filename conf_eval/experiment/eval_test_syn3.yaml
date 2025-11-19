@@ -3,7 +3,7 @@
 sample_mask: false
 select_models: false
 seed: 42424242
-default_mask: [True, True, False, False, True]
+default_mask: [True, True, True, True, True]
 slice:
   x: null
   y: null
@@ -13,7 +13,8 @@ slice:
 defaults:
   - _self_
   - override /export: raw
-  - override /theta_sample: gt
+  - override /theta_sample: uncorrected
+  - override /data: synthetic
 
 export:
-  name: test_bs1
+  name: test3

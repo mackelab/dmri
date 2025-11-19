@@ -7,4 +7,4 @@ params:
   t_max: 80
 
 defaults:
-  - corrector: auto
+  - corrector: none

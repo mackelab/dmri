@@ -25,6 +25,7 @@ import numpy as np
 from flax import nnx
 from omegaconf import DictConfig, ListConfig, OmegaConf
 
+from dmri.eval.data_sources import generate_synthetic_data
 from dmri.eval.export_metrics import MetricContext, run_configured_metrics
 from dmri.eval.export_models import export_model_selection_to_files
 from dmri.eval.export_theta import (
@@ -275,16 +276,16 @@ def _ensure_default_ksd_metric(metrics_cfg, seed):
     return metrics_py, added
 
 
-def _resolve_data_path(cfg):
-    explicit_path = _cfg_get(cfg, "path")
+def _resolve_data_path(data_cfg):
+    explicit_path = _cfg_get(data_cfg, "path")
     if explicit_path not in (None, "", "null", "None"):
         return os.path.expanduser(str(explicit_path))
-    data_folder = _cfg_get(cfg, "data_folder")
+    data_folder = _cfg_get(data_cfg, "data_folder")
     if data_folder in (None, "", "null", "None"):
         raise ValueError(
-            "Please set either cfg.path or cfg.data_folder to select the input data."
+            "Please set either data.path or data.data_folder to select the input data."
         )
-    data_root = _cfg_get(cfg, "data_root")
+    data_root = _cfg_get(data_cfg, "data_root")
     if data_root in (None, "", "null", "None"):
         data_root = os.path.join(os.getcwd(), "data")
     return os.path.join(os.path.expanduser(str(data_root)), str(data_folder))
@@ -344,7 +345,7 @@ def _run_eval_pipeline(
 ):
     """Main evaluation pipeline executed under the CPU default device."""
     log.info(f"Model name: {cfg.model_name}")
-    data_path = _resolve_data_path(cfg)
+    data_cfg = getattr(cfg, "data", cfg)
     checkpoint_root = _resolve_checkpoint_root(cfg)
     output_dir = os.path.join(checkpoint_root, cfg.model_name)
     log.info(f"Output directory: {output_dir}")
@@ -355,21 +356,51 @@ def _run_eval_pipeline(
     log.info(f"Setting seed: {cfg.seed}")
     key = jax.random.PRNGKey(cfg.seed)
 
-    log.info(f"Loading data from {data_path}")
+    # Load model and simulator first (needed for synthetic data)
+    log.info(f"Loading model from {checkpoint_root}/{cfg.model_name}")
+    path_checkpoint = os.path.join(checkpoint_root, cfg.model_name)
+    checkpoint, model, _ = load_checkpoint(path_checkpoint)
+    graphdef, params, static, state = nnx.split(model, nnx.Param, nnx.Intermediate, ...)
+    params = checkpoint[cfg.params_name]
+    model = nnx.merge(graphdef, params, static, state, copy=True)
+    model.eval()
+    sim_type = model.tokenizer.simulator
 
-    # Load data
-    data, data_norm, brain_mask, bvals, bvecs = load_and_process_data(
-        data_path,
-        cfg.brain_mask,
-        cfg.mri_data,
-        cfg.bvals_data,
-        cfg.bvecs_data,
-        cfg.round_bvals,
-    )
+    source = _cfg_get(data_cfg, "source", "real")
+
+    if source == "synthetic":
+        log.info("Generating synthetic evaluation data using simulator.")
+        (
+            data,
+            data_norm,
+            brain_mask,
+            bvals,
+            bvecs,
+            true_model_mask,
+            thetas_synth,
+            acq_synth,
+            key,
+        ) = generate_synthetic_data(data_cfg, sim_type, key)
+        use_true_model_mask = cfg.data.use_true_model_mask_for_synthetic
+    else:
+        data_path = _resolve_data_path(data_cfg)
+        log.info(f"Loading data from {data_path}")
+        data, data_norm, brain_mask, bvals, bvecs = load_and_process_data(
+            data_path,
+            data_cfg.brain_mask,
+            data_cfg.mri_data,
+            data_cfg.bvals_data,
+            data_cfg.bvecs_data,
+            data_cfg.round_bvals,
+        )
+        true_model_mask = None
+        thetas_synth = None
+        acq_synth = None
+        use_true_model_mask = False
 
     # Optionally restrict processing to a sub-volume
     brain_mask, data_norm, volume_slice = _apply_slice_to_brain(
-        cfg.get("slice", None), brain_mask, data_norm, log
+        getattr(data_cfg, "slice", None), brain_mask, data_norm, log
     )
     export_template = SimpleNamespace(
         affine=data.affine,
@@ -380,7 +411,7 @@ def _run_eval_pipeline(
     # Only infer within the brain mask
     full_data_flat = data_norm.reshape(-1, data_norm.shape[-1])
     brain_mask_flat = brain_mask.reshape(-1)
-    acq = acquisition_scheme(bvals, bvecs)
+    acq = acq_synth if acq_synth is not None else acquisition_scheme(bvals, bvecs)
     full_data_flat_in_brain = full_data_flat[brain_mask_flat, :]
     full_data_flat_in_brain = np.nan_to_num(
         full_data_flat_in_brain, nan=0.0, posinf=0.0, neginf=0.0
@@ -390,19 +421,9 @@ def _run_eval_pipeline(
     )
 
     # Clip outliers
-    if cfg.clip_outliers:
+    if cfg.data.clip_outliers:
         exclude_outliers = np.quantile(full_data_flat_in_brain, 0.999)
         full_data_flat_in_brain = np.clip(full_data_flat_in_brain, 0, exclude_outliers)
-
-    # Build model and simulator
-    log.info(f"Loading model from {checkpoint_root}/{cfg.model_name}")
-    path_checkpoint = os.path.join(checkpoint_root, cfg.model_name)
-    checkpoint, model, _ = load_checkpoint(path_checkpoint)
-    graphdef, params, static, state = nnx.split(model, nnx.Param, nnx.Intermediate, ...)
-    params = checkpoint[cfg.params_name]
-    model = nnx.merge(graphdef, params, static, state, copy=True)
-    model.eval()
-    sim_type = model.tokenizer.simulator
 
     key, key_masks = jax.random.split(key)
     # Sample masks if needed
@@ -448,7 +469,10 @@ def _run_eval_pipeline(
         f"Models selected brain shape: {models_selected_brain.shape if models_selected_brain is not None else 'None'}"
     )
     default_mask = _cfg_get(cfg, "default_mask", None)
-    if default_mask is not None:
+    if use_true_model_mask and true_model_mask is not None:
+        log.info("Using true model mask from synthetic data generation.")
+        default_mask = true_model_mask
+    elif default_mask is not None:
         default_mask = jnp.array(default_mask, dtype=jnp.bool)
 
     # Sample theta
@@ -473,6 +497,8 @@ def _run_eval_pipeline(
     log.info(
         f"Model parameters brain shape: {model_parameters_brain.shape if model_parameters_brain is not None else 'None'}"
     )
+    if model_parameters_brain is None and thetas_synth is not None:
+        model_parameters_brain = thetas_synth
     model_parameter_nans = (
         int(np.isnan(model_parameters_brain).sum())
         if model_parameters_brain is not None
@@ -529,6 +555,8 @@ def _run_eval_pipeline(
 
     if models_selected_brain is None:
         models_selected_brain = default_mask
+    if models_selected_brain is None and model_masks_synth is not None:
+        models_selected_brain = model_masks_synth
 
     metrics_cfg_raw = getattr(cfg.export, "metrics", None)
     metrics_cfg, added_ksd_metric = _ensure_default_ksd_metric(

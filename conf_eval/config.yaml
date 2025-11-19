@@ -1,17 +1,13 @@
-# Loading data
-data_root: ${hydra:runtime.cwd}/data
-data_folder: null
-path: null
-brain_mask: "nodif_brain_mask.nii.gz"
-mri_data: "data.nii.gz"
-bvals_data: "bvals"
-bvecs_data: "bvecs"
-round_bvals: true
-clip_outliers: true
-slice:
-  x: null
-  y: null
-  z: null
+# Evaluation configuration
+
+defaults:
+  - _self_
+  - data: file
+  - mask_sample: default
+  - theta_sample: default
+  - model_selection: none
+  - export: ball3stick
+  - export_model_selection: ball3stick
 
 # Loading model
 results_root: ${hydra:runtime.cwd}/results
@@ -26,12 +22,4 @@ sample_mask: true
 sample_theta: true
 select_models: true
 default_mask: null
-
-
-defaults:
-  - _self_
-  - mask_sample: default
-  - theta_sample: default
-  - model_selection: none
-  - export: ball3stick
-  - export_model_selection: ball3stick
+use_true_model_mask_for_synthetic: false

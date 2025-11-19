@@ -14,7 +14,10 @@ data:
 defaults:
   - _self_
   - override /export: raw
-  - override /theta_sample: gt
+  - override /theta_sample: uncorrected
+
+theta_sample:
+  num_samples: 256
 
 export:
-  name: test_real
+  name: test_real2
