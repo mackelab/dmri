@@ -3,12 +3,11 @@
 sample_mask: false
 select_models: false
 seed: 42424242
-default_mask: [True, True, True, True, True]
-data:
-  slice:
-    x: null
-    y: null
-    z: 52
+default_mask: [True, True, True, False, True]
+slice:
+  x: null
+  y: null
+  z: 52
 
 
 defaults:
@@ -17,4 +16,4 @@ defaults:
   - override /theta_sample: gt
 
 export:
-  name: test_real
+  name: test_bs2

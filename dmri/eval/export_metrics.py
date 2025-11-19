@@ -723,6 +723,7 @@ def compute_swd_to_reference(
     return os.path.join(out_path, output_filename)
 
 
+
 def multiscale_preconditioned_ksd_and_pvalue(
     sim_type,
     thetas,
@@ -740,49 +741,21 @@ def multiscale_preconditioned_ksd_and_pvalue(
     Multi-scale, preconditioned Kernel Stein Discrepancy (KSD^2) + wild-bootstrap p-value,
     restricted to the dimensions indicated by `theta_mask`.
 
-    If `precond_matrix` is None, we estimate a whitening preconditioner from the
-    empirical covariance of `thetas` (only over masked dimensions):
-        cov ≈ Cov(theta_masked),  L L^T = cov + jitter
-        P = L^{-1}
-    and work in z = P @ theta coordinates.
-
-    Args
-    ----
-    sim_type :
-        Object that provides theta_mask(mask) and from_theta(theta, model_mask=mask).
-    thetas : (N, D) array
-        Samples in parameter space theta.
-    mask, acq, x :
-        Extra arguments forwarded to log_posterior(theta, mask, acq, x).
-    key : PRNGKey
-        Random key for wild bootstrap.
-    bandwidths : array-like, shape (M,) or scalar
-        Fixed RBF bandwidths h in z-space.
-    precond_matrix : (D, D) array or None
-        Constant preconditioner P. If None, build P as a whitening transform
-        from the sample covariance of `thetas` (masked).
-    n_bootstrap : int
-        Number of wild-bootstrap replicates.
-    eps : float
-        Small constant to avoid numerical issues.
-
-    Returns
-    -------
-    ksd2_obs : scalar
-        Observed (preconditioned, multi-scale) KSD^2 (U-statistic).
-    p_value : scalar
-        Wild-bootstrap p-value (right-tailed).
+    This version is written to reduce peak memory usage:
+      - avoids (N, N, D) tensors (no explicit pairwise differences),
+      - avoids (M, N, N) tensor across bandwidths,
+      - avoids (N_bootstrap, N, N) intermediates in the bootstrap.
     """
 
     thetas = jnp.asarray(thetas)
     n, d = thetas.shape
+    dtype = thetas.dtype
 
     # theta_mask indicates which dimensions are relevant (shape: (D,))
-    # assume 0/1 or bool; convert to float for arithmetic
-    theta_mask = sim_type.theta_mask(mask)
-    theta_mask = theta_mask.astype(thetas.dtype)        # (D,)
-    d_eff = jnp.sum(theta_mask)                        # effective dimension
+    theta_mask = sim_type.theta_mask(mask).astype(dtype)  # (D,)
+    d_eff = jnp.sum(theta_mask)                          # effective dimension (scalar)
 
+    # ---------- log posterior ----------
     def log_posterior(theta, mask, acq, x):
         simulator = sim_type.from_theta(theta, model_mask=mask)
         prior = jax.scipy.stats.norm.logpdf(theta, loc=0.0, scale=1.0)
@@ -796,15 +769,13 @@ def multiscale_preconditioned_ksd_and_pvalue(
         # Empirical covariance over *masked* dimensions
         theta_mean = jnp.mean(thetas, axis=0)
         theta_centered = thetas - theta_mean
-
-        # Zero out irrelevant dims before covariance
         theta_centered_masked = theta_centered * theta_mask  # (N, D)
+
         cov = (theta_centered_masked.T @ theta_centered_masked) / jnp.maximum(
             n - 1, 1
-        )                                                   # (D, D)
+        )  # (D, D)
 
-        # Cholesky + jitter for stability
-        jitter = 1e-6 * jnp.eye(d, dtype=thetas.dtype)
+        jitter = 1e-3 * jnp.eye(d, dtype=dtype)
         L = jnp.linalg.cholesky(cov + jitter)
 
         # Whitening: P = L^{-1}
@@ -812,88 +783,96 @@ def multiscale_preconditioned_ksd_and_pvalue(
         # For score transform we need P^{-T} = (P^{-1})^T = L^T
         P_inv_T = L.T
     else:
-        P = jnp.asarray(precond_matrix)
+        P = jnp.asarray(precond_matrix, dtype=dtype)
         P_inv_T = jnp.linalg.inv(P).T
 
     # Normalize bandwidths
-    bandwidths = jnp.atleast_1d(bandwidths).astype(thetas.dtype)
+    bandwidths = jnp.atleast_1d(bandwidths).astype(dtype)
     h2s = jnp.maximum(bandwidths**2, eps)  # (M,)
+    m = h2s.shape[0]
 
     # ---------- 1. Score in theta, then transform to z coordinates ----------
     def score_theta(theta):
-        # theta: (D,)
         g = jax.grad(log_posterior, argnums=0)(theta, mask, acq, x)  # (D,)
-        # Ensure irrelevant dimensions are ignored (should already be 0 from prior mask,
-        # but this makes it explicit)
         return g * theta_mask
 
-    scores_theta = jax.vmap(score_theta)(thetas)        # (N, D)
-
-    # s_z = P^{-T} s_theta   (chain rule for z = P theta)
-    scores_z = scores_theta @ P_inv_T                   # (N, D)
-    # Mask again in z-space to be completely safe
-    scores_z = scores_z * theta_mask                    # (N, D)
+    scores_theta = jax.vmap(score_theta)(thetas)      # (N, D)
+    scores_z = scores_theta @ P_inv_T                 # (N, D)
+    scores_z = scores_z * theta_mask                  # (N, D)
 
     # ---------- 2. Transform samples to z-space for distances ----------
-    # z_i = P theta_i
-    z = thetas @ P.T                                    # (N, D)
+    z = thetas @ P.T                                  # (N, D)
+    z_masked = z * theta_mask                         # (N, D)
 
-    # Only use masked dimensions in distances
-    z_masked = z * theta_mask                           # (N, D)
-    diff_z = z_masked[:, None, :] - z_masked[None, :, :]  # (N, N, D)
-    sq_dist_z = jnp.sum(diff_z**2, axis=-1)             # (N, N)
+    # Pairwise squared distances using Gram trick (no (N, N, D))
+    z_sq_norm = jnp.sum(z_masked**2, axis=1)          # (N,)
+    # sq_dist_z[i,j] = ||z_i||^2 + ||z_j||^2 - 2 z_i·z_j
+    gram_z = z_masked @ z_masked.T                    # (N, N)
+    sq_dist_z = (
+        z_sq_norm[:, None] + z_sq_norm[None, :] - 2.0 * gram_z
+    )                                                 # (N, N)
+    sq_dist_z = jnp.maximum(sq_dist_z, 0.0)           # numerical safety
 
-    # ---------- 3. Stein kernel for one bandwidth in z-space ----------
-    def stein_kernel_single_h2(h2):
-        k = jnp.exp(-sq_dist_z / (2.0 * h2))            # (N, N)
+    # Precompute Stein-related Gram matrices (all (N, N))
+    S = scores_z                                      # (N, D)
+    gram_s = S @ S.T                                  # (N, N)  term1: s_i^T s_j
+    SZT = S @ z_masked.T                              # (N, N)  A_ij = s_i^T z_j
+    b = jnp.diag(SZT)                                 # (N,)   b_i = s_i^T z_i
 
-        s = scores_z                                   # (N, D)
+    # ---------- 3. Multi-scale Stein kernel (memory-friendly) ----------
+    def body_h2(i, H):
+        h2 = h2s[i]
+
+        # RBF kernel in z
+        k = jnp.exp(-sq_dist_z / (2.0 * h2))          # (N, N)
+
         # Term 1: s_i^T s_j * k_ij
-        s_dot = s @ s.T                                # (N, N)
-        term1 = s_dot * k
+        term1 = gram_s * k                            # (N, N)
 
-        # RBF derivatives in z (masked):
-        # ∇_z k = -k * (z_i - z_j) / h2  on relevant dims only
-        grad_zprime = k[..., None] * diff_z / h2       # (N, N, D)
-        grad_z      = -grad_zprime                     # (N, N, D)
+        # Term 2 and 3 via analytic forms (no (N, N, D) tensors):
+        # term2(i,j) = k/h2 * (s_i^T z_i - s_i^T z_j) = k/h2 * (b_i - SZT_ij)
+        # term3(i,j) = -k/h2 * (s_j^T z_i - s_j^T z_j) = -k/h2 * (SZT_ji - b_j)
+        k_over_h2 = k / h2
+        term2 = k_over_h2 * (b[:, None] - SZT)        # (N, N)
+        term3 = -k_over_h2 * (SZT.T - b[None, :])     # (N, N)
 
-        # Term 2: s_i^T ∇_{z'} k(z_i, z_j)
-        term2 = jnp.einsum("id,ijd->ij", s, grad_zprime)
-
-        # Term 3: s_j^T ∇_z k(z_i, z_j)
-        term3 = jnp.einsum("jd,ijd->ij", s, grad_z)
-
-        # Term 4: trace ∇_{z,z'} k
-        # For masked dimensions, the effective dimension is d_eff.
+        # Term 4: trace Hessian
         # trace = k * (d_eff / h2 - ||z_i - z_j||^2 / h2^2)
         trace_hess = k * (d_eff / h2 - sq_dist_z / (h2**2))
 
-        H = term1 + term2 + term3 + trace_hess         # (N, N)
-        return H
+        # Weight for multi-scale combination
+        weight = sigma * 1/len(h2s)
+        H_update = weight * (term1 + term2 + term3 + trace_hess)
 
-    # ---------- 4. Multi-scale Stein kernel (average over bandwidths) ----------
-    Hs = jax.vmap(stein_kernel_single_h2)(h2s)         # (M, N, N)
-    weights = sigma / h2s[:, None, None]**2                # (M, 1, 1)
-    weights = weights            # Normalize weights
-    Hs = Hs * weights                                   # Weighted kernels
-    H = jnp.sum(Hs, axis=0)                           # (N, N)
+        return H + H_update
+
+    H0 = jnp.zeros_like(sq_dist_z)
+    H = jax.lax.fori_loop(0, m, body_h2, H0)              # (N, N)
 
     # Remove diagonal for U-statistic
-    H_no_diag = H - jnp.diag(jnp.diag(H))
-    ksd2_obs = jnp.sum(H_no_diag) / (n * (n - 1))
+    diag_H = jnp.diag(jnp.diag(H))
+    H_no_diag = H - diag_H
+    denom = n * (n - 1)
+    ksd2_obs = jnp.sum(H_no_diag) / denom
+    ksd = jnp.sqrt(jnp.maximum(ksd2_obs, 0.0))
 
-    # ---------- 5. Wild bootstrap for p-value ----------
-    keys = jax.random.split(key, n_bootstrap)
+    # ---------- 4. Wild bootstrap (memory-friendly) ----------
+    def bootstrap_body(i, state):
+        key_i, count = state
+        key_i, subkey = jax.random.split(key_i)
 
-    def one_bootstrap(k_boot):
-        # Rademacher weights ξ_i ∈ {-1, +1}
-        xi = jax.random.choice(k_boot, jnp.array([-1.0, 1.0]), shape=(n,))
-        xi_outer = xi[:, None] * xi[None, :]           # (N, N)
-        H_star = H_no_diag * xi_outer                  # diag stays zero
-        T_star = jnp.sum(H_star) / (n * (n - 1))
-        return T_star
+        # Rademacher ±1
+        xi = 2.0 * jax.random.bernoulli(subkey, 0.5, shape=(n,)) - 1.0  # (N,)
 
-    boot_stats = jax.vmap(one_bootstrap)(keys)         # (n_bootstrap,)
-    p_value = (1.0 + jnp.sum(boot_stats >= ksd2_obs)) / (n_bootstrap + 1.0)
+        # T_star = xi^T H_no_diag xi / (n(n-1))
+        Hx = H_no_diag @ xi                         # (N,)
+        T_star = jnp.dot(xi, Hx) / denom
 
-    return ksd2_obs, p_value
+        count = count + (T_star >= ksd2_obs)
+        return (key_i, count)
+
+    init_state = (key, jnp.array(0.0, dtype=dtype))
+    _, ge_count = jax.lax.fori_loop(0, n_bootstrap, bootstrap_body, init_state)
+    p_value = (1.0 + ge_count) / (n_bootstrap + 1.0)
+
+    return ksd, p_value

@@ -4,17 +4,17 @@ sample_mask: false
 select_models: false
 seed: 42424242
 default_mask: [True, True, True, True, True]
-data:
-  slice:
-    x: null
-    y: null
-    z: 52
+slice:
+  x: null
+  y: null
+  z: 52
 
 
 defaults:
   - _self_
   - override /export: raw
-  - override /theta_sample: gt
+  - override /theta_sample: default
+  - override /data: synthetic
 
 export:
-  name: test_real
+  name: test2
