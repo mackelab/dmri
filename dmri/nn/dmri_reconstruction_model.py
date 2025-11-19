@@ -223,7 +223,6 @@ class DMRIInferenceModel(nnx.Module):
 
     def set_precision(
         self,
-        rngs: Optional[nnx.Rngs],
         *,
         dtype: DTypeLike | None = None,
         param_dtype: DTypeLike | None = None,
@@ -247,9 +246,6 @@ class DMRIInferenceModel(nnx.Module):
             Calling this method discards the current parameter values because
             all modules are rebuilt from scratch.
         """
-
-        if rngs is None:
-            raise ValueError("set_precision requires a valid nnx.Rngs instance.")
 
         updated_cfg = copy.deepcopy(self.cfg)
         precision_updates = {
@@ -285,7 +281,7 @@ class DMRIInferenceModel(nnx.Module):
 
         self.cfg = updated_cfg
         self._update_precision_defaults()
-        self._initialize_modules(rngs)
+        self._initialize_modules(nnx.Rngs(0))
 
     def _encode_observations(
         self,

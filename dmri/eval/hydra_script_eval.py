@@ -468,11 +468,13 @@ def _run_eval_pipeline(
     log.info(
         f"Models selected brain shape: {models_selected_brain.shape if models_selected_brain is not None else 'None'}"
     )
+    # Set default mask without model selection
     default_mask = _cfg_get(cfg, "default_mask", None)
     if use_true_model_mask and true_model_mask is not None:
         log.info("Using true model mask from synthetic data generation.")
         default_mask = true_model_mask
     elif default_mask is not None:
+        log.info("Using default model mask from config.")
         default_mask = jnp.array(default_mask, dtype=jnp.bool)
 
     # Sample theta
@@ -558,34 +560,36 @@ def _run_eval_pipeline(
     if models_selected_brain is None and model_masks_synth is not None:
         models_selected_brain = model_masks_synth
 
-    metrics_cfg_raw = getattr(cfg.export, "metrics", None)
-    metrics_cfg, added_ksd_metric = _ensure_default_ksd_metric(
-        metrics_cfg_raw, seed=cfg.seed
-    )
-    if metrics_cfg:
-        out_path = os.path.join(checkpoint_root, cfg.model_name, cfg.export.name)
-        metric_context = MetricContext(
-            cfg=cfg,
-            sim_type=sim_type,
-            acq=acq,
-            full_data_flat_in_brain=full_data_flat_in_brain,
-            model_parameters_brain=model_parameters_brain,
-            model_mask=models_selected_brain,
-            brain_mask_flat=brain_mask_flat,
-            data_norm=data_norm,
-            orig_data=export_template,
-            out_path=out_path,
+    if cfg.sample_theta is True:
+        # Evaluate sampling metrics
+        metrics_cfg_raw = getattr(cfg.export, "metrics", None)
+        metrics_cfg, added_ksd_metric = _ensure_default_ksd_metric(
+            metrics_cfg_raw, seed=cfg.seed
         )
-        with _device_scope(heavy_device):
-            run_configured_metrics(
-                metrics_cfg,
-                metric_context,
-                out_path,
-                devices=eval_devices,
-                logger=log,
+        if metrics_cfg:
+            out_path = os.path.join(checkpoint_root, cfg.model_name, cfg.export.name)
+            metric_context = MetricContext(
+                cfg=cfg,
+                sim_type=sim_type,
+                acq=acq,
+                full_data_flat_in_brain=full_data_flat_in_brain,
+                model_parameters_brain=model_parameters_brain,
+                model_mask=models_selected_brain,
+                brain_mask_flat=brain_mask_flat,
+                data_norm=data_norm,
+                orig_data=export_template,
+                out_path=out_path,
             )
-        if added_ksd_metric:
-            log.info("Added default KSD metric to export metrics configuration.")
+            with _device_scope(heavy_device):
+                run_configured_metrics(
+                    metrics_cfg,
+                    metric_context,
+                    out_path,
+                    devices=eval_devices,
+                    logger=log,
+                )
+            if added_ksd_metric:
+                log.info("Added default KSD metric to export metrics configuration.")
 
 
 def sample_mask(cfg, key, model, acq, data, logger, devices=None):

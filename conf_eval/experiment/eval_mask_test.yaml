@@ -1,0 +1,20 @@
+# @package _global_
+
+sample_mask: true
+select_models: false
+sample_theta: false
+seed: 42424242
+default_mask: [True, True, True, True, True]
+data:
+  slice:
+    x: null
+    y: null
+    z: 52
+
+
+defaults:
+  - _self_
+  - override /export: raw
+
+export:
+  name: test_real_mask
