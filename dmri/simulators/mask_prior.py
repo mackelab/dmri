@@ -18,6 +18,10 @@ class MaskPriorSample:
     hyperparameters: jax.Array
     model_mask: jax.Array
 
+jax.tree_util.register_dataclass(MaskPriorSample,
+    data_fields=("hyperparameters", "model_mask"), meta_fields=(),
+)
+
 
 class MaskPrior:
     """Base class for hierarchical priors over simulator model masks."""

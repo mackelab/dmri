@@ -510,6 +510,7 @@ def build_loss_fn(cfg: DictConfig, graphdef: Any):
         loss2 = []
 
         for batch, subkey in zip(batches, rngs):
+            print(cfg.train.permute_order)
             losses = model.loss_fn(
                 subkey,
                 **batch,
@@ -517,6 +518,7 @@ def build_loss_fn(cfg: DictConfig, graphdef: Any):
                 label_smoothing=cfg.train.label_smoothing,
                 use_loss_mask=cfg.train.use_loss_mask,
                 cut_off_tsm=cfg.train.cut_off_tsm,
+                permute_order=cfg.train.get("permute_order", False),
             )
             loss1.append(losses[0])
             loss2.append(losses[1])

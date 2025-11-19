@@ -13,6 +13,7 @@ label_smoothing: 0.01
 use_loss_mask: true
 restart_optimizer: false
 recovery_threshold: 5.0
+permute_order: false
 
 eval:
   nnl_theta:
