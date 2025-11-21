@@ -3,6 +3,7 @@ defaults:
   - metrics@metrics.reconstruction_mse: reconstruction_mse
   - metrics@metrics.posterior_nll: nll
   - metrics@metrics.ksd: ksd
+  - metrics@metrics.sbc: sbc
 
 name: "raw_inference_results"
 type: "raw"

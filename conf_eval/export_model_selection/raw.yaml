@@ -1,0 +1,7 @@
+defaults:
+  - _self_
+
+name: "raw_model_selection_results"
+type: "raw"
+export_samples: true
+samples_name: "raw_model_selection_mask_samples"

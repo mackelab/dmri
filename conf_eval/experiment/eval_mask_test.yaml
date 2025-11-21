@@ -1,7 +1,7 @@
 # @package _global_
 
 sample_mask: true
-select_models: false
+select_models: true
 sample_theta: false
 seed: 42424242
 default_mask: [True, True, True, True, True]
@@ -14,7 +14,8 @@ data:
 
 defaults:
   - _self_
-  - override /export: raw
+  - override /export_model_selection: raw
+  - override /model_selection: average
 
-export:
+export_model_selection:
   name: test_real_mask

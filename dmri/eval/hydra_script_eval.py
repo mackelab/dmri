@@ -27,7 +27,7 @@ from omegaconf import DictConfig, ListConfig, OmegaConf
 
 from dmri.eval.data_sources import generate_synthetic_data
 from dmri.eval.export_metrics import MetricContext, run_configured_metrics
-from dmri.eval.export_models import export_model_selection_to_files
+from dmri.eval.export_models import get_model_selection_exporter
 from dmri.eval.export_theta import (
     export_thetas_raw,
     export_thetas_to_files_ball3stick,
@@ -508,14 +508,23 @@ def _run_eval_pipeline(
     )
     log.info(f"Model parameters nans: {model_parameter_nans}")
 
-    # Export model selection
-    if models_selected_brain is not None:
-        out_path = os.path.join(
-            checkpoint_root, cfg.model_name, cfg.export_model_selection.name
-        )
-        export_model_selection_to_files(
+    # Export model selection and (optionally) mask samples
+    export_cfg = getattr(cfg, "export_model_selection", None)
+    if export_cfg is None:
+        raise ValueError("Missing export_model_selection configuration.")
+    export_name = _cfg_get(cfg, "export_model_selection.name", "model_selection_results")
+    export_type = _cfg_get(cfg, "export_model_selection.type", "ball3stick")
+    exporter = get_model_selection_exporter(export_type)
+
+    def _export_masks(masks, target_name, label):
+        if masks is None:
+            return False
+        out_path = os.path.join(checkpoint_root, cfg.model_name, target_name)
+        log.info("Exporting model selection %s to %s", label, out_path)
+        exporter(
             cfg,
-            models_selected_brain,
+            export_cfg,
+            masks,
             out_path,
             export_template,
             brain_mask_flat,
@@ -524,6 +533,28 @@ def _run_eval_pipeline(
             acq,
             full_data_flat_in_brain,
         )
+        return True
+
+    exported_selection = _export_masks(
+        models_selected_brain, export_name, label="results"
+    )
+
+    export_samples_enabled = bool(
+        _cfg_get(cfg, "export_model_selection.export_samples", True)
+    )
+    samples_name_cfg = _cfg_get(cfg, "export_model_selection.samples_name", None)
+    samples_name = (
+        samples_name_cfg
+        if samples_name_cfg not in (None, "")
+        else f"{export_name}_mask_samples"
+    )
+    if models_sampled_brain is not None:
+        if export_samples_enabled:
+            _export_masks(
+                models_sampled_brain, samples_name, label="mask samples"
+            )
+        elif not exported_selection:
+            _export_masks(models_sampled_brain, export_name, label="mask samples")
 
     # Export samples
     if model_parameters_brain is not None:
@@ -538,6 +569,8 @@ def _run_eval_pipeline(
             export_thetas_raw(
                 cfg,
                 model_parameters_brain,
+                true_model_mask,
+                thetas_synth,
                 brain_mask_flat,
                 data_norm.shape[:-1],
                 out_path,
@@ -579,6 +612,8 @@ def _run_eval_pipeline(
                 data_norm=data_norm,
                 orig_data=export_template,
                 out_path=out_path,
+                true_model_parameters=thetas_synth,
+                true_model_mask=true_model_mask,
             )
             with _device_scope(heavy_device):
                 run_configured_metrics(
