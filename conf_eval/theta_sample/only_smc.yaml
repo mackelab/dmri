@@ -1,4 +1,4 @@
-num_samples: 256
+num_samples: 50
 eval_batch_size: 3841
 
 params:

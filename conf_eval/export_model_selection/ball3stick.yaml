@@ -1,4 +1,10 @@
+defaults:
+  - _self_
+
 name: "ball3stick_model_selection_results"
+type: "ball3stick"
+export_samples: true
+samples_name: "ball3stick_model_selection_mask_samples"
 feasible_models:
   - [True, True, False, False, True]
   - [True, True, True, False, True]

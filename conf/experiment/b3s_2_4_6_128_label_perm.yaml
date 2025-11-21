@@ -13,6 +13,7 @@ hydra:
       model.model_selection_net.params.num_layers: 4
       train.ema_decay: 0.9999
       train.permute_order: True
+      train.label_smoothing: 0.0
 
 defaults:
   - _self_

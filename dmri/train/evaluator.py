@@ -179,7 +179,7 @@ class Evaluator(NamedTuple):
         *,
         iters=1,
         num_samples=16,
-        bandwidths=(0.05, 0.1, 0.5),
+        bandwidths=(0.1, 1., 10.0),
         n_bootstrap=128,
         ksd_seed=None,
     ):

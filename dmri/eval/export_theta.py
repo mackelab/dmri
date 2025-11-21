@@ -18,12 +18,14 @@ def embed_in_full_brain_array(to_embed, brain_mask_flat, brain_shape):
     return full_brain
 
 
-def export_thetas_raw(cfg, thetas, brain_mask_flat, brain_shape, out_path, orig_data):
+def export_thetas_raw(cfg, thetas, true_model_mask, true_thetas, brain_mask_flat, brain_shape, out_path, orig_data):
     """Export raw theta samples without model-specific post-processing."""
     if not os.path.exists(out_path):
         os.makedirs(out_path)
 
     np.savez_compressed(os.path.join(out_path, "theta_samples.npz"), thetas=thetas)
+    np.savez_compressed(os.path.join(out_path, "true_theta.npz"), thetas=true_thetas)
+    np.savez_compressed(os.path.join(out_path, "true_model_mask.npz"), model_mask=true_model_mask)
 
     full_thetas = embed_in_full_brain_array(
         thetas, brain_mask_flat, brain_shape

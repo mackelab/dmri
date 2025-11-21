@@ -89,12 +89,15 @@ class MetricContext:
     data_norm: np.ndarray
     orig_data: Any
     out_path: str | None = None
+    true_model_parameters: np.ndarray | None = None
+    true_model_mask: np.ndarray | None = None
 
 
 DEFAULT_OUTPUT_FILENAMES: Mapping[str, str] = {
     "reconstruction_mse": "error_reconstruction.nii.gz",
     "posterior_nll": "metric_posterior_nll.nii.gz",
     "ksd": "metric_ksd.nii.gz",
+    "sbc_marginal_coverage": "metric_sbc_marginal_coverage.nii.gz",
 }
 
 
@@ -391,6 +394,90 @@ def _compute_ksd_metric(
     return ksd_values
 
 
+def _compute_sbc_marginal_coverage(
+    spec: MetricSpec,
+    context: MetricContext,
+    devices: Sequence[jax.Device] | str | None,
+) -> np.ndarray | None:
+    """Compute marginal rank coverage for SBC on synthetic data."""
+
+    del devices  # Unused; present for signature compatibility.
+
+    if context.true_model_parameters is None:
+        # SBC is only applicable when we have ground truth parameters (synthetic data).
+        return None
+    if context.model_parameters_brain is None:
+        raise ValueError(
+            f"Metric '{spec.key}' requires theta samples but none are available."
+        )
+
+    posterior_samples = np.asarray(context.model_parameters_brain)
+    true_thetas = np.asarray(context.true_model_parameters)
+    if posterior_samples.shape[0] != true_thetas.shape[0]:
+        raise ValueError(
+            "Mismatch between posterior samples and ground truth theta shapes: "
+            f"{posterior_samples.shape} vs {true_thetas.shape}."
+        )
+
+    sample_axis = 1 if spec.sample_axis is None else spec.sample_axis
+    if sample_axis < 0:
+        sample_axis += posterior_samples.ndim
+    if sample_axis < 0 or sample_axis >= posterior_samples.ndim:
+        raise ValueError(
+            f"Metric '{spec.key}' sample_axis={spec.sample_axis} is out of bounds for "
+            f"posterior sample array with shape {posterior_samples.shape}."
+        )
+    posterior_samples = np.moveaxis(posterior_samples, sample_axis, 1)
+
+    num_voxels = posterior_samples.shape[0]
+    num_samples = posterior_samples.shape[1]
+    if num_samples == 0:
+        return np.full(
+            true_thetas.shape, np.nan, dtype=np.float32
+        )
+
+    posterior_samples = posterior_samples.reshape(num_voxels, num_samples, -1)
+    true_thetas = true_thetas.reshape(num_voxels, -1)
+    if posterior_samples.shape[2] != true_thetas.shape[1]:
+        raise ValueError(
+            "Posterior samples and ground truth thetas have incompatible shapes after "
+            f"flattening: {posterior_samples.shape} vs {true_thetas.shape}."
+        )
+
+    mask_source = (
+        context.true_model_mask
+        if context.true_model_mask is not None
+        else context.model_mask
+    )
+    model_mask = _broadcast_model_mask(mask_source, num_voxels)
+
+    coverage = np.full_like(true_thetas, np.nan, dtype=np.float32)
+    for voxel_idx in range(num_voxels):
+        theta_mask = None
+        if model_mask is not None:
+            theta_mask = np.asarray(
+                context.sim_type.theta_mask(model_mask[voxel_idx])
+            )
+        coverage[voxel_idx] = _marginal_rank_fraction(
+            posterior_samples[voxel_idx],
+            true_thetas[voxel_idx],
+            theta_mask,
+        )
+    pvalues, sample_counts = _compute_uniformity_pvalues(coverage)
+    if context.out_path:
+        pvalue_filename = spec.options.get(
+            "pvalue_output_filename", "sbc_uniformity_pvalues.json"
+        )
+        _write_uniformity_pvalues(
+            pvalues,
+            sample_counts,
+            spec,
+            context,
+            pvalue_filename,
+        )
+    return coverage
+
+
 _METRIC_REGISTRY: Mapping[
     str,
     Callable[[MetricSpec, MetricContext, Sequence[jax.Device] | str | None], np.ndarray | None],
@@ -399,6 +486,7 @@ _METRIC_REGISTRY: Mapping[
     "reconstruction_mse": _compute_reconstruction_mse,
     "sliced_wasserstein": lambda spec, context, devices: _compute_swd_metric(spec, context),
     "ksd": _compute_ksd_metric,
+    "sbc_marginal_coverage": _compute_sbc_marginal_coverage,
 }
 
 
@@ -467,6 +555,135 @@ def _reduce_samples(values: np.ndarray, spec: MetricSpec) -> np.ndarray:
     raise ValueError(
         f"Metric '{spec.key}' uses unsupported sample_reduction '{spec.sample_reduction}'."
     )
+
+
+def _broadcast_model_mask(
+    model_mask: np.ndarray | None, num_voxels: int
+) -> np.ndarray | None:
+    """Broadcast the model mask to (num_voxels, ...) if present."""
+    if model_mask is None:
+        return None
+    mask_arr = np.asarray(model_mask)
+    if mask_arr.ndim == 1:
+        return np.broadcast_to(mask_arr, (num_voxels, mask_arr.shape[-1])).astype(
+            np.bool_
+        )
+    if mask_arr.shape[0] != num_voxels:
+        mask_arr = np.broadcast_to(mask_arr, (num_voxels,) + mask_arr.shape[1:])
+    return mask_arr.astype(np.bool_)
+
+
+def _marginal_rank_fraction(
+    posterior_samples: np.ndarray,
+    true_theta: np.ndarray,
+    theta_mask: np.ndarray | None,
+) -> np.ndarray:
+    """Return per-dimension rank fraction of the true theta within posterior samples."""
+
+    flat_samples = np.asarray(posterior_samples, dtype=np.float64).reshape(
+        posterior_samples.shape[0], -1
+    )
+    flat_theta = np.asarray(true_theta, dtype=np.float64).reshape(-1)
+    if flat_samples.shape[1] != flat_theta.shape[0]:
+        raise ValueError(
+            f"Incompatible shapes for SBC coverage: posterior {flat_samples.shape} "
+            f"vs theta {flat_theta.shape}."
+        )
+
+    if theta_mask is not None:
+        mask = np.asarray(theta_mask, dtype=bool).reshape(-1)
+        if mask.size not in (1, flat_theta.size):
+            raise ValueError(
+                f"SBC theta mask with size {mask.size} is incompatible with theta "
+                f"size {flat_theta.size}."
+            )
+        mask = np.broadcast_to(mask, flat_theta.shape)
+        flat_theta = np.where(mask, flat_theta, np.nan)
+        flat_samples = np.where(mask, flat_samples, np.nan)
+
+    finite_samples = np.isfinite(flat_samples)
+    sample_counts = np.sum(finite_samples, axis=0)
+    ranks = np.sum((flat_samples < flat_theta) & finite_samples, axis=0)
+
+    coverage = np.full(flat_theta.shape, np.nan, dtype=np.float64)
+    np.divide(
+        ranks,
+        sample_counts,
+        out=coverage,
+        where=sample_counts > 0,
+    )
+    return coverage.astype(np.float32)
+
+
+def _compute_uniformity_pvalues(
+    coverage: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Per-dimension KS p-values for uniformity of coverage ranks."""
+
+    flat = np.asarray(coverage)
+    if flat.ndim == 1:
+        flat = flat[:, None]
+    flat = flat.reshape(-1, flat.shape[-1])
+
+    pvalues = np.full(flat.shape[1], np.nan, dtype=np.float32)
+    counts = np.zeros(flat.shape[1], dtype=np.int64)
+    for dim in range(flat.shape[1]):
+        values = flat[:, dim]
+        values = values[np.isfinite(values)]
+        counts[dim] = values.size
+        if values.size == 0:
+            continue
+        pvalues[dim] = _ks_uniform_pvalue(values)
+    return pvalues, counts
+
+
+def _ks_uniform_pvalue(values: np.ndarray) -> float:
+    """Kolmogorov–Smirnov p-value for uniform[0,1] without SciPy."""
+
+    sorted_vals = np.sort(np.asarray(values, dtype=np.float64))
+    n = sorted_vals.size
+    if n == 0:
+        return np.nan
+
+    cdf = np.arange(1, n + 1, dtype=np.float64) / n
+    d_plus = np.max(cdf - sorted_vals)
+    d_minus = np.max(sorted_vals - (np.arange(n, dtype=np.float64) / n))
+    d_stat = max(d_plus, d_minus)
+
+    en = np.sqrt(n)
+    lam = (en + 0.12 + 0.11 / en) * d_stat
+
+    # Asymptotic Kolmogorov distribution (Smirnov series)
+    p_value = 0.0
+    for k in range(1, 101):
+        term = (-1) ** (k - 1) * np.exp(-2 * (k**2) * (lam**2))
+        p_value += term
+        if abs(term) < 1e-10:
+            break
+    p_value = max(0.0, min(1.0, 2.0 * p_value))
+    return float(p_value)
+
+
+def _write_uniformity_pvalues(
+    pvalues: np.ndarray,
+    sample_counts: np.ndarray,
+    spec: MetricSpec,
+    context: MetricContext,
+    filename: str,
+) -> str:
+    """Persist per-dimension KS p-values for SBC coverage."""
+
+    output_path = Path(context.out_path) / filename
+    payload = {
+        "metric": spec.key,
+        "type": spec.type,
+        "pvalues": {f"dim_{i}": float(val) for i, val in enumerate(pvalues)},
+        "num_samples": {f"dim_{i}": int(n) for i, n in enumerate(sample_counts)},
+    }
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as fp:
+        json.dump(payload, fp, indent=2, sort_keys=True)
+    return str(output_path)
 
 
 def _export_metric_map(
