@@ -1,0 +1,15 @@
+# File-based evaluation data
+source: file
+path: null
+data_root: ${hydra:runtime.cwd}/data
+data_folder: null
+brain_mask: "nodif_brain_mask.nii.gz"
+mri_data: "data.nii.gz"
+bvals_data: "bvals"
+bvecs_data: "bvecs"
+round_bvals: true
+clip_outliers: true
+slice:
+  x: null
+  y: null
+  z: null
