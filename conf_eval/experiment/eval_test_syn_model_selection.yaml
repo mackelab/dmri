@@ -1,0 +1,20 @@
+# @package _global_
+
+sample_mask: false
+select_models: false
+seed: 42424242
+default_mask: [True, True, True, True, True]
+slice:
+  x: null
+  y: null
+  z: 52
+
+
+defaults:
+  - _self_
+  - override /export: model_selection_metrics
+  - override /theta_sample: gt
+  - override /data: synthetic
+
+export:
+  name: test_model_selection_metrics
