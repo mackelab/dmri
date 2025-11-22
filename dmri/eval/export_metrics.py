@@ -98,6 +98,8 @@ DEFAULT_OUTPUT_FILENAMES: Mapping[str, str] = {
     "posterior_nll": "metric_posterior_nll.nii.gz",
     "ksd": "metric_ksd.nii.gz",
     "sbc_marginal_coverage": "metric_sbc_marginal_coverage.nii.gz",
+    "model_selection_calibration": "metric_model_selection_calibration_error.nii.gz",
+    "model_selection_classification": "metric_model_selection_f1.nii.gz",
 }
 
 
@@ -478,6 +480,171 @@ def _compute_sbc_marginal_coverage(
     return coverage
 
 
+def _compute_model_selection_calibration(
+    spec: MetricSpec,
+    context: MetricContext,
+    devices: Sequence[jax.Device] | str | None,
+) -> np.ndarray:
+    """Calibration error per voxel/component for model-selection probabilities."""
+
+    del devices  # Unused
+
+    probabilities, true_mask = _prepare_model_selection_inputs(spec, context)
+    num_bins = int(spec.options.get("num_bins", 10))
+    if num_bins <= 0:
+        raise ValueError(
+            f"Metric '{spec.key}' expects num_bins > 0, got {num_bins}."
+        )
+    bin_edges = np.linspace(0.0, 1.0, num_bins + 1, dtype=np.float64)
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2.0
+
+    flat_probs = probabilities.reshape(-1).astype(np.float64)
+    flat_labels = true_mask.reshape(-1).astype(np.float64)
+    valid = np.isfinite(flat_probs) & np.isfinite(flat_labels)
+    if not np.any(valid):
+        return np.full_like(probabilities, np.nan, dtype=np.float32)
+    flat_probs = np.clip(flat_probs[valid], 0.0, 1.0)
+    flat_labels = flat_labels[valid]
+
+    bin_indices = np.digitize(flat_probs, bin_edges[1:-1], right=False)
+    counts = np.bincount(bin_indices, minlength=num_bins).astype(np.int64)
+    acc = np.zeros(num_bins, dtype=np.float64)
+    conf = np.zeros(num_bins, dtype=np.float64)
+    for b in range(num_bins):
+        mask = bin_indices == b
+        if counts[b] == 0:
+            continue
+        acc[b] = float(np.mean(flat_labels[mask]))
+        conf[b] = float(np.mean(flat_probs[mask]))
+    bin_error = np.abs(acc - conf)
+    total = flat_probs.size
+    weights = counts / total
+    ece = float(np.sum(weights * bin_error)) if total > 0 else np.nan
+    non_empty = counts > 0
+    mce = float(np.max(bin_error[non_empty])) if np.any(non_empty) else np.nan
+
+    per_sample_error = np.full(probabilities.size, np.nan, dtype=np.float32)
+    per_sample_error[valid] = bin_error[bin_indices].astype(np.float32)
+    per_voxel_error = per_sample_error.reshape(probabilities.shape)
+
+    reliability_filename = spec.options.get(
+        "reliability_output_filename", "model_selection_reliability.json"
+    )
+    if context.out_path:
+        _write_reliability_diagram(
+            context.out_path,
+            reliability_filename,
+            spec.key,
+            bin_edges,
+            bin_centers,
+            acc,
+            conf,
+            counts,
+            ece,
+            mce,
+        )
+    return per_voxel_error
+
+
+def _compute_model_selection_classification(
+    spec: MetricSpec,
+    context: MetricContext,
+    devices: Sequence[jax.Device] | str | None,
+) -> np.ndarray:
+    """Per-voxel F1 for model-selection predictions along with summary metrics."""
+
+    del devices  # Unused
+
+    probabilities, true_mask = _prepare_model_selection_inputs(spec, context)
+    probabilities = np.clip(probabilities, 0.0, 1.0)
+    threshold = float(spec.options.get("threshold", 0.5))
+    predicted_mask = probabilities >= threshold
+    labels = true_mask.astype(bool)
+
+    tp = np.sum(predicted_mask & labels, axis=-1).astype(np.float64)
+    fp = np.sum(predicted_mask & ~labels, axis=-1).astype(np.float64)
+    fn = np.sum(~predicted_mask & labels, axis=-1).astype(np.float64)
+    tn = np.sum(~predicted_mask & ~labels, axis=-1).astype(np.float64)
+    num_components = labels.shape[-1]
+
+    denom_f1 = 2.0 * tp + fp + fn
+    f1_per_voxel = np.divide(
+        2.0 * tp,
+        denom_f1,
+        out=np.zeros_like(tp, dtype=np.float64),
+        where=denom_f1 > 0,
+    )
+
+    sample_accuracy = np.mean(predicted_mask == labels, axis=-1).astype(np.float64)
+    hamming_loss = np.mean(predicted_mask != labels, axis=-1).astype(np.float64)
+    exact_match = np.all(predicted_mask == labels, axis=-1).astype(np.float64)
+
+    tp_c = np.sum(predicted_mask & labels, axis=0).astype(np.float64)
+    fp_c = np.sum(predicted_mask & ~labels, axis=0).astype(np.float64)
+    fn_c = np.sum(~predicted_mask & labels, axis=0).astype(np.float64)
+    denom_precision = tp_c + fp_c
+    denom_recall = tp_c + fn_c
+    denom_f1_class = 2.0 * tp_c + fp_c + fn_c
+    per_class_precision = np.divide(
+        tp_c,
+        denom_precision,
+        out=np.full_like(tp_c, np.nan, dtype=np.float64),
+        where=denom_precision > 0,
+    )
+    per_class_recall = np.divide(
+        tp_c,
+        denom_recall,
+        out=np.full_like(tp_c, np.nan, dtype=np.float64),
+        where=denom_recall > 0,
+    )
+    per_class_f1 = np.divide(
+        2.0 * tp_c,
+        denom_f1_class,
+        out=np.full_like(tp_c, np.nan, dtype=np.float64),
+        where=denom_f1_class > 0,
+    )
+
+    micro_precision = _safe_divide(tp.sum(), tp.sum() + fp.sum())
+    micro_recall = _safe_divide(tp.sum(), tp.sum() + fn.sum())
+    micro_f1 = _safe_divide(2.0 * tp.sum(), 2.0 * tp.sum() + fp.sum() + fn.sum())
+    micro_accuracy = _safe_divide(
+        tp.sum() + tn.sum(),
+        tp.sum() + tn.sum() + fp.sum() + fn.sum(),
+    )
+
+    macro_precision = np.nanmean(per_class_precision) if per_class_precision.size else np.nan
+    macro_recall = np.nanmean(per_class_recall) if per_class_recall.size else np.nan
+    macro_f1 = np.nanmean(per_class_f1) if per_class_f1.size else np.nan
+
+    summary_filename = spec.options.get(
+        "classification_output_filename",
+        "model_selection_classification.json",
+    )
+    if context.out_path:
+        _write_classification_summary(
+            context.out_path,
+            summary_filename,
+            spec.key,
+            threshold,
+            micro_precision,
+            micro_recall,
+            micro_f1,
+            micro_accuracy,
+            macro_precision,
+            macro_recall,
+            macro_f1,
+            float(np.nanmean(sample_accuracy)) if sample_accuracy.size else np.nan,
+            float(np.nanmean(hamming_loss)) if hamming_loss.size else np.nan,
+            float(np.nanmean(exact_match)) if exact_match.size else np.nan,
+            per_class_precision,
+            per_class_recall,
+            per_class_f1,
+            num_components,
+        )
+
+    return f1_per_voxel.astype(np.float32)
+
+
 _METRIC_REGISTRY: Mapping[
     str,
     Callable[[MetricSpec, MetricContext, Sequence[jax.Device] | str | None], np.ndarray | None],
@@ -487,6 +654,8 @@ _METRIC_REGISTRY: Mapping[
     "sliced_wasserstein": lambda spec, context, devices: _compute_swd_metric(spec, context),
     "ksd": _compute_ksd_metric,
     "sbc_marginal_coverage": _compute_sbc_marginal_coverage,
+    "model_selection_calibration": _compute_model_selection_calibration,
+    "model_selection_classification": _compute_model_selection_classification,
 }
 
 
@@ -637,6 +806,59 @@ def _compute_uniformity_pvalues(
     return pvalues, counts
 
 
+def _prepare_model_selection_inputs(
+    spec: MetricSpec, context: MetricContext
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return (probabilities, true_mask) aligned to (num_voxels, num_components)."""
+
+    if context.true_model_mask is None:
+        raise ValueError(
+            f"Metric '{spec.key}' requires true_model_mask; only available for synthetic data."
+        )
+    if context.model_mask is None:
+        raise ValueError(
+            f"Metric '{spec.key}' requires model selection predictions but model_mask is None."
+        )
+
+    true_mask = np.asarray(context.true_model_mask, dtype=np.bool_)
+    num_voxels = true_mask.shape[0]
+    if true_mask.ndim == 1:
+        true_mask = np.broadcast_to(true_mask, (num_voxels, true_mask.shape[0]))
+
+    pred_mask = np.asarray(context.model_mask)
+    if pred_mask.ndim == 1:
+        pred_mask = np.broadcast_to(pred_mask, (num_voxels, pred_mask.shape[0]))
+    elif pred_mask.shape[0] != num_voxels:
+        pred_mask = np.broadcast_to(pred_mask, (num_voxels,) + pred_mask.shape[1:])
+
+    sample_axis = spec.sample_axis if spec.sample_axis is not None else 1
+    if pred_mask.ndim >= 3:
+        axis = sample_axis
+        if axis < 0:
+            axis += pred_mask.ndim
+        if axis < 0 or axis >= pred_mask.ndim:
+            raise ValueError(
+                f"Metric '{spec.key}' sample_axis={spec.sample_axis} is out of bounds for "
+                f"model_mask with shape {pred_mask.shape}."
+            )
+        pred_mask = np.moveaxis(pred_mask, axis, 1)
+        probabilities = np.mean(pred_mask, axis=1)
+    else:
+        probabilities = pred_mask.astype(np.float32)
+
+    if probabilities.shape[0] != num_voxels:
+        raise ValueError(
+            f"Metric '{spec.key}' predictions have shape {probabilities.shape}, "
+            f"expected first dimension {num_voxels}."
+        )
+    if probabilities.shape[-1] != true_mask.shape[-1]:
+        raise ValueError(
+            f"Metric '{spec.key}' predictions last dimension {probabilities.shape[-1]} "
+            f"does not match true_model_mask {true_mask.shape[-1]}."
+        )
+    return probabilities.astype(np.float32), true_mask
+
+
 def _ks_uniform_pvalue(values: np.ndarray) -> float:
     """Kolmogorov–Smirnov p-value for uniform[0,1] without SciPy."""
 
@@ -684,6 +906,109 @@ def _write_uniformity_pvalues(
     with output_path.open("w", encoding="utf-8") as fp:
         json.dump(payload, fp, indent=2, sort_keys=True)
     return str(output_path)
+
+
+def _write_reliability_diagram(
+    out_path: str,
+    filename: str,
+    metric_key: str,
+    bin_edges: np.ndarray,
+    bin_centers: np.ndarray,
+    accuracy: np.ndarray,
+    confidence: np.ndarray,
+    counts: np.ndarray,
+    ece: float,
+    mce: float,
+) -> str:
+    """Persist reliability diagram statistics."""
+
+    output_path = Path(out_path) / filename
+    payload = {
+        "metric": metric_key,
+        "bins": {
+            "edges": [float(x) for x in bin_edges],
+            "centers": [float(x) for x in bin_centers],
+            "count": [int(c) for c in counts],
+            "accuracy": [_finite_or_none(x) for x in accuracy],
+            "confidence": [_finite_or_none(x) for x in confidence],
+        },
+        "ece": _finite_or_none(ece),
+        "mce": _finite_or_none(mce),
+    }
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as fp:
+        json.dump(payload, fp, indent=2, sort_keys=True)
+    return str(output_path)
+
+
+def _write_classification_summary(
+    out_path: str,
+    filename: str,
+    metric_key: str,
+    threshold: float,
+    micro_precision: float,
+    micro_recall: float,
+    micro_f1: float,
+    micro_accuracy: float,
+    macro_precision: float,
+    macro_recall: float,
+    macro_f1: float,
+    mean_sample_accuracy: float,
+    mean_hamming_loss: float,
+    exact_match_rate: float,
+    per_class_precision: np.ndarray,
+    per_class_recall: np.ndarray,
+    per_class_f1: np.ndarray,
+    num_components: int,
+) -> str:
+    """Persist multi-label classification summary statistics."""
+
+    output_path = Path(out_path) / filename
+    payload: dict[str, Any] = {
+        "metric": metric_key,
+        "threshold": threshold,
+        "micro": {
+            "precision": _finite_or_none(micro_precision),
+            "recall": _finite_or_none(micro_recall),
+            "f1": _finite_or_none(micro_f1),
+            "accuracy": _finite_or_none(micro_accuracy),
+        },
+        "macro": {
+            "precision": _finite_or_none(macro_precision),
+            "recall": _finite_or_none(macro_recall),
+            "f1": _finite_or_none(macro_f1),
+        },
+        "sample": {
+            "mean_accuracy": _finite_or_none(mean_sample_accuracy),
+            "mean_hamming_loss": _finite_or_none(mean_hamming_loss),
+            "exact_match_rate": _finite_or_none(exact_match_rate),
+        },
+    }
+    per_class: dict[str, dict[str, float | None]] = {}
+    for i in range(num_components):
+        per_class[f"class_{i}"] = {
+            "precision": _finite_or_none(per_class_precision[i]),
+            "recall": _finite_or_none(per_class_recall[i]),
+            "f1": _finite_or_none(per_class_f1[i]),
+        }
+    payload["per_class"] = per_class
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as fp:
+        json.dump(payload, fp, indent=2, sort_keys=True)
+    return str(output_path)
+
+
+def _safe_divide(num: float, denom: float) -> float:
+    if denom == 0:
+        return np.nan
+    return float(num) / float(denom)
+
+
+def _finite_or_none(value: float) -> float | None:
+    value = float(value)
+    if not np.isfinite(value):
+        return None
+    return value
 
 
 def _export_metric_map(
@@ -793,6 +1118,21 @@ def _normalize_metric_specs(
         metric_type = data.get("type")
         if metric_type is None:
             raise ValueError(f"Metric '{metric_key}' is missing a 'type'.")
+        if metric_type in {"model_selection_calibration", "model_selection_classification"}:
+            data = dict(data)
+            data.setdefault("requires_theta_samples", False)
+            data.setdefault("sample_reduction", "none")
+            if not data.get("aggregations"):
+                if metric_type == "model_selection_calibration":
+                    data["aggregations"] = [
+                        {"type": "mean", "name": "ece"},
+                        {"type": "max", "name": "mce"},
+                    ]
+                else:
+                    data["aggregations"] = [
+                        {"type": "mean", "name": "mean_f1"},
+                        {"type": "median", "name": "median_f1"},
+                    ]
         output_filename = data.get(
             "output_filename", DEFAULT_OUTPUT_FILENAMES.get(metric_type)
         )
