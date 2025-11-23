@@ -1,7 +1,7 @@
 import logging
 import os
 import socket
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from contextlib import nullcontext
 from types import SimpleNamespace
 
@@ -274,6 +274,151 @@ def _ensure_default_ksd_metric(metrics_cfg, seed):
             added = True
 
     return metrics_py, added
+
+
+def _iter_metric_specs(metrics_cfg):
+    """Yield (key, spec_dict) pairs from a metrics configuration."""
+    if metrics_cfg is None:
+        return []
+    if isinstance(metrics_cfg, Mapping):
+        iterable = metrics_cfg.items()
+    elif isinstance(metrics_cfg, Sequence) and not isinstance(metrics_cfg, (str, bytes)):
+        iterable = enumerate(metrics_cfg)
+    else:
+        raise TypeError(
+            f"metrics_cfg must be a mapping or sequence, got {type(metrics_cfg)}."
+        )
+
+    specs = []
+    for key, raw_spec in iterable:
+        spec = raw_spec
+        if isinstance(raw_spec, (DictConfig, ListConfig)):
+            spec = OmegaConf.to_container(raw_spec, resolve=True)
+        if spec is None:
+            spec = {}
+        if not isinstance(spec, Mapping):
+            raise TypeError(
+                f"Metric specification for '{key}' must be a mapping, got {type(spec)}."
+            )
+        specs.append((key, spec))
+    return specs
+
+
+def _metric_requires_theta(spec, key):
+    """Return True if the metric spec requires theta samples."""
+    requires_theta = spec.get("requires_theta_samples")
+    if requires_theta is not None:
+        return bool(requires_theta)
+    metric_type = spec.get("type")
+    if metric_type in ("model_selection_calibration", "model_selection_classification"):
+        return False
+    if metric_type is None:
+        raise ValueError(f"Metric '{key}' is missing a 'type'.")
+    return True
+
+
+def _filter_metrics_without_theta(metrics_cfg):
+    """Drop metrics that require theta samples and report which were removed."""
+    filtered_specs = []
+    skipped = []
+    for key, spec in _iter_metric_specs(metrics_cfg):
+        metric_key = str(spec.get("key", key))
+        if _metric_requires_theta(spec, metric_key):
+            skipped.append(metric_key)
+            continue
+        if "key" not in spec:
+            spec = dict(spec)
+            spec["key"] = metric_key
+        filtered_specs.append(spec)
+    return filtered_specs, skipped
+
+
+def _metrics_are_model_selection_only(metrics_cfg) -> bool:
+    """Return True if all configured metrics are model-selection metrics."""
+    if not metrics_cfg:
+        return False
+    model_sel_types = {"model_selection_calibration", "model_selection_classification"}
+    has_any = False
+    for _, spec in _iter_metric_specs(metrics_cfg):
+        has_any = True
+        metric_type = spec.get("type")
+        if metric_type not in model_sel_types:
+            return False
+    return has_any
+
+
+def _maybe_run_metrics(
+    metrics_cfg_raw,
+    cfg,
+    log,
+    checkpoint_root,
+    export_name,
+    sim_type,
+    acq,
+    full_data_flat_in_brain,
+    model_parameters_brain,
+    model_mask,
+    brain_mask_flat,
+    data_norm,
+    export_template,
+    thetas_synth,
+    true_model_mask,
+    heavy_device,
+    eval_devices,
+    *,
+    add_default_ksd,
+):
+    """Normalize and run metrics configuration."""
+
+    metrics_cfg = metrics_cfg_raw
+    added_ksd_metric = False
+    add_default_ksd = (
+        add_default_ksd
+        and model_parameters_brain is not None
+        and not _metrics_are_model_selection_only(metrics_cfg_raw)
+    )
+    if add_default_ksd:
+        metrics_cfg, added_ksd_metric = _ensure_default_ksd_metric(
+            metrics_cfg_raw, seed=cfg.seed
+        )
+
+    metrics_cfg_to_run = metrics_cfg
+    if model_parameters_brain is None and metrics_cfg:
+        metrics_cfg_to_run, skipped_metrics = _filter_metrics_without_theta(
+            metrics_cfg
+        )
+        if skipped_metrics:
+            log.warning(
+                "Skipping metrics requiring theta samples (%s) because none are available.",
+                ", ".join(skipped_metrics),
+            )
+
+    if metrics_cfg_to_run:
+        out_path = os.path.join(checkpoint_root, cfg.model_name, export_name)
+        metric_context = MetricContext(
+            cfg=cfg,
+            sim_type=sim_type,
+            acq=acq,
+            full_data_flat_in_brain=full_data_flat_in_brain,
+            model_parameters_brain=model_parameters_brain,
+            model_mask=model_mask,
+            brain_mask_flat=brain_mask_flat,
+            data_norm=data_norm,
+            orig_data=export_template,
+            out_path=out_path,
+            true_model_parameters=thetas_synth,
+            true_model_mask=true_model_mask,
+        )
+        with _device_scope(heavy_device):
+            run_configured_metrics(
+                metrics_cfg_to_run,
+                metric_context,
+                out_path,
+                devices=eval_devices,
+                logger=log,
+            )
+        if added_ksd_metric:
+            log.info("Added default KSD metric to export metrics configuration.")
 
 
 def _resolve_data_path(data_cfg):
@@ -576,6 +721,30 @@ def _run_eval_pipeline(
         elif not exported_selection:
             _export_masks(models_sampled_brain, export_name, label="mask samples")
 
+    # Evaluate metrics for sampled masks if configured
+    mask_metrics_cfg_raw = _cfg_get(cfg, "export_model_selection.metrics", None)
+    if cfg.sample_mask and mask_metrics_cfg_raw:
+        _maybe_run_metrics(
+            mask_metrics_cfg_raw,
+            cfg,
+            log,
+            checkpoint_root,
+            export_name,
+            sim_type,
+            acq,
+            full_data_flat_in_brain,
+            model_parameters_brain,
+            models_sampled_brain,
+            brain_mask_flat,
+            data_norm,
+            export_template,
+            thetas_synth,
+            true_model_mask,
+            heavy_device,
+            eval_devices,
+            add_default_ksd=False,
+        )
+
     # Export samples
     if model_parameters_brain is not None:
         out_path = os.path.join(checkpoint_root, cfg.model_name, cfg.export.name)
@@ -613,38 +782,28 @@ def _run_eval_pipeline(
     if models_selected_brain is None and model_masks_synth is not None:
         models_selected_brain = model_masks_synth
 
-    if cfg.sample_theta is True:
-        # Evaluate sampling metrics
-        metrics_cfg_raw = getattr(cfg.export, "metrics", None)
-        metrics_cfg, added_ksd_metric = _ensure_default_ksd_metric(
-            metrics_cfg_raw, seed=cfg.seed
-        )
-        if metrics_cfg:
-            out_path = os.path.join(checkpoint_root, cfg.model_name, cfg.export.name)
-            metric_context = MetricContext(
-                cfg=cfg,
-                sim_type=sim_type,
-                acq=acq,
-                full_data_flat_in_brain=full_data_flat_in_brain,
-                model_parameters_brain=model_parameters_brain,
-                model_mask=models_selected_brain,
-                brain_mask_flat=brain_mask_flat,
-                data_norm=data_norm,
-                orig_data=export_template,
-                out_path=out_path,
-                true_model_parameters=thetas_synth,
-                true_model_mask=true_model_mask,
-            )
-            with _device_scope(heavy_device):
-                run_configured_metrics(
-                    metrics_cfg,
-                    metric_context,
-                    out_path,
-                    devices=eval_devices,
-                    logger=log,
-                )
-            if added_ksd_metric:
-                log.info("Added default KSD metric to export metrics configuration.")
+    # Evaluate metrics (including model selection metrics that do not need theta samples)
+    metrics_cfg_raw = getattr(cfg.export, "metrics", None)
+    _maybe_run_metrics(
+        metrics_cfg_raw,
+        cfg,
+        log,
+        checkpoint_root,
+        cfg.export.name,
+        sim_type,
+        acq,
+        full_data_flat_in_brain,
+        model_parameters_brain,
+        models_selected_brain,
+        brain_mask_flat,
+        data_norm,
+        export_template,
+        thetas_synth,
+        true_model_mask,
+        heavy_device,
+        eval_devices,
+        add_default_ksd=True,
+    )
 
 
 def sample_mask(cfg, key, model, acq, data, logger, devices=None):
