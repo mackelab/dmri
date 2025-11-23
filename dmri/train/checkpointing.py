@@ -4,6 +4,15 @@ from typing import Any, Optional
 
 import orbax.checkpoint as ocp
 
+try:
+    from absl import logging as absl_logging
+
+    absl_logging.set_verbosity(absl_logging.ERROR)
+    logging.getLogger("absl").setLevel(logging.ERROR)
+except Exception:
+    absl_logging = None
+    logging.getLogger("absl").setLevel(logging.ERROR)
+
 
 class CheckpointManager:
     def __init__(
