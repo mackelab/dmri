@@ -318,7 +318,10 @@ def _main(cfg: DictConfig):
     log.info(OmegaConf.to_yaml(cfg))
 
     cpu_device = _first_device("cpu")
-    gpu_device = _first_device("gpu")
+    try:
+        gpu_device = _first_device("gpu")
+    except:
+        gpu_device = None
     heavy_device = gpu_device or cpu_device
     eval_devices = _resolve_eval_devices()
 
@@ -334,7 +337,10 @@ def _main(cfg: DictConfig):
 def _resolve_eval_devices():
     """Return the preferred device set for heavy eval (GPUs > TPUs > default)."""
     for kind in ("gpu", "tpu"):
-        available = tuple(jax.devices(kind))
+        try:
+            available = tuple(jax.devices(kind))
+        except:
+            available = False
         if available:
             return available
     return tuple(jax.devices())
@@ -512,7 +518,9 @@ def _run_eval_pipeline(
     export_cfg = getattr(cfg, "export_model_selection", None)
     if export_cfg is None:
         raise ValueError("Missing export_model_selection configuration.")
-    export_name = _cfg_get(cfg, "export_model_selection.name", "model_selection_results")
+    export_name = _cfg_get(
+        cfg, "export_model_selection.name", "model_selection_results"
+    )
     export_type = _cfg_get(cfg, "export_model_selection.type", "ball3stick")
     exporter = get_model_selection_exporter(export_type)
 
@@ -550,9 +558,7 @@ def _run_eval_pipeline(
     )
     if models_sampled_brain is not None:
         if export_samples_enabled:
-            _export_masks(
-                models_sampled_brain, samples_name, label="mask samples"
-            )
+            _export_masks(models_sampled_brain, samples_name, label="mask samples")
         elif not exported_selection:
             _export_masks(models_sampled_brain, export_name, label="mask samples")
 
@@ -647,7 +653,9 @@ def sample_mask(cfg, key, model, acq, data, logger, devices=None):
     return models_sampled_brain
 
 
-def sample_theta(cfg, key, model, acq, data, logger, model_mask=None, devices=None, default_mask=None):
+def sample_theta(
+    cfg, key, model, acq, data, logger, model_mask=None, devices=None, default_mask=None
+):
     """Sample theta parameters"""
     sim_type = model.tokenizer.simulator
     num_comp = len(sim_type.model_types) + len(sim_type.noise_types)

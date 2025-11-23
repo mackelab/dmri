@@ -1,7 +1,8 @@
 # @package _global_
 
-sample_mask: false
+sample_mask: true
 select_models: false
+sample_theta: false
 seed: 42424242
 default_mask: [True, True, True, True, True]
 slice:
@@ -13,7 +14,6 @@ slice:
 defaults:
   - _self_
   - override /export: model_selection_metrics
-  - override /theta_sample: gt
   - override /data: synthetic
 
 export:
