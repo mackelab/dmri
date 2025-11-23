@@ -1,7 +1,5 @@
 import os
 
-import jax
-import jax.numpy as jnp
 import numpy as np
 
 from dmri.utils.dmriutils import export_nifti
@@ -26,9 +24,7 @@ def export_model_selection_ball3stick(
     orig_data,
     brain_mask_flat,
     brain_shape,
-    model,
-    acq,
-    data,
+    feasible_model_probabilities=None,
 ):
     """Export model selection results for the ball-and-stick simulator."""
     if not os.path.exists(out_path):
@@ -45,31 +41,31 @@ def export_model_selection_ball3stick(
     save(full_model_mask, "merged_model_mask.nii.gz")
 
     if model_mask.ndim >= 3:
-        marginal_probabilities = jnp.mean(model_mask, axis=1)
+        marginal_probabilities = np.mean(model_mask, axis=1)
     else:
         marginal_probabilities = model_mask
     full_marginal_probabilities = embed(marginal_probabilities)
     save(full_marginal_probabilities, "mean_marginal_probabilities.nii.gz")
 
-    feasible_models = jnp.array(export_cfg.feasible_models, dtype=jnp.bool)
-    p_mask = cfg.mask_sample.p_mask
+    if feasible_model_probabilities is None:
+        return
 
-    def eval_feasible_log_probs(x):
-        model_logpmf = jax.vmap(model.log_prob_mask, in_axes=(0, None, None, None))(
-            feasible_models, acq, x, jnp.array([p_mask])
+    probabilities = np.asarray(feasible_model_probabilities)
+    if probabilities.shape[0] != model_mask.shape[0]:
+        raise ValueError(
+            "feasible_model_probabilities must share the first dimension with model_mask "
+            f"({probabilities.shape[0]} != {model_mask.shape[0]})."
         )
-        return model_logpmf
+    feasible_models_cfg = getattr(export_cfg, "feasible_models", None)
+    if feasible_models_cfg is not None and probabilities.shape[-1] != len(
+        feasible_models_cfg
+    ):
+        raise ValueError(
+            "feasible_model_probabilities last dimension does not match the number of "
+            f"configured feasible models ({probabilities.shape[-1]} != {len(feasible_models_cfg)})."
+        )
 
-    batch_size = 10_000
-    probabilities = []
-    for i in range(0, data.shape[0], batch_size):
-        batch_data = data[i : i + batch_size]
-        batch_logpmf = jax.vmap(eval_feasible_log_probs, in_axes=(0,))(batch_data)
-        batch_probs = jax.nn.softmax(batch_logpmf, axis=-1)
-        probabilities.append(batch_probs)
-    probabilities = np.concatenate(probabilities, axis=0)
-
-    for i in range(len(feasible_models)):
+    for i in range(probabilities.shape[-1]):
         p_model_i = probabilities[..., i]
         full_p_model_i = embed(p_model_i)
         save(full_p_model_i, f"p_feasible_model_{i}.nii.gz")
@@ -83,12 +79,14 @@ def export_model_selection_raw(
     orig_data,
     brain_mask_flat,
     brain_shape,
-    model,
-    acq,
-    data,
+    feasible_model_probabilities=None,
 ):
     """Export raw model-selection samples without model-specific processing."""
-    del cfg, export_cfg, model, acq, data  # Unused for raw export
+    del (
+        cfg,
+        export_cfg,
+        feasible_model_probabilities,
+    )  # Unused for raw export
 
     if not os.path.exists(out_path):
         os.makedirs(out_path)

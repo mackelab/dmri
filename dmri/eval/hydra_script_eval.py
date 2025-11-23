@@ -523,6 +523,22 @@ def _run_eval_pipeline(
     )
     export_type = _cfg_get(cfg, "export_model_selection.type", "ball3stick")
     exporter = get_model_selection_exporter(export_type)
+    feasible_model_probabilities = None
+    export_feasible_probs = bool(
+        _cfg_get(export_cfg, "export_feasible_model_probabilities", False)
+    )
+    if export_feasible_probs and export_type == "ball3stick":
+        if getattr(export_cfg, "feasible_models", None) is None:
+            log.warning(
+                "export_model_selection.feasible_models is not set; skipping feasible model probabilities."
+            )
+        else:
+            log.info("Evaluating feasible model probabilities for export.")
+            with _device_scope(heavy_device):
+                feasible_model_probabilities = _compute_feasible_model_probabilities(
+                    cfg, export_cfg, model, acq, full_data_flat_in_brain
+                )
+            feasible_model_probabilities = _to_cpu_array(feasible_model_probabilities)
 
     def _export_masks(masks, target_name, label):
         if masks is None:
@@ -537,9 +553,7 @@ def _run_eval_pipeline(
             export_template,
             brain_mask_flat,
             data_norm.shape[:-1],
-            model,
-            acq,
-            full_data_flat_in_brain,
+            feasible_model_probabilities,
         )
         return True
 
@@ -718,6 +732,30 @@ def sample_theta(
             devices=devices,
         )
     return thetas_full
+
+
+def _compute_feasible_model_probabilities(cfg, export_cfg, model, acq, data):
+    """Compute probabilities over feasible model masks for each voxel."""
+    feasible_models = jnp.array(export_cfg.feasible_models, dtype=jnp.bool)
+    p_mask = cfg.mask_sample.p_mask
+
+    def eval_feasible_log_probs(x):
+        model_logpmf = jax.vmap(model.log_prob_mask, in_axes=(0, None, None, None))(
+            feasible_models, acq, x, jnp.array([p_mask])
+        )
+        return model_logpmf
+
+    batch_size = 10_000
+    probabilities = []
+    for i in range(0, data.shape[0], batch_size):
+        batch_data = data[i : i + batch_size]
+        batch_logpmf = jax.vmap(eval_feasible_log_probs, in_axes=(0,))(batch_data)
+        batch_probs = jax.nn.softmax(batch_logpmf, axis=-1)
+        probabilities.append(batch_probs)
+
+    if not probabilities:
+        return None
+    return np.concatenate(probabilities, axis=0)
 
 
 def embed_in_full_brain_array(to_embed, brain_mask_flat, brain_shape):
