@@ -1,4 +1,5 @@
 import os
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -470,14 +471,14 @@ def _adjust_affine_for_slice(affine, normalized_slice):
     return new_affine
 
 
-def export_nifti(data, orig_data, output_path, name, volume_slice=None):
-    """
-    Args:
-        data:
-        orig_data:
-        output_path:
-        name:
-    """
+def export_nifti(
+    data: ArrayLike,
+    orig_data: Any,
+    output_path: str,
+    name: str,
+    volume_slice: tuple[slice, ...] | None = None,
+) -> None:
+    """Save an array to NIfTI, preserving affine/slices from the source image."""
     # Copy the header of the original image
     vol_slice = (
         volume_slice

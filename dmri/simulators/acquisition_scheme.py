@@ -52,7 +52,7 @@ class acquisition_scheme(AcquisitionScheme):  # noqa: N801
     Delta: ArrayLike = field(default_factory=lambda: 0.0431)  # In seconds
 
     @property
-    def qvals(self):
+    def qvals(self) -> ArrayLike:
         """Calculate the q-values for the acquisition scheme.
 
         Returns:
@@ -61,7 +61,7 @@ class acquisition_scheme(AcquisitionScheme):  # noqa: N801
         return jnp.sqrt(self.bvals / (4 * jnp.pi**2 * self.Delta))  # In 1/mm
 
     @property
-    def tau(self):
+    def tau(self) -> ArrayLike:
         """Calculate the effective diffusion time tau.
 
         Returns:
@@ -70,7 +70,7 @@ class acquisition_scheme(AcquisitionScheme):  # noqa: N801
         return self.Delta - self.delta / 3
 
     @property
-    def gradient_strengths(self):
+    def gradient_strengths(self) -> ArrayLike:
         """Calculate the gradient strengths required for the acquisition scheme.
 
         Returns:
@@ -88,7 +88,7 @@ class acquisition_scheme(AcquisitionScheme):  # noqa: N801
         gradient_directions: ArrayLike,
         delta: ArrayLike,
         Delta: ArrayLike,  # noqa: N803
-    ):
+    ) -> "acquisition_scheme":
         """Create an acquisition scheme from gradient parameters.
 
         Args:

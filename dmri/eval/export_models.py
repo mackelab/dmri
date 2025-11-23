@@ -57,7 +57,7 @@ def export_model_selection_ball3stick(
     def eval_feasible_log_probs(x):
         model_logpmf = jax.vmap(
             model.log_prob_mask, in_axes=(0, None, None, None, None)
-        )(feasible_models, acq.bvals, acq.bvecs, x, jnp.array([p_mask]))
+        )(feasible_models, acq, x, jnp.array([p_mask]))
         return model_logpmf
 
     batch_size = 10_000
