@@ -8,7 +8,7 @@ from omegaconf import OmegaConf
 from dmri.train.build_model import build_model
 from dmri.train.build_simulator import build_simulator
 from dmri.train.checkpointing import CheckpointManager
-from dmri.train.hydra_script import (
+from dmri.train.train_script import (
     build_optimizer,
     get_ema_params,
     initialize_ema_state,

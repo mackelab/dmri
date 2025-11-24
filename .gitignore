@@ -1,6 +1,7 @@
 *.npy
 *.nii.gz
 *.pkl
+.DS_Store
 outputs/
 data/
 tmp/

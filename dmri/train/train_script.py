@@ -865,7 +865,7 @@ def build_optimizer(optimizer_cfg):
     return optax.chain(*grad_transforms)
 
 
-@hydra.main(config_path="../../conf", config_name="config.yaml", version_base=None)
+@hydra.main(config_path="../../conf_train", config_name="config.yaml", version_base=None)
 def _main(cfg: DictConfig):
     log, output_dir, output_super_dir = configure_environment(cfg)
     wandb_active = init_wandb_if_needed(cfg)
