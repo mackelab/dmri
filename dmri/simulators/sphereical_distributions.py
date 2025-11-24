@@ -282,11 +282,12 @@ class SphericalDistribution(Compartment):
 
     def viz(
         self,
-        plot_type="polar",
+        plot_type="fod",
         sphere=None,
         n_samples=1000,
         ax=None,
         color=None,
+        cmap=None,
         levels=3,
         alpha=None,
     ):
@@ -326,7 +327,7 @@ class SphericalDistribution(Compartment):
                 self, n_samples=n_samples, sphere=sphere, ax=ax
             )
         elif plot_type == "fod":
-            return plot_spherical_distribution_fod(self, ax=ax, alpha=alpha)
+            return plot_spherical_distribution_fod(self, ax=ax, alpha=alpha, cmap=cmap)
         else:
             raise ValueError(f"Unknown plot type: {plot_type}")
 

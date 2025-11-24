@@ -20,6 +20,7 @@ uv pip install -e '.[cuda]'
 ```
 
 If you prefer pip directly, quote extras in zsh: `pip install -e '.[dev]'`.
+If you prefer conda, create a conda env and install the same dependencies.
 
 ## First training run
 

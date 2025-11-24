@@ -93,6 +93,11 @@ target/
 profile_default/
 ipython_config.py
 
+# Generated docs artifacts
+docs/assets/*.svg
+site/
+.uv-cache/
+
 # pyenv
 .python-version
 
