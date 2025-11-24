@@ -5,18 +5,18 @@ DMRI ships composable simulators so you can explore competing diffusion models w
 ## Modeling assumptions (quick math)
 
 We follow the Stejskal–Tanner convention, writing the diffusion-weighted signal for
-component :math:`k` as :math:`S_k(b, \\mathbf{g})`. Typical closed forms:
+component \(k\) as \(S_k(b, \mathbf{g})\). Typical closed forms:
 
-- **Ball (isotropic Gaussian):** :math:`S(b) = \\exp(-b D)`.
-- **Stick (zero-radius cylinder):** :math:`S(b, \\mathbf{g}) = \\exp\\big(-b\\,D_{\\parallel}(\\mathbf{g}\\cdot\\boldsymbol{\\mu})^2\\big)`.
-- **Zeppelin (axially symmetric Gaussian):** :math:`S(b, \\mathbf{g}) = \\exp\\big(-b[ D_{\\perp} + (D_{\\parallel}-D_{\\perp})(\\mathbf{g}\\cdot\\boldsymbol{\\mu})^2 ]\\big)`.
-- **Sphere (restricted, narrow-pulse limit):** uses the Balinov et al. (1993) series for attenuation in a sphere of radius :math:`R`.
+- **Ball (isotropic Gaussian):** \(S(b) = \exp(-b D)\).
+- **Stick (zero-radius cylinder):** \(S(b, \mathbf{g}) = \exp\big(-b\,D_{\parallel}(\mathbf{g}\cdot\boldsymbol{\mu})^2\big)\).
+- **Zeppelin (axially symmetric Gaussian):** \(S(b, \mathbf{g}) = \exp\big(-b[ D_{\perp} + (D_{\parallel}-D_{\perp})(\mathbf{g}\cdot\boldsymbol{\mu})^2 ]\big)\).
+- **Sphere (restricted, narrow-pulse limit):** uses the Balinov et al. (1993) series for attenuation in a sphere of radius \(R\).
 
-A multi-compartment mixture with fractions :math:`f_k` produces
+A multi-compartment mixture with fractions \(f_k\) produces
 
-.. math::
-
-    S(b, \\mathbf{g}) = \\sum_k f_k\\, S_k(b, \\mathbf{g}), \\quad \\sum_k f_k = 1.
+$$
+S(b, \mathbf{g}) = \sum_k f_k\, S_k(b, \mathbf{g}), \quad \sum_k f_k = 1.
+$$
 
 Noise compartments (e.g., bounded Rician/Gaussian) are applied after the base signal.
 
