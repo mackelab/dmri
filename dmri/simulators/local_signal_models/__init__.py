@@ -1,3 +1,12 @@
+"""Canonical single-compartment signal models (free, hindered, restricted).
+
+Includes Gaussian models (Ball, Zeppelin, DTI), zero-radius fibers (Stick),
+restricted geometries (Cylinder, Sphere), and SSFP-ready variants. The
+formulations follow classic Stejskal–Tanner signal expressions and, for
+restricted diffusion, the approximations from Callaghan (1991) and Balinov
+et al. (1993).
+"""
+
 from dmri.simulators.local_signal_models.ball import (
     Ball,
     MultiShellBall,

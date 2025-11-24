@@ -13,10 +13,14 @@ from dmri.utils.dmriutils import (
 
 
 class Stick(SignalCompartment):
-    """The Stick model represents a single fiber bundle with a fixed orientation i.e.
-    a cylinder with zero radius.
+    r"""Zero-radius cylinder aligned with unit vector :math:`\boldsymbol{\mu}`.
 
-    It represents fully anisotropic diffusion along the fiber orientation.
+    Signal:
+
+    .. math::
+        S(b, \mathbf{g}) = \exp\big(-b\,\lambda_{\parallel} (\mathbf{g}\cdot\boldsymbol{\mu})^2\big),
+
+    capturing fully anisotropic diffusion along the fiber (Behrens et al., 2003).
     """
 
     theta_dim = 3
