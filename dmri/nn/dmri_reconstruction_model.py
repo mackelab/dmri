@@ -231,9 +231,10 @@ class DMRIInferenceModel(nnx.Module):
         """Reinitialize the model with updated precision/attention settings.
 
         Args:
-            rngs: Fresh RNG container used for reinitialization.
-            dtype, param_dtype, precision, preferred_element_type: Optional
-                overrides for the corresponding precision attributes.
+            dtype: Optional override for computation dtype.
+            param_dtype: Optional override for parameter dtype.
+            precision: Optional override for XLA matmul precision.
+            preferred_element_type: Optional override for matmul element type.
             use_flash_attention: Optional override applied to every sub-config
                 that exposes a ``use_flash_attention`` flag.
             use_flash_cross_attention: Optional override applied to every

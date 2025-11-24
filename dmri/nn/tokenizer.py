@@ -533,8 +533,9 @@ class DMRITokenizer(Tokenizer):
         Args:
             theta (ArrayLike): The parameters of each model/noise component.
             tokens_cfg (ArrayLike): Configuration tokens returned by embed_cfgs.
-            model_types (Optional[List[type]]): List of model types.
-            noise_types (Optional[List[type]]): List of noise types.
+            model_idx (Optional[Sequence[int]]): Subset of model indices to include.
+            noise_idx (Optional[Sequence[int]]): Subset of noise indices to include.
+            model_mask (Optional[Array]): Optional mask over components.
 
         Returns:
             ArrayLike: The token representation augmented with encoded parameters.
