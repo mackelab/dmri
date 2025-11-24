@@ -26,6 +26,8 @@ from dmri.simulators import (
 from dmri.simulators.local_signal_models.ball import MultiShellBall
 from dmri.simulators.local_signal_models.stick import MultiShellStick
 from dmri.simulators.multi_compartment import (
+    AllGaussianAndConvolvedModels,
+    AllGaussianModels,
     Ball2Stick,
     Ball3Stick,
     Ball3StickSharedDiffusivity,
@@ -34,8 +36,6 @@ from dmri.simulators.multi_compartment import (
     MultiShellBall3StickSharedDiffusivity,
     MultiShellBall3StickSharedDiffusivityGammaPrior,
     MultiShellBall3StickSharedDiffusivityUniformFraction,
-    AllGaussianModels,
-    AllGaussianAndConvolvedModels,
 )
 
 

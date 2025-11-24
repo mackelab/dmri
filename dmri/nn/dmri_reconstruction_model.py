@@ -1,6 +1,5 @@
 import copy
 from dataclasses import dataclass, field
-from functools import partial
 from typing import Any, List, Optional, Tuple, Type, cast
 
 import jax
@@ -22,7 +21,6 @@ from .autoregressive import (
 from .embedding_net import (
     BvalBvecSignalEmbeddingNet,
     DMRIEmbeddingConfig,
-    GroupedDMRIEmbeddingConfig,
     GroupedBvalBvecSignalEmbeddingNet,
     SSFPEmbeddingNet,
     SSFPEmbeddingNetConfig,

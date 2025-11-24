@@ -1,7 +1,6 @@
 from functools import partial
 from types import SimpleNamespace
 
-from dmri.simulators.mask_prior import TotalParamPenalizedPrior
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -16,6 +15,7 @@ from dmri.simulators.acquisition_scheme import (
     random_hcp_large_acquisition,
     random_ssfp_acquisition,
 )
+from dmri.simulators.mask_prior import TotalParamPenalizedPrior
 
 ACQ_SCHEME_BUILDERS = {
     "clinical": random_clinical_acquisition,
