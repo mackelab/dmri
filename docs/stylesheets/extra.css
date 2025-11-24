@@ -138,3 +138,50 @@
     grid-template-columns: 1fr;
   }
 }
+.hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: clamp(2rem, 6vw, 4rem);
+  padding: clamp(3rem, 8vh, 5rem) 0;
+}
+
+.hero__text {
+  flex: 1 1 0;
+  max-width: 36rem;
+}
+
+.hero__card {
+  flex: 0 0 28rem;
+}
+
+.hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem 1.5rem;
+  white-space: nowrap;
+}
+
+@media (max-width: 800px) {
+  .hero {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .hero__text,
+  .hero__card {
+    max-width: 100%;
+  }
+
+  .hero__card {
+    width: 100%;
+  }
+}
