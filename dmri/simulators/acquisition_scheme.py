@@ -135,19 +135,25 @@ class acquisition_scheme(AcquisitionScheme):  # noqa: N801
 
 @dataclass
 class ssfp_acquisition_scheme(AcquisitionScheme):  # noqa: N801
-    """A class representing a Steady-State Free Precession (SSFP) acquisition scheme.
+    r"""Steady-State Free Precession (SSFP) acquisition description.
 
-    Fields:
-        bvecs (ArrayLike): Diffusion gradient unit vectors
-        TRs (ArrayLike): Repetition times, in milliseconds [ms]
-        flipAngles (ArrayLike): Flip angles, in degrees [°]
-        diffGradAmps (ArrayLike): Diffusion gradient amplitudes, in tesla per meter [T/m]
-        diffGradDur (ArrayLike): Diffusion gradient durations, in milliseconds [ms]
-        B1 (ArrayLike): B1 scaling, unitless
-        T1 (ArrayLike): Longitudinal relaxation times, in milliseconds [ms]
-        T2 (ArrayLike): Transverse relaxation times, in milliseconds [ms]
-        delta (ArrayLike): Diffusion pulse duration, in seconds [s]
-        Delta (ArrayLike): Diffusion time (pulse separation), in seconds [s]
+    Parameters are stored in common MR units and converted as properties:
+
+    - ``bvecs``: diffusion gradient unit vectors.
+    - ``TRs``: repetition times [s].
+    - ``flipAngles_raw``: flip angles [deg] (property ``flipAngles`` yields radians).
+    - ``diffGradAmps_raw``: diffusion gradient amplitudes [T/m] (property ``diffGradAmps`` yields G/mm).
+    - ``diffGradDur``: diffusion gradient durations [s].
+    - ``B1``: transmit field scaling, unitless.
+    - ``T1_raw`` / ``T2_raw``: relaxation times [ms] (properties ``T1``/``T2`` yield seconds).
+    - ``delta`` / ``Delta``: diffusion pulse duration and separation [s].
+
+    Derived quantities:
+
+    - ``sa``, ``ca``: \(\sin(\alpha B_1)\), \(\cos(\alpha B_1)\) with \(\alpha\) in radians.
+    - ``E1``, ``E2``: relaxation terms \(\exp(-\mathrm{TR}/T_1)\), \(\exp(-\mathrm{TR}/T_2)\).
+    - ``qvals``: \(q = \gamma \, G \, \delta\) [1/mm] using ``gyromag_ratio`` in rad/ms/mT.
+    - ``bvals``: \(b = q^2 \, 4\pi^2 \, \Delta\).
     """
 
     bvecs: Array  # unit vectors

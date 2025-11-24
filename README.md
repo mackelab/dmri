@@ -1,8 +1,13 @@
 # DMRI: Diffusion MRI Model Selection
 
+[![CI](https://github.com/mackelab/dmri/actions/workflows/ci.yml/badge.svg)](https://github.com/mackelab/dmri/actions/workflows/ci.yml)
+[![Docs](https://github.com/mackelab/dmri/actions/workflows/docs.yml/badge.svg)](https://github.com/mackelab/dmri/actions/workflows/docs.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Made with JAX](https://img.shields.io/badge/Made%20with-JAX-007acc.svg)](https://github.com/google/jax)
+
 Fast, reproducible diffusion MRI model selection powered by JAX, Hydra, and a library of simulators and neural architectures.
 
-**Docs:** https://your-username.github.io/dmri/
+**Docs:** https://www.mackelab.org/dmri/
 
 ## Why use this repo?
 - Hydra-driven experiments and sweeps with sensible defaults
@@ -118,7 +123,7 @@ You can also have a look at the notebooks in the `notebooks/dmri_simulators.ipyn
 
 - JAX grabs most GPU memory up front; if multiple jobs share a card, expect OOMs until you free memory (`nvidia-smi` is your friend).
 - JIT warmup makes the first steps slower; steady-state throughput improves after compilation.
-- Need PyTorch for notebooks? Install CPU-only wheels to avoid CUDA conflicts with JAX:  
+- Need PyTorch for notebooks? Install CPU-only wheels to avoid CUDA conflicts with JAX:
   `pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu`
 
 ## Development
