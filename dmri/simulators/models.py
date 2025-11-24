@@ -1,3 +1,12 @@
+"""Predefined multi-compartment model collections.
+
+These convenience classes mirror common mixtures from the literature such as
+Ball–Stick (Behrens et al., 2003), Ball–Stick–Zeppelin, and multi-shell variants
+with shared diffusivity priors. Each class specifies the underlying
+``MultiCompartment`` ingredients: signal compartments, noise compartments, and
+Dirichlet priors over fractions.
+"""
+
 from __future__ import annotations
 
 import jax.numpy as jnp

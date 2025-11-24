@@ -100,8 +100,8 @@ def compute_GPDsum(am_r, pulse_duration, diffusion_time, diffusivity, radius):
 
 class Cylinder(SignalCompartment):
     r"""
-    The Stejskal-Tanner approximation of the cylinder model with finite
-    radius. Assumes finite pulse duration and diffusion time.
+    The Stejskal-Tanner approximation of a finite-radius cylinder (Callaghan, 1991).
+    Assumes rectangular pulses and :math:`\Delta \gg \delta`.
 
     NOTE: This model assumes that the gradient pulses are rectangular
     and that the diffusion time is much larger than the pulse duration and **available**

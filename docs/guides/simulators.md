@@ -20,6 +20,11 @@ A multi-compartment mixture with fractions :math:`f_k` produces
 
 Noise compartments (e.g., bounded Rician/Gaussian) are applied after the base signal.
 
+### Noise and mask priors
+
+- Rician/Gaussian noise follow the Gudbjartsson–Patz (1995) magnitude distribution with bounded SNR priors for stability.
+- Mask priors (Beta–Bernoulli) select which compartments are active, letting you toggle, e.g., isotropic pools during inference.
+
 Key references
 
 - Stejskal & Tanner (1965) for the pulsed-gradient spin-echo signal model.

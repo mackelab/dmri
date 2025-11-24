@@ -8,8 +8,15 @@ from dmri.utils.dmriutils import cart2sph, fit_diffusion_tensor_linearized, sph2
 
 
 class Zeppelin(SignalCompartment):
-    """The Zeppelin model [1]_ - an axially symmetric Tensor - typically used
-    for extra-axonal diffusion.
+    r"""Axially symmetric Gaussian tensor (:math:`\lambda_{\parallel}, \lambda_{\perp}`).
+
+    Signal:
+
+    .. math::
+        S(b, \mathbf{g}) = \exp\Big(-b \big[\lambda_{\perp}
+        + (\lambda_{\parallel}-\lambda_{\perp})(\mathbf{g}\cdot\boldsymbol{\mu})^2\big]\Big),
+
+    often used for extra-axonal water (Basser et al., 1994).
     """
 
     theta_dim = 4

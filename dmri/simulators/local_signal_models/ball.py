@@ -13,9 +13,15 @@ from dmri.utils.dmriutils import ssfp_signal_fn
 
 
 class Ball(SignalCompartment):
-    """The Ball model is a simple model that represents free water diffusion in
-    unrestricted space. It is fully isotropic.
-    It has a single parameter lambda that represents the diffusivity of water molecules.
+    r"""Isotropic Gaussian diffusion (free water).
+
+    Signal follows the Stejskal–Tanner form
+
+    .. math::
+        S(b) = \exp(-b\,\lambda),
+
+    with scalar diffusivity :math:`\lambda \in [0, 10^{-2}]\,\mathrm{mm}^2/\mathrm{s}`
+    (Stejskal & Tanner, 1965).
     """
 
     theta_dim: int = 1

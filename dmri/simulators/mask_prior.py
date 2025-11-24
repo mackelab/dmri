@@ -1,3 +1,9 @@
+"""Priors over which compartments are active in a multi-compartment model.
+
+Implements Beta–Bernoulli style mask priors with utilities to sample masks and
+convert them into boolean vectors that gate compartments during simulation.
+"""
+
 from __future__ import annotations
 
 import itertools
