@@ -35,13 +35,24 @@ class Sphere(SignalCompartment):
     @classmethod
     def log_signal_fn(cls, acq, radius: float, rng=None):
         q = acq.qvals  # 1/mm
-        E_sphere = jnp.ones_like(q)
         factor = 2 * jnp.pi * q * radius
-        E_sphere_attenuation = (
-            3 / (factor**2) * (jnp.sin(factor) / factor - jnp.cos(factor))
-        ) ** 2
-        q_nonzero = q > 0
-        E_sphere = jnp.where(q_nonzero, E_sphere_attenuation, E_sphere)
+        factor_sq = factor**2
+
+        # Stable evaluation for small factors to avoid NaNs when q ~ 0
+        small_factor = factor_sq < 1e-8
+        safe_factor = jnp.where(small_factor, 1.0, factor)
+
+        attenuation = (
+            3.0 / (safe_factor**2) * (jnp.sin(safe_factor) / safe_factor - jnp.cos(safe_factor))
+        )
+        attenuation = attenuation**2
+
+        # Second-order series approximation around 0: (1 - x^2 / 10)^2
+        attenuation_small = 1.0 - factor_sq / 5.0 + factor_sq**2 / 100.0
+
+        E_sphere = jnp.where(small_factor, attenuation_small, attenuation)
+        E_sphere = jnp.clip(E_sphere, a_min=1e-12)  # Guard against log(0)
+
         return jnp.log(E_sphere)
 
     @classmethod

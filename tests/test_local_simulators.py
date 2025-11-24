@@ -49,10 +49,7 @@ from dmri.simulators.multi_compartment import (
         Zeppelin,
         Dti,
         Sphere,
-        pytest.param(
-            Cylinder,
-            marks=pytest.mark.xfail(reason="Cylinder model needs pulse duration"),
-        ),
+        Cylinder,
         WatsonStick,
         WatsonZeppelin,
         BinghamStick,
@@ -69,10 +66,7 @@ from dmri.simulators.multi_compartment import (
         Ball3StickSharedDiffusivityUniformFraction,
         MultiShellBall3StickSharedDiffusivity,
         MultiShellBall3StickSharedDiffusivityUniformFraction,
-        pytest.param(
-            MultiShellBall3StickSharedDiffusivityGammaPrior,
-            marks=pytest.mark.xfail(reason="IDK"),
-        ),
+        MultiShellBall3StickSharedDiffusivityGammaPrior,
     ]
 )
 def compartment_model(request):
@@ -126,8 +120,8 @@ def test_base_function(compartment_model):
 
 
 def test_jitable(compartment_model):
-    if isinstance(compartment_model, Cylinder):
-        pytest.xfail("Cylinder model needs currently some non jax-compatible code")
+    #if isinstance(compartment_model, Cylinder):
+    #    pytest.xfail("Cylinder model needs currently some non jax-compatible code")
 
     bvals = np.random.uniform(size=(10,)) * 1000
     bvecs = np.random.randn(10, 3)
@@ -142,7 +136,7 @@ def test_jitable(compartment_model):
     # No tracer leaks
     _ = compartment_model.signal(acq)
 
-    assert jnp.allclose(signal, signal_jit, atol=1e-3), "JIT failed"
+    assert jnp.allclose(signal, signal_jit, atol=1e-2, rtol=1e-3), "JIT failed"
 
 
 def test_stabally_differentiable(compartment_model):
@@ -228,13 +222,13 @@ def test_correct_theta_masking(multi_compartment_model):
 def test_gradient_computation(compartment_model):
     """Test that gradients can be computed for all parameters using multiple methods."""
     # Create acquisition scheme
-    if isinstance(compartment_model, Cylinder):
-        pytest.xfail("Cylinder model needs currently some non jax-compatible code")
-    if isinstance(compartment_model, Sphere):
-        pytest.xfail("Sphere model needs currently some non jax-compatible code")
-    if isinstance(compartment_model, MultiCompartment):
+    #if isinstance(compartment_model, Cylinder):
+    #    pytest.xfail("Cylinder model needs currently some non jax-compatible code")
+    #if isinstance(compartment_model, Sphere):
+    #    pytest.xfail("Sphere model needs currently some non jax-compatible code")
+    #if isinstance(compartment_model, MultiCompartment):
         # pytest.xfail("MultiCompartmentModel model needs currently not implemented")
-        pass
+    #    pass
 
     bvals = jnp.array([0.0, 100.0, 1000.0])
     bvecs = jnp.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])

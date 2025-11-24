@@ -46,6 +46,7 @@ class SignalKernel(Compartment):
 class ConvolvedSignalCompartment(SignalCompartment):
     fod_type: type
     signal_kernel_type: type
+    default_eval_sh_order: int = 14
 
     def __init_subclass__(cls):
         assert hasattr(cls, "fod_type"), "fod_type not defined"
@@ -71,8 +72,8 @@ class ConvolvedSignalCompartment(SignalCompartment):
         rng=None,
     ) -> ArrayLike:
         """Compute the log signal for given b-values and b-vectors."""
-        sh_coeff_fod = fod.sh_coeff(sh_order=14)
-        sh_coeff_signal = signal_kernel.sh_coeff(acq, sh_order=14)
+        sh_coeff_fod = fod.sh_coeff(sh_order=cls.default_eval_sh_order)
+        sh_coeff_signal = signal_kernel.sh_coeff(acq, sh_order=cls.default_eval_sh_order)
         return jnp.dot(sh_coeff_fod, sh_coeff_signal)
 
     @classmethod

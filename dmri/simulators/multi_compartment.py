@@ -15,40 +15,15 @@ from dmri.simulators import acquisition_scheme
 from dmri.simulators.base import SharedParameterState, SignalCompartment
 from dmri.simulators.local_signal_models import (
     Ball,
-    BinghamStick,
-    BinghamZeppelin,
-    Dot,
-    Dti,
-    NoddiB,
-    NoddiW,
-    SandiB,
-    SandiW,
     SSFPStaticBall,
     SSFPStaticStick,
     StaticBall,
     StaticStick,
-    Stick,
-    WatsonStick,
-    WatsonZeppelin,
-    Zeppelin,
 )
-from dmri.simulators.local_signal_models.ball import (
-    MultiShellStaticBall,
-)
+from dmri.simulators.local_signal_models.ball import MultiShellStaticBall
 from dmri.simulators.local_signal_models.stick import MultiShellStaticStick
-from dmri.simulators.mask_prior import (
-    BetaBernoulliMaskPrior,
-    MaskPrior,
-    TotalParamPenalizedPrior,
-)
-from dmri.simulators.noise_compartments import (
-    BoundedGaussianNoise,
-    BoundedRicianNoise,
-    RicianNoiseSNR310,
-    RicianNoiseSNR1020,
-)
+from dmri.simulators.mask_prior import BetaBernoulliMaskPrior, MaskPrior
 from dmri.simulators.sphereical_distributions import MixtureOfFODs
-from dmri.utils.dmriutils import ssfp_signal_fn
 from dmri.utils.transform import dirichlet_to_normal, eps_mask, normal_to_dirichlet
 
 
@@ -220,6 +195,28 @@ class MultiCompartment(SignalCompartment):
     @classmethod
     def log_signal_fn(cls, acq, **kwargs):
         return jnp.log(cls.signal_fn(acq, **kwargs))
+
+    def _reconstruct_params(self):
+        """Rebuild all parameters from theta so eager and JIT paths stay in sync."""
+        return type(self).to_params(self.theta, model_mask=self.model_mask)
+
+    def signal(self, acq: acquisition_scheme, rng=None):
+        fractions, model_compartments, noise_compartments, model_mask, shared_parameter = (
+            self._reconstruct_params()
+        )
+        return type(self).signal_fn(
+            acq,
+            model_compartments,
+            noise_compartments,
+            fractions,
+            model_mask,
+            shared_parameter,
+            rng=rng,
+        )
+
+    def log_signal(self, acq: acquisition_scheme, rng=None):
+        """Compute log-signal using reconstructed parameters to mirror the JIT path."""
+        return jnp.log(self.signal(acq, rng=rng))
 
     @classmethod
     def split_idx(cls):
@@ -545,7 +542,7 @@ class SharedMultiShellDiffusivityGammaPrior(SharedParameterState):
     lam_min: float = 0.0
     lam_max: float = 0.01
     lam_std_alpha: float = 0.4
-    lam_std_beta: float = 600
+    lam_std_beta: float = 400
 
     @classmethod
     def to_params(cls, theta: ArrayLike) -> tuple:
@@ -575,206 +572,34 @@ class SharedSSFPDiffusivity(SharedDiffusivity):
     lam_max: float = 0.01
 
 
-class BallStickSharedDiffusivity(MultiCompartment):
-    model_types = [StaticBall, StaticStick]
-    noise_types = []
-    fraction_prior = jnp.ones(2)
-    shared_parameter_type = SharedDiffusivity
+_MODEL_CLASS_NAMES = {
+    "AllGaussianAndConvolvedModels",
+    "AllGaussianModels",
+    "AllGaussianModelsParamCountPrior",
+    "Ball2Stick",
+    "Ball2Stick2Zeppelin2Dti",
+    "Ball3Stick",
+    "Ball3Stick3ZeppelinNoise",
+    "Ball3StickNoise",
+    "Ball3StickSharedDiffusivity",
+    "Ball3StickSharedDiffusivityTotalParamPenalizedPrior",
+    "Ball3StickSharedDiffusivityUniformFraction",
+    "BallStick",
+    "BallStickSharedDiffusivity",
+    "BallStickSharedDiffusivity2",
+    "BallStickZeppelinNoise",
+    "MultiShellBall3StickSharedDiffusivity",
+    "MultiShellBall3StickSharedDiffusivityGammaPrior",
+    "MultiShellBall3StickSharedDiffusivityUniformFraction",
+    "SSFPBall3StickSharedDiffusivity",
+    "SSFPBall3StickSharedDiffusivityBetterNorm",
+}
 
 
-class BallStickSharedDiffusivity2(MultiCompartment):
-    model_types = [StaticBall, StaticStick]
-    noise_types = []
-    fraction_prior = jnp.ones(2)
-    shared_parameter_type = SharedDiffusivity
+def __getattr__(name: str):
+    if name in _MODEL_CLASS_NAMES:
+        from importlib import import_module
 
-
-class Ball3StickSharedDiffusivity(MultiCompartment):
-    model_types = [StaticBall, StaticStick, StaticStick, StaticStick]
-    noise_types = [BoundedGaussianNoise]
-    fraction_prior = jnp.array([3.5, 1.0, 0.3, 0.1])
-    shared_parameter_type = SharedDiffusivity
-
-
-class Ball3StickSharedDiffusivityTotalParamPenalizedPrior(MultiCompartment):
-    model_types = [StaticBall, StaticStick, StaticStick, StaticStick]
-    noise_types = [BoundedGaussianNoise]
-    fraction_prior = jnp.array([3.5, 1.0, 0.3, 0.1])
-    shared_parameter_type = SharedDiffusivity
-    mask_prior_cls = TotalParamPenalizedPrior
-
-
-class SSFPBall3StickSharedDiffusivity(MultiCompartment):
-    model_types = [SSFPStaticBall, SSFPStaticStick, SSFPStaticStick, SSFPStaticStick]
-    noise_types = [BoundedGaussianNoise]
-    fraction_prior = jnp.array([3.5, 1.0, 0.3, 0.1])
-    shared_parameter_type = SharedSSFPDiffusivity
-
-    @staticmethod
-    def normalizing_fn(acq, x: ArrayLike) -> ArrayLike:
-        return (x - jnp.min(x)) / (jnp.max(x) - jnp.min(x))
-
-
-class SSFPBall3StickSharedDiffusivityBetterNorm(MultiCompartment):
-    model_types = [SSFPStaticBall, SSFPStaticStick, SSFPStaticStick, SSFPStaticStick]
-    noise_types = [BoundedGaussianNoise]
-    fraction_prior = jnp.array([3.5, 1.0, 0.3, 0.1])
-    shared_parameter_type = SharedSSFPDiffusivity
-
-    @staticmethod
-    def pre_normalizing_fn(acq, x: ArrayLike) -> ArrayLike:
-        ssfp_max = (
-            ssfp_signal_fn(
-                0.0,
-                acq.qvals * 0,
-                acq.E1,
-                acq.E2,
-                acq.sa,
-                acq.ca,
-                acq.TRs,
-                acq.diffGradDur,
-            )
-            + 1e-5
-        )
-
-        return x / ssfp_max
-
-
-class Ball3StickSharedDiffusivityUniformFraction(MultiCompartment):
-    model_types = [StaticBall, StaticStick, StaticStick, StaticStick]
-    noise_types = [BoundedGaussianNoise]
-    fraction_prior = jnp.ones(4)
-    shared_parameter_type = SharedDiffusivity
-
-
-class MultiShellBall3StickSharedDiffusivity(MultiCompartment):
-    model_types = [
-        MultiShellStaticBall,
-        MultiShellStaticStick,
-        MultiShellStaticStick,
-        MultiShellStaticStick,
-    ]
-    noise_types = [BoundedGaussianNoise]
-    fraction_prior = jnp.array([3.5, 1.0, 0.3, 0.1])
-    shared_parameter_type = SharedMultiShellDiffusivity
-
-
-class MultiShellBall3StickSharedDiffusivityUniformFraction(MultiCompartment):
-    model_types = [
-        MultiShellStaticBall,
-        MultiShellStaticStick,
-        MultiShellStaticStick,
-        MultiShellStaticStick,
-    ]
-    noise_types = [BoundedGaussianNoise]
-    fraction_prior = jnp.ones(4)
-    shared_parameter_type = SharedMultiShellDiffusivity
-
-
-class MultiShellBall3StickSharedDiffusivityGammaPrior(MultiCompartment):
-    model_types = [
-        MultiShellStaticBall,
-        MultiShellStaticStick,
-        MultiShellStaticStick,
-        MultiShellStaticStick,
-    ]
-    noise_types = [BoundedGaussianNoise]
-    fraction_prior = jnp.array([3.5, 1.0, 0.3, 0.1])
-    shared_parameter_type = SharedMultiShellDiffusivityGammaPrior
-
-
-class BallStick(MultiCompartment):
-    model_types = [Ball, Stick]
-    noise_types = []
-    fraction_prior = jnp.ones(2)
-
-
-class Ball2Stick(MultiCompartment):
-    model_types = [Ball, Stick, Stick]
-    noise_types = []
-    fraction_prior = jnp.ones(3)
-
-
-class Ball3Stick(MultiCompartment):
-    model_types = [Ball, Stick, Stick, Stick]
-    noise_types = []
-    fraction_prior = jnp.ones(4)
-
-
-class Ball3StickNoise(MultiCompartment):
-    model_types = [Ball, Stick, Stick, Stick]
-    noise_types = [RicianNoiseSNR310, RicianNoiseSNR1020]
-    fraction_prior = jnp.ones(4)
-
-
-class BallStickZeppelinNoise(MultiCompartment):
-    model_types = [Ball, Stick, Zeppelin]
-    noise_types = [RicianNoiseSNR310, RicianNoiseSNR1020]
-    fraction_prior = jnp.ones(3)
-
-
-class Ball2Stick2Zeppelin2Dti(MultiCompartment):
-    model_types = [
-        Ball,
-        Stick,
-        Stick,
-        Zeppelin,
-        Zeppelin,
-        Dti,
-        Dti,
-    ]
-    noise_types = []
-    fraction_prior = jnp.ones(7)
-
-
-class Ball3Stick3ZeppelinNoise(MultiCompartment):
-    model_types = [Ball] + 3 * [Stick] + 3 * [Zeppelin]
-    noise_types = [
-        RicianNoiseSNR310,
-        RicianNoiseSNR1020,
-    ]
-    fraction_prior = jnp.ones(1 + 3 + 3)
-
-
-class AllGaussianModels(MultiCompartment):
-    model_types = [Ball] + 3 * [Stick] + 3 * [Zeppelin] + 3 * [Dti]
-    noise_types = [
-        BoundedGaussianNoise,
-        BoundedRicianNoise,
-    ]
-    fraction_prior = jnp.ones(1 + 3 + 3 + 3)
-
-
-class AllGaussianModelsParamCountPrior(MultiCompartment):
-    model_types = [Ball] + 3 * [Stick] + 3 * [Zeppelin] + 3 * [Dti]
-    noise_types = [
-        BoundedGaussianNoise,
-        BoundedRicianNoise,
-    ]
-    fraction_prior = jnp.ones(1 + 3 + 3 + 3)
-    mask_prior_cls = TotalParamPenalizedPrior
-
-
-class AllGaussianAndConvolvedModels(MultiCompartment):
-    model_types = (
-        [Ball]
-        + 3 * [Stick]
-        + 3 * [Zeppelin]
-        + 3 * [Dti]
-        + [Dot]
-        + [WatsonStick]
-        + [WatsonZeppelin]
-        + [BinghamStick]
-        + [BinghamZeppelin]
-        + [NoddiB]
-        + [NoddiW]
-        + [SandiB]
-        + [SandiW]
-    )
-    noise_types = [
-        BoundedGaussianNoise,
-    ] + [
-        BoundedRicianNoise,
-    ]
-    fraction_prior = jnp.ones(1 + 3 + 3 + 3 + 9)
-    mask_prior_cls = TotalParamPenalizedPrior
+        models = import_module("dmri.simulators.models")
+        return getattr(models, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
