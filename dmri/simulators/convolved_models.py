@@ -73,7 +73,9 @@ class ConvolvedSignalCompartment(SignalCompartment):
     ) -> ArrayLike:
         """Compute the log signal for given b-values and b-vectors."""
         sh_coeff_fod = fod.sh_coeff(sh_order=cls.default_eval_sh_order)
-        sh_coeff_signal = signal_kernel.sh_coeff(acq, sh_order=cls.default_eval_sh_order)
+        sh_coeff_signal = signal_kernel.sh_coeff(
+            acq, sh_order=cls.default_eval_sh_order
+        )
         return jnp.dot(sh_coeff_fod, sh_coeff_signal)
 
     @classmethod
