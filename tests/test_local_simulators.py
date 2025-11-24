@@ -11,7 +11,6 @@ from dmri.simulators import (
     Cylinder,
     Dot,
     Dti,
-    MultiCompartment,
     NoddiB,
     NoddiW,
     SandiB,
@@ -74,6 +73,7 @@ def compartment_model(request):
     theta = np.random.randn(model_class.theta_dim)
     return model_class.from_theta(theta)
 
+
 @pytest.fixture(
     params=[
         Ball3Stick,
@@ -120,7 +120,7 @@ def test_base_function(compartment_model):
 
 
 def test_jitable(compartment_model):
-    #if isinstance(compartment_model, Cylinder):
+    # if isinstance(compartment_model, Cylinder):
     #    pytest.xfail("Cylinder model needs currently some non jax-compatible code")
 
     bvals = np.random.uniform(size=(10,)) * 1000
@@ -175,6 +175,7 @@ def test_signal_properties(compartment_model):
     assert jnp.all(signal <= 1 + 0.05), "Signal should be bounded by 1"
     assert jnp.allclose(signal[0], 1.0, atol=0.2), "Signal at b=0 should be 1"
 
+
 def test_correct_theta_masking(multi_compartment_model):
     """Test that theta masking works correctly in multi-compartment models."""
     model = multi_compartment_model
@@ -184,19 +185,31 @@ def test_correct_theta_masking(multi_compartment_model):
     model_mask = jnp.ones((num_compartments,), dtype=bool)
     theta_masks = model.theta_mask(model_mask=model_mask)
 
-    assert len(theta_masks) == theta_dim, "Theta masks length should match theta dimension"
-    assert jnp.all(theta_masks), "All theta components should be included when model_mask is all False"
+    assert len(theta_masks) == theta_dim, (
+        "Theta masks length should match theta dimension"
+    )
+    assert jnp.all(theta_masks), (
+        "All theta components should be included when model_mask is all False"
+    )
 
     # Correct masked reconstruction
     def test_correct_rec(theta, model_mask):
         theta_mask = model.theta_mask(model_mask=model_mask)
-        params1 = type(multi_compartment_model).from_theta(theta, model_mask=model_mask).params
-        params2 = type(multi_compartment_model).from_theta(theta*theta_mask, model_mask=model_mask).params
+        params1 = (
+            type(multi_compartment_model)
+            .from_theta(theta, model_mask=model_mask)
+            .params
+        )
+        params2 = (
+            type(multi_compartment_model)
+            .from_theta(theta * theta_mask, model_mask=model_mask)
+            .params
+        )
         fraction1 = params1["model_fractions"]
         fraction2 = params2["model_fractions"]
-        assert jnp.allclose(
-            fraction1, fraction2
-        ), "Model fractions should match after masking"
+        assert jnp.allclose(fraction1, fraction2), (
+            "Model fractions should match after masking"
+        )
         comp1 = params1["model_compartments"] + params1.get("noise_compartments", [])
         comp2 = params2["model_compartments"] + params2.get("noise_compartments", [])
         # params1 and params2 should be the same at the active compartments
@@ -212,22 +225,22 @@ def test_correct_theta_masking(multi_compartment_model):
                     True,
                 )
                 assert check, f"Compartment {i} parameters should match after masking"
-    for i in range(5):
+
+    for _ in range(5):
         theta = np.random.randn(theta_dim)
         model_mask = np.random.choice([True, False], size=(num_compartments,))
         test_correct_rec(theta, model_mask)
 
 
-
 def test_gradient_computation(compartment_model):
     """Test that gradients can be computed for all parameters using multiple methods."""
     # Create acquisition scheme
-    #if isinstance(compartment_model, Cylinder):
+    # if isinstance(compartment_model, Cylinder):
     #    pytest.xfail("Cylinder model needs currently some non jax-compatible code")
-    #if isinstance(compartment_model, Sphere):
+    # if isinstance(compartment_model, Sphere):
     #    pytest.xfail("Sphere model needs currently some non jax-compatible code")
-    #if isinstance(compartment_model, MultiCompartment):
-        # pytest.xfail("MultiCompartmentModel model needs currently not implemented")
+    # if isinstance(compartment_model, MultiCompartment):
+    # pytest.xfail("MultiCompartmentModel model needs currently not implemented")
     #    pass
 
     bvals = jnp.array([0.0, 100.0, 1000.0])
@@ -254,7 +267,7 @@ def test_gradient_computation(compartment_model):
     batch_size = 10_000
     n_batches = n_samples // batch_size
 
-    for i in range(n_batches):
+    for _ in range(n_batches):
         key, subkey = jax.random.split(key)
 
         # Generate noise samples for this batch
