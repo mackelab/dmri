@@ -1,0 +1,92 @@
+site_name: DMRI Documentation
+site_description: Diffusion MRI model selection and inference toolkit
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+  font:
+    text: "Source Sans Pro"
+    code: "Fira Code"
+  logo: assets/logo.svg
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.tracking
+    - toc.follow
+  collapse_navigation: false
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: ["."]
+          options:
+            docstring_style: google
+            show_root_heading: true
+            show_root_full_path: false
+            separate_signature: true
+            merge_init_into_class: true
+            signature_crossrefs: true
+
+markdown_extensions:
+  - extra
+  - smarty
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - codehilite:
+      guess_lang: false
+  - toc:
+      permalink: true
+      toc_depth: 3
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.critic
+  - pymdownx.details
+  - pymdownx.emoji
+  - pymdownx.inlinehilite
+  - pymdownx.magiclink
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.superfences
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Guides:
+      - Simulators & Priors: guides/simulators.md
+      - Training Runs: guides/training.md
+      - Evaluation & Export: guides/evaluation.md
+  - API Reference:
+      - Simulators: reference/simulators.md
+      - Neural Nets: reference/nn.md
+      - Training: reference/train.md
+      - Evaluation: reference/eval.md
+      - Utilities: reference/utils.md
+
+repo_name: dmri
+repo_url: https://github.com/your-username/dmri
+
+extra_css:
+  - stylesheets/extra.css

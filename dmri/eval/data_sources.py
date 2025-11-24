@@ -99,16 +99,33 @@ def generate_synthetic_data(data_cfg, sim_type, key):
             bvecs = np.asarray(bvecs_cfg, dtype=np.float32)
         acq = acquisition_scheme(bvals, bvecs)
 
+    # Optionally fix the mask-prior hyperparameters instead of sampling them
+    fixed_mask_hyperparameters = (
+        data_cfg.get("model_mask_hyperparameter", None)
+        if hasattr(data_cfg, "get")
+        else getattr(data_cfg, "model_mask_hyperparameter", None)
+    )
+    fixed_mask_hyperparameters = _to_container(fixed_mask_hyperparameters)
+
+    if issubclass(sim_type.mask_prior_cls, TotalParamPenalizedPrior):
+        num_model_params = [mt.theta_dim for mt in sim_type.model_types]
+        mask_prior = sim_type.create_mask_prior(num_model_parameters=num_model_params)
+    else:
+        mask_prior = sim_type.create_mask_prior()
+
+    if fixed_mask_hyperparameters is not None:
+        fixed_mask_hyperparameters = jnp.asarray(fixed_mask_hyperparameters, dtype=jnp.float32)
+        if fixed_mask_hyperparameters.ndim == 0:
+            fixed_mask_hyperparameters = fixed_mask_hyperparameters[None]
+
     def _sample_single(rng):
         rng_theta, rng_mask, rng_sig = jax.random.split(rng, 3)
         theta = jax.random.normal(rng_theta, (sim_type.theta_dim,))
-        if issubclass(sim_type.mask_prior_cls, TotalParamPenalizedPrior):
-            num_model_params = [mt.theta_dim for mt in sim_type.model_types]
-            mask_prior = sim_type.create_mask_prior(num_model_parameters=num_model_params)
+        if fixed_mask_hyperparameters is not None:
+            model_mask = mask_prior.sample_model_mask(rng_mask, fixed_mask_hyperparameters)
         else:
-            mask_prior = sim_type.create_mask_prior()
-        mask_sample = mask_prior.sample(rng_mask)
-        model_mask = mask_sample.model_mask
+            mask_sample = mask_prior.sample(rng_mask)
+            model_mask = mask_sample.model_mask
 
         simulator = sim_type.from_theta(theta, model_mask=model_mask)
         signal = simulator.signal(acq, rng=rng_sig)
