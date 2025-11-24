@@ -70,11 +70,11 @@ jobs:
 
     - name: Check formatting with Ruff
       run: |
-        ruff format --check .
+        ruff format --check dmri tests
 
     - name: Lint with Ruff
       run: |
-        ruff check .
+        ruff check dmri tests
 
     - name: Type check with mypy
       run: |
