@@ -361,7 +361,8 @@ def test_grouped_embedding_sorts_measurements(rng):
     expected_order = jnp.array([1, 2, 0])
     assert jnp.allclose(sorted_bvals, jnp.sort(bvals, axis=-1))
     assert jnp.allclose(
-        sorted_signals, signals[:, expected_order]  # type: ignore[index]
+        sorted_signals,
+        signals[:, expected_order],  # type: ignore[index]
     )
     assert jnp.allclose(sorted_bvecs, bvecs[:, expected_order, :])  # type: ignore[index]
 

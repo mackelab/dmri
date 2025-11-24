@@ -113,7 +113,7 @@ def test_normal_to_dirichlet_gradients(
     batch_size = 10_000
     n_batches = n_samples // batch_size
 
-    for i in range(n_batches):
+    for _ in range(n_batches):
         key, subkey = jax.random.split(key)
         noise = jax.random.normal(subkey, shape=(batch_size,) + eps.shape) * eps_mc
         eps_perturbed = eps + noise

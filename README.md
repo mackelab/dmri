@@ -2,6 +2,8 @@
 
 Fast, reproducible diffusion MRI model selection powered by JAX, Hydra, and a library of simulators and neural architectures.
 
+**Docs:** https://your-username.github.io/dmri/
+
 ## Why use this repo?
 - Hydra-driven experiments and sweeps with sensible defaults
 - JAX-first training and evaluation pipelines with checkpointing and EMA support
