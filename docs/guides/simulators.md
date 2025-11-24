@@ -2,6 +2,31 @@
 
 DMRI ships composable simulators so you can explore competing diffusion models without rewriting kernels. The classes documented below expose friendly constructors and priors through their docstrings—this guide shows how to use them together.
 
+## Modeling assumptions (quick math)
+
+We follow the Stejskal–Tanner convention, writing the diffusion-weighted signal for
+component :math:`k` as :math:`S_k(b, \\mathbf{g})`. Typical closed forms:
+
+- **Ball (isotropic Gaussian):** :math:`S(b) = \\exp(-b D)`.
+- **Stick (zero-radius cylinder):** :math:`S(b, \\mathbf{g}) = \\exp\\big(-b\\,D_{\\parallel}(\\mathbf{g}\\cdot\\boldsymbol{\\mu})^2\\big)`.
+- **Zeppelin (axially symmetric Gaussian):** :math:`S(b, \\mathbf{g}) = \\exp\\big(-b[ D_{\\perp} + (D_{\\parallel}-D_{\\perp})(\\mathbf{g}\\cdot\\boldsymbol{\\mu})^2 ]\\big)`.
+- **Sphere (restricted, narrow-pulse limit):** uses the Balinov et al. (1993) series for attenuation in a sphere of radius :math:`R`.
+
+A multi-compartment mixture with fractions :math:`f_k` produces
+
+.. math::
+
+    S(b, \\mathbf{g}) = \\sum_k f_k\\, S_k(b, \\mathbf{g}), \\quad \\sum_k f_k = 1.
+
+Noise compartments (e.g., bounded Rician/Gaussian) are applied after the base signal.
+
+Key references
+
+- Stejskal & Tanner (1965) for the pulsed-gradient spin-echo signal model.
+- Callaghan (1991) for restricted diffusion formalisms.
+- Behrens et al. (2003) for the Ball–Stick mixture used in tractography.
+- Balinov et al. (1993) for the spherical attenuation series.
+
 ## Build an acquisition scheme
 
 ```python

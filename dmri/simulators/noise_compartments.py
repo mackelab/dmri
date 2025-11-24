@@ -1,3 +1,15 @@
+"""Noise models for diffusion MRI signals.
+
+Implements bounded Rician and Gaussian noise commonly observed in magnitude
+MR images. The likelihoods follow:
+
+.. math::
+    p(z \\mid \\nu, \\sigma) = \\frac{z}{\\sigma^2} \\exp\\Big(-\\tfrac{z^2+\\nu^2}{2\\sigma^2}\\Big) I_0\\Big(\\tfrac{z\\nu}{\\sigma^2}\\Big)
+
+with :math:`I_0` the modified Bessel function (Gudbjartsson & Patz, 1995). SNR
+priors are kept in bounded ranges for numerical stability.
+"""
+
 from typing import Any
 
 import jax

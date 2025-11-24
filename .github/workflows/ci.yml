@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ main, master ]
 
+# Make sure the workflow token can read contents of repos in the org
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -14,10 +18,15 @@ jobs:
         python-version: ["3.11"]
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
+
+    # 👇 This is the important bit for private-repo dependencies
+    - name: Configure git to use GITHUB_TOKEN for private GitHub repos
+      run: |
+        git config --global url."https://x-access-token:${{ github.token }}@github.com/".insteadOf "https://github.com/"
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
 
@@ -31,18 +40,25 @@ jobs:
         pytest tests/ --cov=dmri --cov-report=xml
 
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v4
       with:
         file: ./coverage.xml
         fail_ci_if_error: false
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}  # if your repo needs it
 
   lint:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
+
+    # Optional here, only needed if linting step also touches the private repo
+    - name: Configure git to use GITHUB_TOKEN for private GitHub repos
+      run: |
+        git config --global url."https://x-access-token:${{ github.token }}@github.com/".insteadOf "https://github.com/"
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.10'
 
