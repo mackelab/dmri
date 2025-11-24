@@ -23,8 +23,8 @@ class RicianNoise(NoiseCompartment):
     def noise(self, signal, rng):
         return add_rician_noise(rng, signal, 1 / self.snr)
 
-    def log_likelihood(cls, signal_pred, signal_true):
-        sigma = 1.0 / cls.snr
+    def log_likelihood(self, signal_pred, signal_true):
+        sigma = 1.0 / self.snr
         z = signal_true
         nu = signal_pred
 
@@ -36,10 +36,7 @@ class RicianNoise(NoiseCompartment):
         log_i0 = jnp.log(jax.scipy.special.i0e(x)) + jnp.abs(x)
 
         log_p = (
-            jnp.log(z)
-            - 2.0 * jnp.log(sigma)
-            - 0.5 * (z**2 + nu**2) / sigma**2
-            + log_i0
+            jnp.log(z) - 2.0 * jnp.log(sigma) - 0.5 * (z**2 + nu**2) / sigma**2 + log_i0
         )
 
         return log_p.sum(-1)
@@ -66,9 +63,9 @@ class GaussianNoise(NoiseCompartment):
     def noise(self, signal, rng):
         return add_gaussian_noise(rng, signal, 1 / self.snr)
 
-    def log_likelihood(cls, signal_pred, signal_true):
+    def log_likelihood(self, signal_pred, signal_true):
         log_likelihood = jax.scipy.stats.norm.logpdf(
-            signal_true, loc=signal_pred, scale=1 / cls.snr
+            signal_true, loc=signal_pred, scale=1 / self.snr
         )
         return log_likelihood.sum(-1)
 

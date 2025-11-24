@@ -383,7 +383,10 @@ def _fit_polynomial_coeffs(
         return jnp.linalg.solve(vander, values_arr)
 
     flat_rhs = values_arr.reshape((-1, values_arr.shape[-1]))
-    solve_fn = lambda rhs: jnp.linalg.solve(vander, rhs)
+
+    def solve_fn(rhs):
+        return jnp.linalg.solve(vander, rhs)
+
     coeffs_flat = jax.vmap(solve_fn)(flat_rhs)
     return coeffs_flat.reshape(values_arr.shape[:-1] + (degree + 1,))
 
@@ -751,7 +754,7 @@ def plot_curves(
     for idx, curve in enumerate(curves):
         pts = curve_points(curve, num_points=num_points, t_min=t_min, t_max=t_max)
         label = labels[idx] if labels is not None else None
-        line_dict = {k: v for k, v in line_kwargs.items()}
+        line_dict = dict(line_kwargs)
         if color_override is not None:
             line_dict.setdefault("color", color_override)
         if width_override is not None:

@@ -64,11 +64,17 @@ def build_simulator(cfg: DictConfig):
                 mask_prior_overrides["u_alpha"] = prior_mask_u_alpha
             if prior_mask_u_beta is not None:
                 mask_prior_overrides["u_beta"] = prior_mask_u_beta
-            mask_prior_overrides["num_model_parameters"] = [mt.theta_dim for mt in sim_type.model_types]
+            mask_prior_overrides["num_model_parameters"] = [
+                mt.theta_dim for mt in sim_type.model_types
+            ]
 
-
-        def create_simulator(acq_fn):
-            mask_prior_dist = sim_type.create_mask_prior(**mask_prior_overrides)
+        def create_simulator(
+            acq_fn,
+            *,
+            mask_overrides=mask_prior_overrides,
+            posterior_score=with_posterior_score,
+        ):
+            mask_prior_dist = sim_type.create_mask_prior(**mask_overrides)
 
             def simulator(rng):
                 rng0, rng1, rng2, rng3 = jax.random.split(rng, 4)
@@ -85,7 +91,7 @@ def build_simulator(cfg: DictConfig):
                     "acq": acq,
                 }
 
-                if not with_posterior_score:
+                if not posterior_score:
                     dmri_simulator = sim_type.from_theta(theta, model_mask=model_mask)
                     x = dmri_simulator.signal(acq, rng=rng3)
                     output["x"] = x

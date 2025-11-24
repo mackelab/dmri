@@ -215,16 +215,8 @@ class MultiShellStick(Stick):
         """
         bvals = acq.bvals
         bvecs = acq.bvecs
-        mu_cart = sph2cart(mu)
 
         return multi_shell_stick_log_signal_fn(bvals, bvecs, mu, lam_par, lam_par_std)
-
-    @classmethod
-    def to_theta(cls, mu: ArrayLike, lam_par: float, lam_par_std: float) -> ArrayLike:
-        """Convert the parameters to the parameter space theta."""
-        theta = jnp.array([mu, lam_par, lam_par_std])
-        theta = jax.scipy.stats.norm.ppf(theta)
-        return theta
 
     @classmethod
     def to_theta(cls, mu: ArrayLike, lam_par: float, lam_par_std: float) -> ArrayLike:

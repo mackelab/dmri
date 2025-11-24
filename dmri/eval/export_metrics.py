@@ -153,9 +153,7 @@ def run_configured_metrics(
         metric_values = metric_fn(spec, context, devices)
         if metric_values is None:
             if logger is not None:
-                logger.info(
-                    "Metric '%s' returned no values (skipped).", spec.key
-                )
+                logger.info("Metric '%s' returned no values (skipped).", spec.key)
             continue
         nifti_path = _export_metric_map(spec, metric_values, context, out_path)
         aggregations = _summarize_metric(spec, metric_values)
@@ -313,9 +311,7 @@ def _compute_ksd_metric(
     max_samples = options.get("max_samples", options.get("num_samples"))
     seed = int(options.get("random_seed", getattr(context.cfg, "seed", 0)))
     export_pvalue = bool(options.get("export_pvalue", True))
-    pvalue_filename = options.get(
-        "pvalue_output_filename", "metric_ksd_pvalue.nii.gz"
-    )
+    pvalue_filename = options.get("pvalue_output_filename", "metric_ksd_pvalue.nii.gz")
 
     theta = np.asarray(context.model_parameters_brain)
     sample_axis = 1 if spec.sample_axis is None else spec.sample_axis
@@ -357,6 +353,7 @@ def _compute_ksd_metric(
         return jnp.stack((ksd2, p_value))
 
     if model_mask is None:
+
         def _ksd_single_no_mask(key, theta_voxel, x_voxel):
             return _ksd_single(key, theta_voxel, x_voxel, None)
 
@@ -435,9 +432,7 @@ def _compute_sbc_marginal_coverage(
     num_voxels = posterior_samples.shape[0]
     num_samples = posterior_samples.shape[1]
     if num_samples == 0:
-        return np.full(
-            true_thetas.shape, np.nan, dtype=np.float32
-        )
+        return np.full(true_thetas.shape, np.nan, dtype=np.float32)
 
     posterior_samples = posterior_samples.reshape(num_voxels, num_samples, -1)
     true_thetas = true_thetas.reshape(num_voxels, -1)
@@ -458,9 +453,7 @@ def _compute_sbc_marginal_coverage(
     for voxel_idx in range(num_voxels):
         theta_mask = None
         if model_mask is not None:
-            theta_mask = np.asarray(
-                context.sim_type.theta_mask(model_mask[voxel_idx])
-            )
+            theta_mask = np.asarray(context.sim_type.theta_mask(model_mask[voxel_idx]))
         coverage[voxel_idx] = _marginal_rank_fraction(
             posterior_samples[voxel_idx],
             true_thetas[voxel_idx],
@@ -573,9 +566,7 @@ def _compute_model_selection_calibration(
     probabilities, true_mask = _prepare_model_selection_inputs(spec, context)
     num_bins = int(spec.options.get("num_bins", 10))
     if num_bins <= 0:
-        raise ValueError(
-            f"Metric '{spec.key}' expects num_bins > 0, got {num_bins}."
-        )
+        raise ValueError(f"Metric '{spec.key}' expects num_bins > 0, got {num_bins}.")
     bin_edges = np.linspace(0.0, 1.0, num_bins + 1, dtype=np.float64)
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2.0
 
@@ -693,7 +684,9 @@ def _compute_model_selection_classification(
         tp.sum() + tn.sum() + fp.sum() + fn.sum(),
     )
 
-    macro_precision = np.nanmean(per_class_precision) if per_class_precision.size else np.nan
+    macro_precision = (
+        np.nanmean(per_class_precision) if per_class_precision.size else np.nan
+    )
     macro_recall = np.nanmean(per_class_recall) if per_class_recall.size else np.nan
     macro_f1 = np.nanmean(per_class_f1) if per_class_f1.size else np.nan
 
@@ -728,11 +721,16 @@ def _compute_model_selection_classification(
 
 _METRIC_REGISTRY: Mapping[
     str,
-    Callable[[MetricSpec, MetricContext, Sequence[jax.Device] | str | None], np.ndarray | None],
+    Callable[
+        [MetricSpec, MetricContext, Sequence[jax.Device] | str | None],
+        np.ndarray | None,
+    ],
 ] = {
     "posterior_nll": _compute_posterior_nll,
     "reconstruction_mse": _compute_reconstruction_mse,
-    "sliced_wasserstein": lambda spec, context, devices: _compute_swd_metric(spec, context),
+    "sliced_wasserstein": lambda spec, context, devices: _compute_swd_metric(
+        spec, context
+    ),
     "ksd": _compute_ksd_metric,
     "sbc_marginal_coverage": _compute_sbc_marginal_coverage,
     "sbc_model_mask": _compute_sbc_model_mask,
@@ -1191,7 +1189,7 @@ def _normalize_metric_specs(
         iterable = enumerate(metrics_cfg)
     else:
         raise TypeError(
-            "metrics_cfg must be a mapping or sequence, got " f"{type(metrics_cfg)}"
+            f"metrics_cfg must be a mapping or sequence, got {type(metrics_cfg)}"
         )
 
     for key, raw_spec in iterable:
@@ -1281,7 +1279,9 @@ def _normalize_device_kinds(value: Any) -> tuple[str, ...]:
         return (value,)
     if isinstance(value, Sequence):
         return tuple(str(v) for v in value)
-    raise TypeError(f"preferred_device_kinds must be a string or sequence, got {value!r}")
+    raise TypeError(
+        f"preferred_device_kinds must be a string or sequence, got {value!r}"
+    )
 
 
 def _load_reference_theta_samples(path: str) -> np.ndarray:
@@ -1373,7 +1373,6 @@ def compute_swd_to_reference(
     return os.path.join(out_path, output_filename)
 
 
-
 def multiscale_preconditioned_ksd_and_pvalue(
     sim_type,
     thetas,
@@ -1403,7 +1402,7 @@ def multiscale_preconditioned_ksd_and_pvalue(
 
     # theta_mask indicates which dimensions are relevant (shape: (D,))
     theta_mask = sim_type.theta_mask(mask).astype(dtype)  # (D,)
-    d_eff = jnp.sum(theta_mask)                          # effective dimension (scalar)
+    d_eff = jnp.sum(theta_mask)  # effective dimension (scalar)
 
     # ---------- log posterior ----------
     def log_posterior(theta, mask, acq, x):
@@ -1446,58 +1445,56 @@ def multiscale_preconditioned_ksd_and_pvalue(
         g = jax.grad(log_posterior, argnums=0)(theta, mask, acq, x)  # (D,)
         return g * theta_mask
 
-    scores_theta = jax.vmap(score_theta)(thetas)      # (N, D)
-    scores_z = scores_theta @ P_inv_T                 # (N, D)
-    scores_z = scores_z * theta_mask                  # (N, D)
+    scores_theta = jax.vmap(score_theta)(thetas)  # (N, D)
+    scores_z = scores_theta @ P_inv_T  # (N, D)
+    scores_z = scores_z * theta_mask  # (N, D)
 
     # ---------- 2. Transform samples to z-space for distances ----------
-    z = thetas @ P.T                                  # (N, D)
-    z_masked = z * theta_mask                         # (N, D)
+    z = thetas @ P.T  # (N, D)
+    z_masked = z * theta_mask  # (N, D)
 
     # Pairwise squared distances using Gram trick (no (N, N, D))
-    z_sq_norm = jnp.sum(z_masked**2, axis=1)          # (N,)
+    z_sq_norm = jnp.sum(z_masked**2, axis=1)  # (N,)
     # sq_dist_z[i,j] = ||z_i||^2 + ||z_j||^2 - 2 z_i·z_j
-    gram_z = z_masked @ z_masked.T                    # (N, N)
-    sq_dist_z = (
-        z_sq_norm[:, None] + z_sq_norm[None, :] - 2.0 * gram_z
-    )                                                 # (N, N)
-    sq_dist_z = jnp.maximum(sq_dist_z, 0.0)           # numerical safety
+    gram_z = z_masked @ z_masked.T  # (N, N)
+    sq_dist_z = z_sq_norm[:, None] + z_sq_norm[None, :] - 2.0 * gram_z  # (N, N)
+    sq_dist_z = jnp.maximum(sq_dist_z, 0.0)  # numerical safety
 
     # Precompute Stein-related Gram matrices (all (N, N))
-    S = scores_z                                      # (N, D)
-    gram_s = S @ S.T                                  # (N, N)  term1: s_i^T s_j
-    SZT = S @ z_masked.T                              # (N, N)  A_ij = s_i^T z_j
-    b = jnp.diag(SZT)                                 # (N,)   b_i = s_i^T z_i
+    S = scores_z  # (N, D)
+    gram_s = S @ S.T  # (N, N)  term1: s_i^T s_j
+    SZT = S @ z_masked.T  # (N, N)  A_ij = s_i^T z_j
+    b = jnp.diag(SZT)  # (N,)   b_i = s_i^T z_i
 
     # ---------- 3. Multi-scale Stein kernel (memory-friendly) ----------
     def body_h2(i, H):
         h2 = h2s[i]
 
         # RBF kernel in z
-        k = jnp.exp(-sq_dist_z / (2.0 * h2))          # (N, N)
+        k = jnp.exp(-sq_dist_z / (2.0 * h2))  # (N, N)
 
         # Term 1: s_i^T s_j * k_ij
-        term1 = gram_s * k                            # (N, N)
+        term1 = gram_s * k  # (N, N)
 
         # Term 2 and 3 via analytic forms (no (N, N, D) tensors):
         # term2(i,j) = k/h2 * (s_i^T z_i - s_i^T z_j) = k/h2 * (b_i - SZT_ij)
         # term3(i,j) = -k/h2 * (s_j^T z_i - s_j^T z_j) = -k/h2 * (SZT_ji - b_j)
         k_over_h2 = k / h2
-        term2 = k_over_h2 * (b[:, None] - SZT)        # (N, N)
-        term3 = -k_over_h2 * (SZT.T - b[None, :])     # (N, N)
+        term2 = k_over_h2 * (b[:, None] - SZT)  # (N, N)
+        term3 = -k_over_h2 * (SZT.T - b[None, :])  # (N, N)
 
         # Term 4: trace Hessian
         # trace = k * (d_eff / h2 - ||z_i - z_j||^2 / h2^2)
         trace_hess = k * (d_eff / h2 - sq_dist_z / (h2**2))
 
         # Weight for multi-scale combination
-        weight = sigma * 1/len(h2s)
+        weight = sigma * 1 / len(h2s)
         H_update = weight * (term1 + term2 + term3 + trace_hess)
 
         return H + H_update
 
     H0 = jnp.zeros_like(sq_dist_z)
-    H = jax.lax.fori_loop(0, m, body_h2, H0)              # (N, N)
+    H = jax.lax.fori_loop(0, m, body_h2, H0)  # (N, N)
 
     # Remove diagonal for U-statistic
     diag_H = jnp.diag(jnp.diag(H))
@@ -1515,7 +1512,7 @@ def multiscale_preconditioned_ksd_and_pvalue(
         xi = 2.0 * jax.random.bernoulli(subkey, 0.5, shape=(n,)) - 1.0  # (N,)
 
         # T_star = xi^T H_no_diag xi / (n(n-1))
-        Hx = H_no_diag @ xi                         # (N,)
+        Hx = H_no_diag @ xi  # (N,)
         T_star = jnp.dot(xi, Hx) / denom
 
         count = count + (T_star >= ksd2_obs)

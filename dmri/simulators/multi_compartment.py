@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from functools import cache
-from typing import Any, Callable, Optional, Tuple
+from typing import Any, Callable
 
 import jax
 import jax.numpy as jnp
@@ -111,7 +111,7 @@ class MultiCompartment(SignalCompartment):
         model_fractions: ArrayLike,
         model_compartments: list,
         noise_compartments: list,
-        model_mask: Optional[ArrayLike] = None,
+        model_mask: ArrayLike | None = None,
         shared_parameter: SharedParameterState | None = None,
     ):
         self.model_fractions = jnp.asarray(model_fractions)
@@ -125,7 +125,6 @@ class MultiCompartment(SignalCompartment):
         # This will not work with current shared parameter state
         # assert [type(m) for m in model_compartments] == self.model_types, "Wrong model"
         assert [type(m) for m in noise_compartments] == self.noise_types, "Wrong noise"
-
 
     @classmethod
     def num_compartments(cls):
@@ -253,7 +252,6 @@ class MultiCompartment(SignalCompartment):
                 noise_idx_tuple = tuple(int(i) for i in noise_idx)
             cls = cls.sub_model(model_idx=model_idx_tuple, noise_idx=noise_idx_tuple)
         with jax.ensure_compile_time_eval():
-
             if model_mask is None:
                 return jnp.ones((cls.theta_dim,), dtype=jnp.bool_)
 
@@ -296,8 +294,10 @@ class MultiCompartment(SignalCompartment):
                     jnp.full((compartment.theta_dim,), is_active, dtype=jnp.bool_)
                 )
 
-            return jnp.concatenate(mask_list) if mask_list else jnp.ones(
-                (0,), dtype=jnp.bool_
+            return (
+                jnp.concatenate(mask_list)
+                if mask_list
+                else jnp.ones((0,), dtype=jnp.bool_)
             )
 
     @classmethod
@@ -306,7 +306,7 @@ class MultiCompartment(SignalCompartment):
         model_fractions: ArrayLike,
         model_compartments: list,
         noise_compartments: list,
-        model_mask: Optional[ArrayLike] = None,
+        model_mask: ArrayLike | None = None,
         shared_parameter: SharedParameterState | None = None,
     ):
         theta_fraction = model_fractions
@@ -336,7 +336,7 @@ class MultiCompartment(SignalCompartment):
     def to_params(
         cls,
         theta: ArrayLike,
-        model_mask: Optional[ArrayLike] = None,
+        model_mask: ArrayLike | None = None,
     ):
         thetas_split = cls.split_theta(theta)
         fractions = thetas_split[0]
@@ -510,8 +510,8 @@ class SharedMultiShellDiffusivity(SharedParameterState):
 @cache
 def _build_submodel(
     base_cls: type[MultiCompartment],
-    model_idx_tuple: Tuple[int, ...],
-    noise_idx_tuple: Tuple[int, ...],
+    model_idx_tuple: tuple[int, ...],
+    noise_idx_tuple: tuple[int, ...],
 ) -> type[MultiCompartment]:
     model_types = [base_cls.model_types[i] for i in model_idx_tuple]
     noise_types = [base_cls.noise_types[i] for i in noise_idx_tuple]
@@ -595,6 +595,7 @@ class Ball3StickSharedDiffusivity(MultiCompartment):
     fraction_prior = jnp.array([3.5, 1.0, 0.3, 0.1])
     shared_parameter_type = SharedDiffusivity
 
+
 class Ball3StickSharedDiffusivityTotalParamPenalizedPrior(MultiCompartment):
     model_types = [StaticBall, StaticStick, StaticStick, StaticStick]
     noise_types = [BoundedGaussianNoise]
@@ -609,6 +610,7 @@ class SSFPBall3StickSharedDiffusivity(MultiCompartment):
     fraction_prior = jnp.array([3.5, 1.0, 0.3, 0.1])
     shared_parameter_type = SharedSSFPDiffusivity
 
+    @staticmethod
     def normalizing_fn(acq, x: ArrayLike) -> ArrayLike:
         return (x - jnp.min(x)) / (jnp.max(x) - jnp.min(x))
 
@@ -619,6 +621,7 @@ class SSFPBall3StickSharedDiffusivityBetterNorm(MultiCompartment):
     fraction_prior = jnp.array([3.5, 1.0, 0.3, 0.1])
     shared_parameter_type = SharedSSFPDiffusivity
 
+    @staticmethod
     def pre_normalizing_fn(acq, x: ArrayLike) -> ArrayLike:
         ssfp_max = (
             ssfp_signal_fn(
@@ -740,6 +743,7 @@ class AllGaussianModels(MultiCompartment):
         BoundedRicianNoise,
     ]
     fraction_prior = jnp.ones(1 + 3 + 3 + 3)
+
 
 class AllGaussianModelsParamCountPrior(MultiCompartment):
     model_types = [Ball] + 3 * [Stick] + 3 * [Zeppelin] + 3 * [Dti]

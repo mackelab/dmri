@@ -86,16 +86,18 @@ def eval_in_batches(
                 )
                 batch_end = min(batch_start + current_batch_size, data[0].shape[0])
                 batch_data = jax.tree_util.tree_map(
-                    lambda x: x[batch_start:batch_end], data
+                    lambda x, start=batch_start, end=batch_end: x[start:end], data
                 )
 
                 # Split batch data across devices
                 original_batch_size = batch_data[0].shape[0]
-                padding_size = (num_devices - (original_batch_size % num_devices)) % num_devices
+                padding_size = (
+                    num_devices - (original_batch_size % num_devices)
+                ) % num_devices
                 if padding_size:
                     batch_data = jax.tree_util.tree_map(
-                        lambda x: jnp.pad(
-                            x, ((0, padding_size),) + ((0, 0),) * (x.ndim - 1)
+                        lambda x, pad=padding_size: jnp.pad(
+                            x, ((0, pad),) + ((0, 0),) * (x.ndim - 1)
                         ),
                         batch_data,
                     )
@@ -104,9 +106,9 @@ def eval_in_batches(
 
                 # Reshape data for pmap (num_devices, device_batch_size, ...)
                 pmap_data = jax.tree_util.tree_map(
-                    lambda x: x.reshape(
-                        num_devices, device_batch_size_actual, *x.shape[1:]
-                    ),
+                    lambda x,
+                    devices=num_devices,
+                    bs=device_batch_size_actual: x.reshape(devices, bs, *x.shape[1:]),
                     batch_data,
                 )
 
@@ -133,7 +135,9 @@ def eval_in_batches(
                     # Clear caches
                     jax.clear_caches()
                     current_batch_size = current_batch_size // 2
-                    device_batch_size = max(current_batch_size // num_devices, min_batch_size)
+                    device_batch_size = max(
+                        current_batch_size // num_devices, min_batch_size
+                    )
                     continue
                 else:
                     raise e
@@ -152,7 +156,7 @@ def eval_in_batches(
                 )
                 batch_end = min(batch_start + current_batch_size, data[0].shape[0])
                 batch_data = jax.tree_util.tree_map(
-                    lambda x: x[batch_start:batch_end], data
+                    lambda x, start=batch_start, end=batch_end: x[start:end], data
                 )
                 batch_keys = jax.random.split(subkey, batch_data[0].shape[0])
                 batch_res = fn(batch_keys, *batch_data)
@@ -220,7 +224,9 @@ def build_theta_sample_fn(
             keys = jax.random.split(key, K)
             theta = sample_fn(keys, acq, x, model_mask)
         else:
-            theta = jax.random.normal(key, (num_samples, model.tokenizer.simulator.theta_dim))
+            theta = jax.random.normal(
+                key, (num_samples, model.tokenizer.simulator.theta_dim)
+            )
         return theta
 
     corrector = build_corrector(

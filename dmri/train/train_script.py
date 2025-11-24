@@ -262,7 +262,9 @@ def create_dataloaders(
         if params.get("seed") is None:
             params["seed"] = seed
         if "devices" in params:
-            devices = [_resolve_device_spec(dev_spec) for dev_spec in params.get("devices", [])]
+            devices = [
+                _resolve_device_spec(dev_spec) for dev_spec in params.get("devices", [])
+            ]
         else:
             devices = [jax.devices()[0]]
         params["devices"] = devices
@@ -678,10 +680,8 @@ def train_loop(
             and np.isfinite(total_loss_value)
         ):
             if recover_from_latest_checkpoint(
-
-                    f"Non-finite loss detected at step {train_state.step}. "
-                    f"loss_mask={loss_mask}, loss_theta={loss_theta}. Resetting to latest checkpoint."
-
+                f"Non-finite loss detected at step {train_state.step}. "
+                f"loss_mask={loss_mask}, loss_theta={loss_theta}. Resetting to latest checkpoint."
             ):
                 continue
             log.error(
@@ -704,16 +704,16 @@ def train_loop(
                 for stats in all_stats
                 if stats and "avg_production_time_per_batch" in stats
             ]
-            dataset_stats["avg_production_time"] = (
-                sum(avg_times) / len(avg_times)
-            )
+            dataset_stats["avg_production_time"] = sum(avg_times) / len(avg_times)
             samples_written = sum(
                 stats.get("samples_written", 0) for stats in all_stats if stats
             )
             samples_read = sum(
                 stats.get("samples_requested", 0) for stats in all_stats if stats
             )
-            dataset_stats["samples_read/samples_written"] = samples_read/samples_written
+            dataset_stats["samples_read/samples_written"] = (
+                samples_read / samples_written
+            )
         print(dataset_stats)
         log.info(
             f"Step {train_state.step}, Loss mask: {loss_mask}, Loss theta: {loss_theta}, sim. time: {dataset_stats.get('avg_production_time', 0.0):.4f}s, read/wrt: {dataset_stats.get('samples_read/samples_written', 0.0):.4f}"
@@ -732,7 +732,9 @@ def train_loop(
                 "loss theta": loss_theta,
                 "step": train_state.step,
                 "sim_time": dataset_stats.get("avg_production_time", 0.0),
-                "sim_read_write_ratio": dataset_stats.get("samples_read/samples_written", 0.0),
+                "sim_read_write_ratio": dataset_stats.get(
+                    "samples_read/samples_written", 0.0
+                ),
             }
             # Add dataset stats to wandb
             wandb_dict.update(dataset_stats)
@@ -794,13 +796,13 @@ def train_loop(
                     f"KSD: {ksd_metrics.get('ksd')}, p-value: {ksd_metrics.get('ksd_pvalue')}"
                 )
                 if wandb_active:
-                    wandb.log(
-                        {
-                            "ksd": float(ksd_metrics.get("ksd", float("nan"))),
-                            "ksd_pvalue": float(ksd_metrics.get("ksd_pvalue", float("nan"))),
-                            "step": train_state.step,
-                        }
-                    )
+                    wandb.log({
+                        "ksd": float(ksd_metrics.get("ksd", float("nan"))),
+                        "ksd_pvalue": float(
+                            ksd_metrics.get("ksd_pvalue", float("nan"))
+                        ),
+                        "step": train_state.step,
+                    })
             if checkpoint_manager.keep_best:
                 save_training_checkpoint(
                     checkpoint_manager,
@@ -865,7 +867,9 @@ def build_optimizer(optimizer_cfg):
     return optax.chain(*grad_transforms)
 
 
-@hydra.main(config_path="../../conf_train", config_name="config.yaml", version_base=None)
+@hydra.main(
+    config_path="../../conf_train", config_name="config.yaml", version_base=None
+)
 def _main(cfg: DictConfig):
     log, output_dir, output_super_dir = configure_environment(cfg)
     wandb_active = init_wandb_if_needed(cfg)

@@ -62,7 +62,9 @@ def _get_acquisition_fns(acq_cfg):
             for scheme in schemes
         ]
     if acq_scheme_name is None:
-        raise ValueError("acquisition_scheme must be a name string or mapping with a name field")
+        raise ValueError(
+            "acquisition_scheme must be a name string or mapping with a name field"
+        )
     return [_build_acq_fn_from_name(acq_scheme_name, acq_params)]
 
 
@@ -90,7 +92,9 @@ def generate_synthetic_data(data_cfg, sim_type, key):
     if acq_cfg is not None:
         key, acq, bvals, bvecs = _sample_acquisition_from_cfg(acq_cfg, key)
     else:
-        bvals = np.asarray(getattr(data_cfg, "bvals", [0, 1000, 2000]), dtype=np.float32)
+        bvals = np.asarray(
+            getattr(data_cfg, "bvals", [0, 1000, 2000]), dtype=np.float32
+        )
         bvecs_cfg = getattr(data_cfg, "bvecs", None)
         if bvecs_cfg is None:
             key, bvec_key = jax.random.split(key)
@@ -114,7 +118,9 @@ def generate_synthetic_data(data_cfg, sim_type, key):
         mask_prior = sim_type.create_mask_prior()
 
     if fixed_mask_hyperparameters is not None:
-        fixed_mask_hyperparameters = jnp.asarray(fixed_mask_hyperparameters, dtype=jnp.float32)
+        fixed_mask_hyperparameters = jnp.asarray(
+            fixed_mask_hyperparameters, dtype=jnp.float32
+        )
         if fixed_mask_hyperparameters.ndim == 0:
             fixed_mask_hyperparameters = fixed_mask_hyperparameters[None]
 
@@ -122,7 +128,9 @@ def generate_synthetic_data(data_cfg, sim_type, key):
         rng_theta, rng_mask, rng_sig = jax.random.split(rng, 3)
         theta = jax.random.normal(rng_theta, (sim_type.theta_dim,))
         if fixed_mask_hyperparameters is not None:
-            model_mask = mask_prior.sample_model_mask(rng_mask, fixed_mask_hyperparameters)
+            model_mask = mask_prior.sample_model_mask(
+                rng_mask, fixed_mask_hyperparameters
+            )
         else:
             mask_sample = mask_prior.sample(rng_mask)
             model_mask = mask_sample.model_mask

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import itertools
 from dataclasses import dataclass
-from typing import Tuple
 
 import jax
 import jax.numpy as jnp
@@ -18,8 +17,11 @@ class MaskPriorSample:
     hyperparameters: jax.Array
     model_mask: jax.Array
 
-jax.tree_util.register_dataclass(MaskPriorSample,
-    data_fields=("hyperparameters", "model_mask"), meta_fields=(),
+
+jax.tree_util.register_dataclass(
+    MaskPriorSample,
+    data_fields=("hyperparameters", "model_mask"),
+    meta_fields=(),
 )
 
 
@@ -240,6 +242,7 @@ class BetaBernoulliMaskPrior(MaskPrior):
         log_weight = -jnp.log(self._num_forced_combos)
         return logsumexp(log_prob_cond + log_weight)
 
+
 class BetaBernoulliParamCountScaledPrior(MaskPrior):
     """Independent Bernoulli masks with per-component Dirichlet(2) (i.e., Beta) priors."""
 
@@ -259,7 +262,9 @@ class BetaBernoulliParamCountScaledPrior(MaskPrior):
     ) -> None:
         super().__init__(num_model_components, num_noise_components)
         if len(num_model_parameters) != self.num_model_components:
-            raise ValueError("len(num_model_parameters) must equal num_model_components.")
+            raise ValueError(
+                "len(num_model_parameters) must equal num_model_components."
+            )
         if any(n <= 0 for n in num_model_parameters):
             raise ValueError("All entries in num_model_parameters must be positive.")
         if gamma < 0 or kappa <= 0 or p_alpha <= 0 or p_beta <= 0 or eps <= 0:
@@ -274,21 +279,21 @@ class BetaBernoulliParamCountScaledPrior(MaskPrior):
     def sample_hyperparameters(self, rng: jax.random.PRNGKey) -> jax.Array:
         return jax.random.beta(rng, a=self.p_alpha, b=self.p_beta, shape=(1,))
 
-    def _alpha_beta(self, hyperparameters: ArrayLike) -> Tuple[jax.Array, jax.Array]:
+    def _alpha_beta(self, hyperparameters: ArrayLike) -> tuple[jax.Array, jax.Array]:
         p = jnp.clip(jnp.asarray(hyperparameters), self._eps, 1.0 - self._eps)
-        s = jnp.power(self._sizes, self.gamma)              # [K]
-        alpha = jnp.clip(self.kappa * (p / s), self._eps, jnp.inf)     # [K]
+        s = jnp.power(self._sizes, self.gamma)  # [K]
+        alpha = jnp.clip(self.kappa * (p / s), self._eps, jnp.inf)  # [K]
         beta_scalar = jnp.clip(self.kappa * (1.0 - p), self._eps, jnp.inf)  # []
-        beta = jnp.broadcast_to(beta_scalar, alpha.shape)   # [K]
+        beta = jnp.broadcast_to(beta_scalar, alpha.shape)  # [K]
         return alpha, beta
 
     def sample_model_components(
         self, rng: jax.random.KeyArray, hyperparameters: ArrayLike
     ) -> jax.Array:
-        alpha, beta = self._alpha_beta(hyperparameters)     # both [K]
-        conc = jnp.stack([alpha, beta], axis=-1)            # [K, 2]
-        probs_on_off = jax.random.dirichlet(rng, conc)      # [K, 2], batched Dirichlet
-        pi_on = probs_on_off[:, 0]                          # [K]
+        alpha, beta = self._alpha_beta(hyperparameters)  # both [K]
+        conc = jnp.stack([alpha, beta], axis=-1)  # [K, 2]
+        probs_on_off = jax.random.dirichlet(rng, conc)  # [K, 2], batched Dirichlet
+        pi_on = probs_on_off[:, 0]  # [K]
         mask = jax.random.bernoulli(rng, p=pi_on, shape=(self.num_model_components,))
         return mask.astype(jnp.bool_)
 
@@ -304,7 +309,6 @@ class BetaBernoulliParamCountScaledPrior(MaskPrior):
         log_on = jnp.log(pi)
         log_off = jnp.log1p(-pi)
         return jnp.sum(jnp.where(mask, log_on, log_off))
-
 
 
 class TotalParamPenalizedPrior(MaskPrior):
@@ -338,20 +342,24 @@ class TotalParamPenalizedPrior(MaskPrior):
         num_model_parameters: list[int],
         *,
         p0: float = 0.5,
-        u_alpha: float = 1.,
-        u_beta: float = 1.,
-        penalty_min: float = 0.0,     # min worst-case logit penalty (often 0)
-        penalty_max: float = 5.0,   # max worst-case logit penalty
+        u_alpha: float = 1.0,
+        u_beta: float = 1.0,
+        penalty_min: float = 0.0,  # min worst-case logit penalty (often 0)
+        penalty_max: float = 5.0,  # max worst-case logit penalty
         penalty_mode: str = "linear",  # "quadratic" or "linear"
         eps: float = 1e-3,
     ) -> None:
         super().__init__(num_model_components, num_noise_components)
 
         if len(num_model_parameters) != self.num_model_components:
-            raise ValueError("len(num_model_parameters) must equal num_model_components.")
+            raise ValueError(
+                "len(num_model_parameters) must equal num_model_components."
+            )
         # Allow zero-sized components
         if any(n < 0 for n in num_model_parameters):
-            raise ValueError("All entries in num_model_parameters must be non-negative.")
+            raise ValueError(
+                "All entries in num_model_parameters must be non-negative."
+            )
         if not (0.0 < p0 < 1.0):
             raise ValueError("p0 must be in (0,1).")
         if u_alpha <= 0 or u_beta <= 0:
@@ -363,7 +371,9 @@ class TotalParamPenalizedPrior(MaskPrior):
         if eps <= 0:
             raise ValueError("eps must be positive.")
 
-        self._sizes = jnp.asarray(np.asarray(num_model_parameters, dtype=np.float32))  # [K]
+        self._sizes = jnp.asarray(
+            np.asarray(num_model_parameters, dtype=np.float32)
+        )  # [K]
         self._S_total = jnp.sum(self._sizes)
         self.p0 = float(p0)
         self.u_alpha = float(u_alpha)
@@ -376,7 +386,7 @@ class TotalParamPenalizedPrior(MaskPrior):
         # mode-dependent worst-case scale for one step
         if self.penalty_mode == "quadratic":
             # max over T∈[0,S−s_i] of (2*T*s_i + s_i^2) occurs at T=S−s_i → 2*S*s_i − s_i^2
-            raw = 2.0 * self._S_total * self._sizes - self._sizes ** 2
+            raw = 2.0 * self._S_total * self._sizes - self._sizes**2
         else:  # "linear"
             # worst case step is simply the largest s_i
             raw = self._sizes
@@ -398,24 +408,26 @@ class TotalParamPenalizedPrior(MaskPrior):
         """Map u∈[0,1] to λ using mode-dependent worst-case scaling."""
         u = jnp.clip(jnp.asarray(u).reshape(-1)[0], 0.0, 1.0)
         # desired worst-case logit drop (u=1 → penalty_min; u=0 → penalty_max)
-        delta_star = self.penalty_min + (1.0 - u) * (self.penalty_max - self.penalty_min)
+        delta_star = self.penalty_min + (1.0 - u) * (
+            self.penalty_max - self.penalty_min
+        )
         lam = delta_star / self._scale_max
         return lam  # scalar
 
     # ----- Sampling with jax.scan -----
 
     def sample_model_components(
-    self,
-    rng: jax.random.PRNGKey,
-    hyperparameters: ArrayLike,  # expects u
+        self,
+        rng: jax.random.PRNGKey,
+        hyperparameters: ArrayLike,  # expects u
     ) -> jax.Array:
         lam = self._u_to_lambda(hyperparameters)
         base_logit = jnp.array(self._base_logit, dtype=jnp.float32)
 
         if self.penalty_mode == "quadratic":
             # (unchanged) autoregressive via scan
-            sizes = self._sizes
             keys = jax.random.split(rng, self.num_model_components)
+            sizes = self._sizes
 
             def step(T, inputs):
                 s_i, key_i = inputs
@@ -431,9 +443,9 @@ class TotalParamPenalizedPrior(MaskPrior):
             return zs
         else:
             # --- LINEAR MODE: no scan needed, vectorized & order-invariant ---
-            logits = base_logit - lam * self._sizes                    # [K]
-            probs  = jax.nn.sigmoid(logits)                            # [K]
-            zs     = jax.random.bernoulli(rng, p=probs, shape=probs.shape)
+            logits = base_logit - lam * self._sizes  # [K]
+            probs = jax.nn.sigmoid(logits)  # [K]
+            zs = jax.random.bernoulli(rng, p=probs, shape=probs.shape)
             return zs.astype(jnp.bool_)
 
     def log_prob_model_components(
@@ -447,8 +459,6 @@ class TotalParamPenalizedPrior(MaskPrior):
 
         if self.penalty_mode == "quadratic":
             # (unchanged) autoregressive via scan
-            sizes = self._sizes
-
             def step(carry, inputs):
                 T, logp = carry
                 s_i, z_i = inputs
@@ -469,10 +479,10 @@ class TotalParamPenalizedPrior(MaskPrior):
             return logp_sum
         else:
             # --- LINEAR MODE: no scan, independent Bernoullis ---
-            logits = base_logit - lam * self._sizes                    # [K]
-            probs  = jax.nn.sigmoid(logits)                            # [K]
-            probs  = jnp.clip(probs, self._eps, 1.0 - self._eps)
-            logp   = jnp.where(mask, jnp.log(probs), jnp.log1p(-probs))
+            logits = base_logit - lam * self._sizes  # [K]
+            probs = jax.nn.sigmoid(logits)  # [K]
+            probs = jnp.clip(probs, self._eps, 1.0 - self._eps)
+            logp = jnp.where(mask, jnp.log(probs), jnp.log1p(-probs))
             return jnp.sum(logp)
 
 
@@ -726,7 +736,7 @@ class MarkovMaskPrior(MaskPrior):
 def sample_mask_and_prior(
     mask_prior: MaskPrior,
     rng: jax.random.PRNGKey,
-) -> Tuple[jax.Array, jax.Array]:
+) -> tuple[jax.Array, jax.Array]:
     """Utility helper to sample `(mask_prior, mask)` pairs."""
     sample = mask_prior.sample(rng)
     return sample.hyperparameters, sample.model_mask

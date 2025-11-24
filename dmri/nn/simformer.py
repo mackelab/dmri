@@ -253,9 +253,7 @@ class EDMSimformer(EDM):
             diff = (theta_denoised - theta) ** 2
             if loss_mask is not None:
                 diff = jnp.where(loss_mask, diff, 0.0)
-            loss_denoised = weight * jnp.sum(
-                diff, axis=-1, keepdims=True
-            )
+            loss_denoised = weight * jnp.sum(diff, axis=-1, keepdims=True)
             loss = loss_denoised
         elif self.loss_type == "v":
             print("using v loss")
@@ -299,9 +297,7 @@ class EDMSimformer(EDM):
             diff = (score_est - target_score) ** 2
             if loss_mask is not None:
                 diff = jnp.where(loss_mask, diff, 0.0)
-            loss_score = weight_tsm * jnp.sum(
-                diff, axis=-1, keepdims=True
-            )
+            loss_score = weight_tsm * jnp.sum(diff, axis=-1, keepdims=True)
             loss += loss_score
 
         if weight_by_complexity:
@@ -324,18 +320,30 @@ class EDMSimformer(EDM):
         last_euler_step: bool = False,
         t_min: float | None = None,
         t_max: float | None = None,
-
     ) -> Array:
         rng, rng_init = jax.random.split(rng)
-        eps = jax.random.normal(rng_init, (dim,)) * self.marginal_std(self.train_cfg.t_max)
+        eps = jax.random.normal(rng_init, (dim,)) * self.marginal_std(
+            self.train_cfg.t_max
+        )
         t_min = t_min if t_min is not None else self.train_cfg.t_min
         t_max = t_max if t_max is not None else self.train_cfg.t_max
-        ts = self.solver_cfg.solve_schedule(t_max=t_max, t_min=t_min, num_steps=num_steps)
-
+        ts = self.solver_cfg.solve_schedule(
+            t_max=t_max, t_min=t_min, num_steps=num_steps
+        )
 
         if sample_method == "ode":
-            drift = self.solver_cfg.build_ode_drift(self, tokenizer, y=y, tokens_cfg=tokens_cfg, model_mask=model_mask, context=context, attention_mask=attention_mask)
-            out = odeint(drift, eps, ts, collect_trace=False, method=self.solver_cfg.ode_method)
+            drift = self.solver_cfg.build_ode_drift(
+                self,
+                tokenizer,
+                y=y,
+                tokens_cfg=tokens_cfg,
+                model_mask=model_mask,
+                context=context,
+                attention_mask=attention_mask,
+            )
+            out = odeint(
+                drift, eps, ts, collect_trace=False, method=self.solver_cfg.ode_method
+            )
             if last_euler_step and t_min is not None and t_min > 0.0:
                 # One last Euler step at t_min
                 dt = -ts[-1]  # ts are in decreasing order
@@ -343,7 +351,15 @@ class EDMSimformer(EDM):
                 out = out + f_tmin * dt
             return out
         elif sample_method == "sde":
-            sde_drift, sde_diffusion = self.solver_cfg.build_sde(self, tokenizer, y=y, tokens_cfg=tokens_cfg, model_mask=model_mask, context=context, attention_mask=attention_mask)
+            sde_drift, sde_diffusion = self.solver_cfg.build_sde(
+                self,
+                tokenizer,
+                y=y,
+                tokens_cfg=tokens_cfg,
+                model_mask=model_mask,
+                context=context,
+                attention_mask=attention_mask,
+            )
             out = sdeint(
                 sde_drift,
                 sde_diffusion,
@@ -364,7 +380,6 @@ class EDMSimformer(EDM):
         else:
             raise ValueError(f"Sample method {sample_method} not recognized.")
 
-
     def log_prob(
         self,
         x: Array,
@@ -375,7 +390,7 @@ class EDMSimformer(EDM):
         attention_mask: Optional[ArrayLike] = None,
         model_mask: Optional[ArrayLike] = None,
         t_min: float | None = None,
-        t_max: float | None     = None,
+        t_max: float | None = None,
         num_steps: int = 64,
     ) -> Array:
         if t_min is None:
