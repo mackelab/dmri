@@ -6,7 +6,6 @@ on:
   pull_request:
     branches: [ main, master ]
 
-# Make sure the workflow token can read contents of repos in the org
 permissions:
   contents: read
 
@@ -20,10 +19,13 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    # 👇 This is the important bit for private-repo dependencies
-    - name: Configure git to use GITHUB_TOKEN for private GitHub repos
+    # 🔑 Use PAT so pip can clone mackelab/probjax
+    - name: Configure git for private GitHub repo access
       run: |
-        git config --global url."https://x-access-token:${{ github.token }}@github.com/".insteadOf "https://github.com/"
+        git config --global url."https://x-access-token:${{ secrets.PROBJAX_READ_TOKEN }}@github.com/".insteadOf "https://github.com/"
+        # Optional debug:
+        # git ls-remote https://github.com/mackelab/probjax.git
+      shell: bash
 
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5
@@ -45,17 +47,18 @@ jobs:
         file: ./coverage.xml
         fail_ci_if_error: false
       env:
-        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}  # if your repo needs it
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}  # if needed
 
   lint:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
 
-    # Optional here, only needed if linting step also touches the private repo
-    - name: Configure git to use GITHUB_TOKEN for private GitHub repos
+    # Only needed here if linting also installs dmri (and thus probjax)
+    - name: Configure git for private GitHub repo access
       run: |
-        git config --global url."https://x-access-token:${{ github.token }}@github.com/".insteadOf "https://github.com/"
+        git config --global url."https://x-access-token:${{ secrets.PROBJAX_READ_TOKEN }}@github.com/".insteadOf "https://github.com/"
+      shell: bash
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -70,9 +73,12 @@ jobs:
 
     - name: Check formatting with Ruff
       run: |
-        ruff format --check dmri tests
+        ruff format --check .
 
     - name: Lint with Ruff
       run: |
-        ruff check dmri tests
+        ruff check .
 
+    - name: Type check with mypy
+      run: |
+        mypy dmri
