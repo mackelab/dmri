@@ -1,3 +1,10 @@
+"""Core abstractions for diffusion MRI compartments.
+
+``SignalCompartment`` defines the log-signal interface :math:`\\log S(b,\\mathbf{g})`,
+while ``NoiseCompartment`` adds likelihoods. ``to_theta`` / ``from_theta`` keep model
+parameters Gaussian in optimization space for stable inference.
+"""
+
 from abc import ABC, abstractmethod
 from typing import Any
 

@@ -1,3 +1,11 @@
+"""Acquisition helpers for diffusion and SSFP experiments.
+
+This module wraps Stejskal–Tanner timing (:math:`b, \\delta, \\Delta`) into a
+typed dataclass, exposes q-values :math:`q = \\sqrt{b/(4\\pi^2\\Delta)}` and gradient
+strengths, and provides a second dataclass for SSFP sequences with common unit
+conversions.
+"""
+
 import os
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable

@@ -28,6 +28,25 @@ from dmri.utils.transform import dirichlet_to_normal, eps_mask, normal_to_dirich
 
 
 class MultiCompartment(SignalCompartment):
+    """Composable mixture of signal compartments with optional shared parameters.
+
+    A ``MultiCompartment`` turns a set of signal compartments :math:`S_k(b, \\mathbf{g})`
+    and fractions :math:`f_k` into a single signal
+
+    .. math::
+
+        S(b, \\mathbf{g}) = \\sum_k f_k \\; S_k(b, \\mathbf{g})
+
+    Noise compartments can be added on top through ``noise_types``. The class exposes
+    ``to_theta`` / ``from_theta`` so priors over fractions, shared diffusivities and
+    per-compartment parameters stay Gaussian in optimization space.
+
+    References
+    ----------
+    * Stejskal & Tanner, 1965. Spin diffusion measurements: spin echoes in the presence of a time‐dependent field gradient.
+    * Behrens et al., 2003. Characterization and propagation of uncertainty in diffusion-weighted MR imaging.
+    """
+
     model_types: list
     noise_types: list
     fraction_prior: ArrayLike  # Dirichelt alpha values
