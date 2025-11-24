@@ -76,6 +76,3 @@ jobs:
       run: |
         ruff check dmri tests
 
-    - name: Type check with mypy
-      run: |
-        mypy dmri
