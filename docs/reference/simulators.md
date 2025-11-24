@@ -84,6 +84,21 @@ Docstrings power these references. Sections are grouped to keep the table of con
           show_root_heading: true
           show_root_full_path: false
 
+    ::: dmri.simulators.local_signal_models.convolved_zeppelin.ConvolvedZeppelin
+        options:
+          show_root_heading: true
+          show_root_full_path: false
+
+    ::: dmri.simulators.local_signal_models.cylinder.Cylinder
+        options:
+          show_root_heading: true
+          show_root_full_path: false
+
+    ::: dmri.simulators.local_signal_models.sphere.Sphere
+        options:
+          show_root_heading: true
+          show_root_full_path: false
+
 ???+ info "Stick-based"
 
     ::: dmri.simulators.local_signal_models.stick.Stick
@@ -92,6 +107,40 @@ Docstrings power these references. Sections are grouped to keep the table of con
           show_root_full_path: false
 
     ::: dmri.simulators.local_signal_models.stick.StaticStick
+        options:
+          show_root_heading: true
+          show_root_full_path: false
+
+    ::: dmri.simulators.local_signal_models.convolved_stick.ConvolvedStick
+        options:
+          show_root_heading: true
+          show_root_full_path: false
+
+???+ info "Microstructure & tensor models"
+
+    ::: dmri.simulators.local_signal_models.dot.Dot
+        options:
+          show_root_heading: true
+          show_root_full_path: false
+
+    ::: dmri.simulators.local_signal_models.dti.DTIModel
+        options:
+          show_root_heading: true
+          show_root_full_path: false
+
+    ::: dmri.simulators.local_signal_models.noddi.NoddiModel
+        options:
+          show_root_heading: true
+          show_root_full_path: false
+
+    ::: dmri.simulators.local_signal_models.sandi.SANDIModel
+        options:
+          show_root_heading: true
+          show_root_full_path: false
+
+???+ info "Kernels and helpers"
+
+    ::: dmri.simulators.local_signal_models.signal_response_kernels
         options:
           show_root_heading: true
           show_root_full_path: false

@@ -102,10 +102,14 @@ class Cylinder(SignalCompartment):
     r"""
     The Stejskal-Tanner approximation of the cylinder model with finite
     radius. Assumes finite pulse duration and diffusion time.
+
+    NOTE: This model assumes that the gradient pulses are rectangular
+    and that the diffusion time is much larger than the pulse duration and **available**
+    in the acquisition scheme.
     """
 
     theta_dim = 4
-    lam_par_max: float = 0.1
+    lam_par_max: float = 0.01
     radius_mean = math.log(0.01)
     radius_scale = 0.5
 
@@ -126,9 +130,9 @@ class Cylinder(SignalCompartment):
         """Compute the log signal attenuation."""
         q = acq.qvals
         bvecs = acq.bvecs
-        pulse_duration = acq.pulse_duration
-        diffusion_time = acq.diffusion_time
-        G = acq.G
+        pulse_duration = acq.delta
+        diffusion_time = acq.Delta
+        G = acq.gradient_strengths
 
         # Convert units
         G_T_per_micron = G * 1e-3 * 1e-6  # [T] * [um]^-1
