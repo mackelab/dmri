@@ -23,7 +23,7 @@ If you prefer pip directly, quote extras in zsh: `pip install -e '.[dev]'`.
 
 ## First training run
 
-1. Pick or edit a configuration under `conf/` (e.g. `conf/experiment/` presets).
+1. Pick or edit a configuration under `conf_train/` (e.g. `conf_train/experiment/` presets).
 2. Launch training:
 
    ```bash
@@ -43,7 +43,7 @@ Results land next to the training run (e.g. `ball3stick_model_selection_results/
 ## Editing configurations
 
 - Hydra drives configuration. Use `dmri --help` or `dmri +experiment=<...> --help` to discover overrides.
-- Common knobs: `train.optimizer`, `model.*` (embedding, selection, inference networks), and simulator definitions under `conf/simulator/`.
+- Common knobs: `train.optimizer`, `model.*` (embedding, selection, inference networks), and simulator definitions under `conf_train/simulator/`.
 
 ## Documentation feedback loop
 

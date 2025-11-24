@@ -1,152 +1,73 @@
 # DMRI: Diffusion MRI Model Selection
 
-A Python package for selecting and evaluating models for diffusion MRI data analysis, built with JAX for high-performance computing.
+Fast, reproducible diffusion MRI model selection powered by JAX, Hydra, and a library of simulators and neural architectures.
 
-## Overview
+## Why use this repo?
+- Hydra-driven experiments and sweeps with sensible defaults
+- JAX-first training and evaluation pipelines with checkpointing and EMA support
+- Rich simulator library for synthetic data and calibration
+- API docs and notebooks for quick prototyping
 
-This project provides tools for:
-- Processing diffusion MRI data
-- Implementing and evaluating diffusion models
-- Hyperparameter optimization for model selection
-- Visualization of diffusion properties and model performance
+## Quickstart
 
-## Installation
-
-### Prerequisites
-
-The following are required to run the code:
-- Python 3.10–3.12
-- pip for dependency management
-- optional: conda for environment management and CUDA 12.1+ for GPU acceleration
-
-To avoid conflicts, it is recommended to use a virtual environment, e.g.:
 ```bash
-conda create -n dmri python=3.11
-conda activate dmri
-```
-
-Alternatively, using uv for virtual environments:
-```bash
-# Create and activate a local venv in .venv
+# create a fresh env (uv is fast; pip/conda work too)
 uv venv -p 3.11
-source .venv/bin/activate  # macOS/Linux
-# On Windows (PowerShell): .\.venv\Scripts\Activate.ps1
+source .venv/bin/activate
+
+# install editable package + dev tools; add --extra cuda for GPUs
+uv pip install -e '.[dev]'
+
+# run a first training job
+dmri +experiment=ball3stick
 ```
 
-### Install the package
+Prefer pip? Use `pip install -e .[dev]` (quote extras in zsh). CUDA users can opt into `.[cuda]`.
 
-To install the package, first clone the repository:
+## CLI in one glance
+
+### Training
 ```bash
-# Clone the repository
-git clone https://github.com/your-username/dmri.git
-cd dmri
-
-# Install the package and main dependencies
-pip install -e .
-
-# If you use a GPU, install the GPU dependencies
-pip install -e .[cuda]
-
-# For development dependencies (testing, linting, formatting, etc.)
-pip install -e .[dev]
+dmri --help                      # discover overrides
+dmri +experiment=ball3stick      # run a preset
+dmri train.optimizer.lr=1e-3     # inline override example
 ```
 
-If you installed with `[dev]`, you can check if the installation was successful by running:
+Runs write to `results/<name>/<timestamp>/` with checkpoints and the frozen `.hydra/` config. Use `dmri.train.utils.load_checkpoint(...)` to restore in notebooks.
+
+### Evaluation
 ```bash
-pytest
+dmri_eval --help
+dmri_eval +experiment=eval_no_selection model_name=<run_folder>
 ```
 
-For linting and formatting, this project uses `ruff` exclusively:
-```bash
-# Lint and auto-fix
-ruff check --fix
-# Format code
-ruff format
+Outputs land next to the training run (e.g. `ball3stick_model_selection_results/`). Adapt data locations in `conf_eval/config.yaml`.
+
+## Configuration map
+
+Hydra configs live in `conf_train/` for training and `conf_eval/` for evaluation.
+
+```
+conf_train/
+├── config.yaml           # run metadata + defaults
+├── experiment/           # ready-made presets
+├── launcher/             # local/slurm launchers
+├── model/                # dmri/ssfp architectures
+├── partition/            # resource profiles
+├── simulator/            # signal simulation recipes
+└── train/                # loop knobs
+    ├── dataloader/       # buffer sizes, batching, prefetch
+    ├── optimizer/        # optax configs, schedulers, EMA
+    └── default*.yaml     # inner steps, cadence, weights
 ```
 
-### Install with uv (alternative)
-
-[uv](https://docs.astral.sh/uv/) is a fast Python package manager that can manage virtual environments and install from `pyproject.toml`.
-
-Install uv (one option):
-```bash
-# macOS/Linux (install script)
-curl -LsSf https://astral.sh/uv/install.sh | sh
-# or with Homebrew
-# brew install uv
-```
-
-Create and activate a virtual environment, then install dependencies from `pyproject.toml`:
-```bash
-# In the repository root
-uv venv -p 3.11           # or omit -p to use your current Python
-source .venv/bin/activate  # macOS/Linux
-# On Windows (PowerShell):
-# .\.venv\Scripts\Activate.ps1
-
-# Install the project (editable) and its dependencies
-uv sync
-```
-
-Extras and common variants:
-```bash
-# With GPU (CUDA 12) dependencies
-uv sync --extra cuda
-
-# With development dependencies (tests, lint, formatters)
-uv sync --dev
-
-# Combine as needed
-uv sync --dev --extra cuda
-```
-
-You can also run commands via uv without manual activation:
-```bash
-uv run dmri --help
-uv run pytest
-```
-
-Troubleshooting (zsh extras quoting):
-- If your shell is zsh, extras like `[dev]` are treated as a glob unless quoted. Use:
-  - `uv pip install -e '.[dev]'`
-  - or escape brackets: `uv pip install -e .\[dev]`
-- Alternatively, avoid `uv pip` for extras and prefer: `uv sync --dev` (and `--extra cuda`).
-
-## Extra dependencies/gotchas
-
-### JAX
-
-JAX is a library for high-performance numerical computing with automatic differentiation.
-
-JAX is used for all numerical computations. It is installed as a dependency of the package.
-Some gotchas:
-- JAX will pre-allocate most of you GPU memory by default. If run e.g. multiple notebooks/scripts that one will likey raise some memory errors. You can check if some Job is running by running `nvidia-smi`.
-- JAX uses JIT compilation for all operations. This can make some operations appear slower than expected, **at the first run**. Once compiled, the operation will be much faster.
-
-Anyway for all praticaly purposes, its just like numpy/scipy and clones its API.
-
-
-
-
-### PyTorch conflicts
-
-There might be some extra dependencies that are not included in the package and only
-used in e.g. the notebooks. These need to be installed manually.
-
-NOTE: If you want to use pytorch, you shoud install the CPU-only version of pytorch to avoid conflicts with the JAX version.
-
-For example, to install torch and sbi for the notebooks, you can run:
-```bash
-pip install torch==2.5.1  --index-url https://download.pytorch.org/whl/cpu
-pip install sbi
-```
+Evaluation metrics are composed under `conf_eval/export/metrics/` and pulled into exporter presets (e.g. `conf_eval/export/ball3stick.yaml`). Add SBC via `conf_eval/export/metrics/sbc_model_mask.yaml`.
 
 ## Usage
 
-### Simulators
+### Simulators by example
 
-Supported building simulators from fundamental compartments. Any model defined like this
-can be used to build and train a inference/selection model automatically.
+Define acquisition schemes, build compartment models, and synthesize signals directly:
 
 ```python
 import jax
@@ -191,149 +112,23 @@ plt.plot(bvals, signal_ball_stick)
 
 You can also have a look at the notebooks in the `notebooks/dmri_simulators.ipynb` for more examples.
 
-### Command-line Interface
+## JAX and PyTorch notes
 
-#### Training
+- JAX grabs most GPU memory up front; if multiple jobs share a card, expect OOMs until you free memory (`nvidia-smi` is your friend).
+- JIT warmup makes the first steps slower; steady-state throughput improves after compilation.
+- Need PyTorch for notebooks? Install CPU-only wheels to avoid CUDA conflicts with JAX:  
+  `pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu`
 
-The package provides a command-line interface via Hydra. This mainly allows to configure
-training and evaluation of models. For training API, you can use:
+## Development
 
-```bash
-# For a list of available configurations
-dmri --help
-```
+- Tests: `pytest`
+- Lint/format: `ruff check --fix` and `ruff format`
+- Docs preview: `uv pip install -e '.[docs]' && uv run mkdocs serve`
 
-This will create a "results" folder in the current working directory with the following structure:
-```
-results/{name}            # Name of the run (default dmri)
-├── 2025-06-30_15-19-06   # Date and time of the run containing config and logs
-├── checkpoints/          # Checkpoints of the model (parameters over time)
-```
+## CI / docs deploy
 
-After training you can already load the model and use it i.e. in a notebook e.g. `notebooks/eval_parameter_inference.ipynb` for more examples.
-
-#### Evaluation
-
-For evaluation/application of models to data, you can use:
-
-```bash
-dmri_eval --help
-```
-
-Depending on coniguration, this will create additional folders in the results folder which will contain the evaluation results.
-
-NOTE: Currently, only exporting ball3stick models is implemented.
-NOTE: The evaluation needs to know where the data is located. This needs to be adapted in `conf_eval/config.yaml` accordingly.
-
-```
-results/{name}            # Name of the run (default dmri)
-├── 2025-06-30_15-19-06   # Date and time of the run containing config and logs
-├── checkpoints/          # Checkpoints of the model (parameters over time)
-├── ball3stick_inference_results/                 # Inference results for ball3stick models
-├── ball3stick_model_selection_results/           # Model selection results for ball3stick models
-├── ...                                           # Additional depending on configuration
-```
-
-Notably you can modify the name of the e.g. folder in `conf_eval/export` to avoid overwriting existing results.
-
-Certain types of evaluation runs i.e. with/without certain types of model selection are pre-configured in the `conf_eval/experiments` folder.
-For example to just run inference with all model components, you can use:
-```bash
-dmri_eval +experiment=eval_no_selection model_name=$NAME_OF_FOLDER_IN_RESULTS
-```
-
-## Documentation
-
-Build and preview the MkDocs site locally:
-
-```bash
-# install doc deps (once)
-uv pip install -e '.[docs]'
-
-# build static site into ./site
-uv run mkdocs build
-
-# or serve with live reload at http://127.0.0.1:8000
-uv run mkdocs serve
-```
-
-## Configuration
-
-This project uses [Hydra](https://hydra.cc/) for configuration management. Configuration files are located in the `conf/` directory for training and `conf_eval/` for evaluation.
-
-Key configuration components:
-- Model parameters
-- Simulator specifications
-- Training parameters
-- Evaluation metrics
-
-  Evaluation artefacts (error maps, posterior NLL, …) are now driven by the
-  metric definitions in `conf_eval/export/metrics`.  Each export configuration
-  (e.g. `conf_eval/export/ball3stick.yaml`) includes one or more metrics via its
-  local defaults, so disabling or extending the exported metrics simply requires
-  editing those YAML files.  Each metric writes a NIfTI volume alongside a JSON
-  summary that captures the configured aggregations (mean, median, percentiles).
-
-  **Simulation-based calibration (SBC) for model masks:** To check calibration
-  of model-selection posteriors, add the `sbc_model_mask` metric. A ready-made
-  spec lives at `conf_eval/export/metrics/sbc_model_mask.yaml`; include it in an
-  export config via a defaults line such as:
-  ```
-  defaults:
-    - metrics@metrics.sbc_model_mask: sbc_model_mask
-  ```
-  For model-selection runs that operate on sampled masks, `conf_eval/export/model_selection_metrics.yaml`
-  already wires this metric in. It reports per-component rank coverage of the
-  true mask across posterior mask samples and emits both a NIfTI volume and
-  uniformity p-values JSON.
-
-Just using the command-line interface, you can use the following command to see the available configurations: `dmri` will run the training with the default configuration. But you can also use some other predefined configurations using `dmri +experiment=ball3stick` for example.
-
-
-
-
-
-
-
-
-### Continuous Integration
-
-This project uses GitHub Actions for continuous integration. The following workflows are available:
-
-- **CI**: Runs tests and linting on multiple Python versions (3.10, 3.11, 3.12)
-
-Status badges:
-![CI](https://github.com/your-username/dmri/actions/workflows/ci.yml/badge.svg)
-
-## Publishing docs on GitHub
-
-This repo is MkDocs-ready (`mkdocs.yml`). To host the docs on GitHub Pages:
-- In the repository settings, set the Pages source to GitHub Actions.
-- Add a workflow that runs `mkdocs gh-deploy --force` on pushes to main. Example:
-  ```yaml
-  name: docs
-  on:
-    push:
-      branches: [main]
-  jobs:
-    build-deploy:
-      runs-on: ubuntu-latest
-      steps:
-        - uses: actions/checkout@v4
-        - uses: actions/setup-python@v5
-          with:
-            python-version: '3.11'
-        - name: Install deps
-          run: pip install -e '.[docs]'
-        - name: Build & deploy
-          run: mkdocs gh-deploy --force
-  ```
-- GitHub Pages will serve the site from the `gh-pages` branch at
-  `https://<org-or-user>.github.io/<repo>/`.
-
-For a manual one-off publish, install `.[docs]` locally and run
-`mkdocs gh-deploy --force` on the main branch; it will create/update `gh-pages`
-and push it.
+- GitHub Actions runs lint + tests across Python 3.10–3.12.
+- MkDocs deploys cleanly with `mkdocs gh-deploy --force` (see `mkdocs.yml`).
 
 
 ## License

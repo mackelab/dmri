@@ -14,7 +14,7 @@ Core training helpers are exposed here directly from their docstrings. Use them 
 
 ## Hydra entry point
 
-::: dmri.train.hydra_script
+::: dmri.train.train_script
     options:
       show_root_heading: true
       show_root_full_path: false

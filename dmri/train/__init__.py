@@ -1,7 +1,7 @@
 """Training entry points and helpers for dmri."""
 
 from dmri.train.dataset import SimulationDataset, instantiate_dataloader
-from dmri.train.hydra_script import (
+from dmri.train.train_script import (
     TrainState,
     align_to_inner_steps,
     apply_checkpoint_to_state,

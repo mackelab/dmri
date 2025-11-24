@@ -45,8 +45,8 @@ docs = [
 
 
 [project.scripts]
-dmri = "dmri.train.hydra_script:main"
-dmri_eval = "dmri.eval.hydra_script_eval:main"
+dmri = "dmri.train.train_script:main"
+dmri_eval = "dmri.eval.eval_script:main"
 
 [build-system]
 requires = ["setuptools>=61.0"]
@@ -77,8 +77,8 @@ venv = ".venv"
 testpaths = ["tests"]
 
 [tool.setuptools.packages.find]
-include = ["dmri*", "conf*", "conf_eval*"]
+include = ["dmri*", "conf_train*", "conf_eval*"]
 
 [tool.setuptools.package-data]
-"conf" = ["*"]
+"conf_train" = ["*"]
 "conf_eval" = ["*"]
