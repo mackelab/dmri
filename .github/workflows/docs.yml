@@ -20,9 +20,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure git to use GITHUB_TOKEN for private GitHub repos
+      # 🔑 Use the same PAT secret you use in CI so pip can clone probjax
+      - name: Configure git for private GitHub repo access
+        env:
+          PROBJAX_PAT: ${{ secrets.PROBJAX_READ_TOKEN }}
         run: |
-          git config --global url."https://x-access-token:${{ github.token }}@github.com/".insteadOf "https://github.com/"
+          if [ -z "$PROBJAX_PAT" ]; then
+            echo "PROBJAX_READ_TOKEN is empty or not set"
+            exit 1
+          fi
+
+          # Use PAT for all https://github.com/... URLs
+          git config --global url."https://github:${PROBJAX_PAT}@github.com/".insteadOf "https://github.com/"
+
+          # (Optional while debugging)
+          # git ls-remote https://github.com/mackelab/probjax.git
+        shell: bash
 
       - name: Set up Python
         uses: actions/setup-python@v5
