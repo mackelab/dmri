@@ -85,6 +85,7 @@ class MetricContext:
     full_data_flat_in_brain: np.ndarray
     model_parameters_brain: np.ndarray | None
     model_mask: np.ndarray | None
+    model_mask_samples: np.ndarray | None
     brain_mask_flat: np.ndarray
     data_norm: np.ndarray
     orig_data: Any
@@ -98,6 +99,7 @@ DEFAULT_OUTPUT_FILENAMES: Mapping[str, str] = {
     "posterior_nll": "metric_posterior_nll.nii.gz",
     "ksd": "metric_ksd.nii.gz",
     "sbc_marginal_coverage": "metric_sbc_marginal_coverage.nii.gz",
+    "sbc_model_mask": "metric_sbc_model_mask.nii.gz",
     "model_selection_calibration": "metric_model_selection_calibration_error.nii.gz",
     "model_selection_classification": "metric_model_selection_f1.nii.gz",
 }
@@ -480,6 +482,86 @@ def _compute_sbc_marginal_coverage(
     return coverage
 
 
+def _compute_sbc_model_mask(
+    spec: MetricSpec,
+    context: MetricContext,
+    devices: Sequence[jax.Device] | str | None,
+) -> np.ndarray | None:
+    """Compute SBC rank coverage for model-mask components on synthetic data."""
+
+    del devices  # Unused
+
+    if context.true_model_mask is None:
+        # SBC only applicable with ground-truth masks (synthetic data).
+        return None
+
+    posterior_mask_samples = context.model_mask_samples
+    if posterior_mask_samples is None:
+        raise ValueError(
+            f"Metric '{spec.key}' requires model mask samples but none are available."
+        )
+
+    posterior_mask_samples = np.asarray(posterior_mask_samples)
+    true_mask = np.asarray(context.true_model_mask, dtype=np.bool_)
+
+    num_voxels = true_mask.shape[0]
+    if true_mask.ndim == 1:
+        true_mask = np.broadcast_to(true_mask, (num_voxels, true_mask.shape[-1]))
+
+    if posterior_mask_samples.shape[0] != num_voxels:
+        raise ValueError(
+            "Posterior mask samples and ground truth mask must share the first dimension: "
+            f"{posterior_mask_samples.shape} vs {true_mask.shape}."
+        )
+    if posterior_mask_samples.ndim < 2:
+        raise ValueError(
+            f"Metric '{spec.key}' expects model mask samples with a sample axis; "
+            f"got shape {posterior_mask_samples.shape}."
+        )
+
+    sample_axis = 1 if spec.sample_axis is None else spec.sample_axis
+    if sample_axis < 0:
+        sample_axis += posterior_mask_samples.ndim
+    if sample_axis < 0 or sample_axis >= posterior_mask_samples.ndim:
+        raise ValueError(
+            f"Metric '{spec.key}' sample_axis={spec.sample_axis} is out of bounds for "
+            f"posterior mask array with shape {posterior_mask_samples.shape}."
+        )
+    posterior_mask_samples = np.moveaxis(posterior_mask_samples, sample_axis, 1)
+
+    posterior_mask_samples = posterior_mask_samples.reshape(
+        num_voxels, posterior_mask_samples.shape[1], -1
+    )
+    true_mask = true_mask.reshape(num_voxels, -1)
+    if posterior_mask_samples.shape[2] != true_mask.shape[1]:
+        raise ValueError(
+            "Posterior mask samples and ground truth mask have incompatible shapes after "
+            f"flattening: {posterior_mask_samples.shape} vs {true_mask.shape}."
+        )
+
+    coverage = np.full_like(true_mask, np.nan, dtype=np.float32)
+    for voxel_idx in range(num_voxels):
+        coverage[voxel_idx] = _marginal_rank_fraction(
+            posterior_mask_samples[voxel_idx],
+            true_mask[voxel_idx],
+            theta_mask=None,
+        )
+
+    pvalues, sample_counts = _compute_uniformity_pvalues(coverage)
+    if context.out_path:
+        pvalue_filename = spec.options.get(
+            "pvalue_output_filename", "sbc_model_mask_uniformity_pvalues.json"
+        )
+        _write_uniformity_pvalues(
+            pvalues,
+            sample_counts,
+            spec,
+            context,
+            pvalue_filename,
+        )
+    return coverage
+
+
 def _compute_model_selection_calibration(
     spec: MetricSpec,
     context: MetricContext,
@@ -654,6 +736,7 @@ _METRIC_REGISTRY: Mapping[
     "sliced_wasserstein": lambda spec, context, devices: _compute_swd_metric(spec, context),
     "ksd": _compute_ksd_metric,
     "sbc_marginal_coverage": _compute_sbc_marginal_coverage,
+    "sbc_model_mask": _compute_sbc_model_mask,
     "model_selection_calibration": _compute_model_selection_calibration,
     "model_selection_classification": _compute_model_selection_classification,
 }
@@ -1118,7 +1201,11 @@ def _normalize_metric_specs(
         metric_type = data.get("type")
         if metric_type is None:
             raise ValueError(f"Metric '{metric_key}' is missing a 'type'.")
-        if metric_type in {"model_selection_calibration", "model_selection_classification"}:
+        if metric_type in {
+            "model_selection_calibration",
+            "model_selection_classification",
+            "sbc_model_mask",
+        }:
             data = dict(data)
             data.setdefault("requires_theta_samples", False)
             data.setdefault("sample_reduction", "none")
@@ -1128,10 +1215,16 @@ def _normalize_metric_specs(
                         {"type": "mean", "name": "ece"},
                         {"type": "max", "name": "mce"},
                     ]
-                else:
+                elif metric_type == "model_selection_classification":
                     data["aggregations"] = [
                         {"type": "mean", "name": "mean_f1"},
                         {"type": "median", "name": "median_f1"},
+                    ]
+                else:  # sbc_model_mask
+                    data["aggregations"] = [
+                        {"type": "mean", "name": "mean"},
+                        {"type": "median", "name": "median"},
+                        {"type": "percentile", "q": [5, 95], "name": "p{q}"},
                     ]
         output_filename = data.get(
             "output_filename", DEFAULT_OUTPUT_FILENAMES.get(metric_type)
@@ -1249,6 +1342,7 @@ def compute_swd_to_reference(
         full_data_flat_in_brain=full_data_flat_in_brain,
         model_parameters_brain=model_parameters_brain,
         model_mask=model_mask,
+        model_mask_samples=None,
         brain_mask_flat=brain_mask_flat,
         data_norm=data_norm,
         orig_data=orig_data,

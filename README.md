@@ -242,6 +242,21 @@ For example to just run inference with all model components, you can use:
 dmri_eval +experiment=eval_no_selection model_name=$NAME_OF_FOLDER_IN_RESULTS
 ```
 
+## Documentation
+
+Build and preview the MkDocs site locally:
+
+```bash
+# install doc deps (once)
+uv pip install -e '.[docs]'
+
+# build static site into ./site
+uv run mkdocs build
+
+# or serve with live reload at http://127.0.0.1:8000
+uv run mkdocs serve
+```
+
 ## Configuration
 
 This project uses [Hydra](https://hydra.cc/) for configuration management. Configuration files are located in the `conf/` directory for training and `conf_eval/` for evaluation.
@@ -258,6 +273,19 @@ Key configuration components:
   local defaults, so disabling or extending the exported metrics simply requires
   editing those YAML files.  Each metric writes a NIfTI volume alongside a JSON
   summary that captures the configured aggregations (mean, median, percentiles).
+
+  **Simulation-based calibration (SBC) for model masks:** To check calibration
+  of model-selection posteriors, add the `sbc_model_mask` metric. A ready-made
+  spec lives at `conf_eval/export/metrics/sbc_model_mask.yaml`; include it in an
+  export config via a defaults line such as:
+  ```
+  defaults:
+    - metrics@metrics.sbc_model_mask: sbc_model_mask
+  ```
+  For model-selection runs that operate on sampled masks, `conf_eval/export/model_selection_metrics.yaml`
+  already wires this metric in. It reports per-component rank coverage of the
+  true mask across posterior mask samples and emits both a NIfTI volume and
+  uniformity p-values JSON.
 
 Just using the command-line interface, you can use the following command to see the available configurations: `dmri` will run the training with the default configuration. But you can also use some other predefined configurations using `dmri +experiment=ball3stick` for example.
 
@@ -276,6 +304,36 @@ This project uses GitHub Actions for continuous integration. The following workf
 
 Status badges:
 ![CI](https://github.com/your-username/dmri/actions/workflows/ci.yml/badge.svg)
+
+## Publishing docs on GitHub
+
+This repo is MkDocs-ready (`mkdocs.yml`). To host the docs on GitHub Pages:
+- In the repository settings, set the Pages source to GitHub Actions.
+- Add a workflow that runs `mkdocs gh-deploy --force` on pushes to main. Example:
+  ```yaml
+  name: docs
+  on:
+    push:
+      branches: [main]
+  jobs:
+    build-deploy:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
+        - uses: actions/setup-python@v5
+          with:
+            python-version: '3.11'
+        - name: Install deps
+          run: pip install -e '.[docs]'
+        - name: Build & deploy
+          run: mkdocs gh-deploy --force
+  ```
+- GitHub Pages will serve the site from the `gh-pages` branch at
+  `https://<org-or-user>.github.io/<repo>/`.
+
+For a manual one-off publish, install `.[docs]` locally and run
+`mkdocs gh-deploy --force` on the main branch; it will create/update `gh-pages`
+and push it.
 
 
 ## License

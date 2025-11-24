@@ -310,7 +310,11 @@ def _metric_requires_theta(spec, key):
     if requires_theta is not None:
         return bool(requires_theta)
     metric_type = spec.get("type")
-    if metric_type in ("model_selection_calibration", "model_selection_classification"):
+    if metric_type in (
+        "model_selection_calibration",
+        "model_selection_classification",
+        "sbc_model_mask",
+    ):
         return False
     if metric_type is None:
         raise ValueError(f"Metric '{key}' is missing a 'type'.")
@@ -358,6 +362,7 @@ def _maybe_run_metrics(
     full_data_flat_in_brain,
     model_parameters_brain,
     model_mask,
+    model_mask_samples,
     brain_mask_flat,
     data_norm,
     export_template,
@@ -402,6 +407,7 @@ def _maybe_run_metrics(
             full_data_flat_in_brain=full_data_flat_in_brain,
             model_parameters_brain=model_parameters_brain,
             model_mask=model_mask,
+            model_mask_samples=model_mask_samples,
             brain_mask_flat=brain_mask_flat,
             data_norm=data_norm,
             orig_data=export_template,
@@ -650,7 +656,10 @@ def _run_eval_pipeline(
     log.info(
         f"Model parameters brain shape: {model_parameters_brain.shape if model_parameters_brain is not None else 'None'}"
     )
-    if model_parameters_brain is None and thetas_synth is not None:
+    # Only use ground-truth thetas when we actually sampled posterior thetas.
+    # When cfg.sample_theta is False we should leave model_parameters_brain as None
+    # so theta-dependent metrics are skipped rather than run on incompatible data.
+    if cfg.sample_theta and model_parameters_brain is None and thetas_synth is not None:
         model_parameters_brain = thetas_synth
     model_parameter_nans = (
         int(np.isnan(model_parameters_brain).sum())
@@ -735,6 +744,7 @@ def _run_eval_pipeline(
             full_data_flat_in_brain,
             model_parameters_brain,
             models_sampled_brain,
+            models_sampled_brain,
             brain_mask_flat,
             data_norm,
             export_template,
@@ -795,6 +805,7 @@ def _run_eval_pipeline(
         full_data_flat_in_brain,
         model_parameters_brain,
         models_selected_brain,
+        models_sampled_brain,
         brain_mask_flat,
         data_norm,
         export_template,
