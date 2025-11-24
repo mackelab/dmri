@@ -14,30 +14,33 @@ from probjax.utils.special import gammaincinv
 from dmri.simulators import acquisition_scheme
 from dmri.simulators.base import SharedParameterState, SignalCompartment
 from dmri.simulators.local_signal_models import (
-    Dot,
     Ball,
+    BinghamStick,
+    BinghamZeppelin,
+    Dot,
     Dti,
     NoddiB,
+    NoddiW,
     SandiB,
+    SandiW,
     SSFPStaticBall,
     SSFPStaticStick,
     StaticBall,
     StaticStick,
     Stick,
-    Zeppelin,
     WatsonStick,
     WatsonZeppelin,
-    BinghamStick,
-    BinghamZeppelin,
-    SandiW,
-    SandiB,
-    NoddiW,
+    Zeppelin,
 )
 from dmri.simulators.local_signal_models.ball import (
     MultiShellStaticBall,
 )
 from dmri.simulators.local_signal_models.stick import MultiShellStaticStick
-from dmri.simulators.mask_prior import BetaBernoulliMaskPrior, MaskPrior, TotalParamPenalizedPrior
+from dmri.simulators.mask_prior import (
+    BetaBernoulliMaskPrior,
+    MaskPrior,
+    TotalParamPenalizedPrior,
+)
 from dmri.simulators.noise_compartments import (
     BoundedGaussianNoise,
     BoundedRicianNoise,
@@ -46,7 +49,7 @@ from dmri.simulators.noise_compartments import (
 )
 from dmri.simulators.sphereical_distributions import MixtureOfFODs
 from dmri.utils.dmriutils import ssfp_signal_fn
-from dmri.utils.transform import dirichlet_to_normal, normal_to_dirichlet, eps_mask
+from dmri.utils.transform import dirichlet_to_normal, eps_mask, normal_to_dirichlet
 
 
 class MultiCompartment(SignalCompartment):

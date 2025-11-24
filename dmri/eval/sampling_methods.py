@@ -259,7 +259,7 @@ def build_model_fn(sim_type):
             return jnp.sum(logpdf, axis=-1)
         else:
             return jax.scipy.stats.norm.logpdf(theta, 0, 1).sum()
-    
+
     def log_posterior_fn(theta, mask, acq, x):
         return log_prior_fn(theta, mask) + log_likelihood_fn(theta, mask, acq, x)
 

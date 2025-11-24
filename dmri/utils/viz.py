@@ -1,3 +1,4 @@
+import os
 from typing import Any, Dict, Optional, Tuple
 
 import jax
@@ -8,7 +9,6 @@ import plotly.graph_objects as go
 from dipy.data import get_sphere
 from jax.typing import ArrayLike
 from plotly.subplots import make_subplots
-import os
 
 from dmri.utils.dmriutils import cart2sph, sph2cart
 

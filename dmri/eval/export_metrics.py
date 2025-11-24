@@ -11,11 +11,11 @@ Hydra evaluation script once sampling has finished.
 
 from __future__ import annotations
 
+import json
+import os
 from collections.abc import Iterable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass, field
 from functools import partial
-import json
-import os
 from pathlib import Path
 from typing import Any, Callable
 
@@ -31,7 +31,6 @@ except ImportError:  # pragma: no cover - Hydra is available in normal runs.
 from dmri.eval.export_theta import embed_in_full_brain_array
 from dmri.eval.sampling_methods import eval_in_batches
 from dmri.utils.dmriutils import export_nifti
-
 
 MetricFunction = Callable[[jax.Array, jax.Array, jax.Array, Any], jax.Array]
 

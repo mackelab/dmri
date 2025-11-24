@@ -678,10 +678,10 @@ def train_loop(
             and np.isfinite(total_loss_value)
         ):
             if recover_from_latest_checkpoint(
-                (
+
                     f"Non-finite loss detected at step {train_state.step}. "
                     f"loss_mask={loss_mask}, loss_theta={loss_theta}. Resetting to latest checkpoint."
-                )
+
             ):
                 continue
             log.error(
