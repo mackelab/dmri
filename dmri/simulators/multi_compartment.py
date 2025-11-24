@@ -220,9 +220,13 @@ class MultiCompartment(SignalCompartment):
         return type(self).to_params(self.theta, model_mask=self.model_mask)
 
     def signal(self, acq: acquisition_scheme, rng=None):
-        fractions, model_compartments, noise_compartments, model_mask, shared_parameter = (
-            self._reconstruct_params()
-        )
+        (
+            fractions,
+            model_compartments,
+            noise_compartments,
+            model_mask,
+            shared_parameter,
+        ) = self._reconstruct_params()
         return type(self).signal_fn(
             acq,
             model_compartments,

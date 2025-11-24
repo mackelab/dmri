@@ -43,7 +43,9 @@ class Sphere(SignalCompartment):
         safe_factor = jnp.where(small_factor, 1.0, factor)
 
         attenuation = (
-            3.0 / (safe_factor**2) * (jnp.sin(safe_factor) / safe_factor - jnp.cos(safe_factor))
+            3.0
+            / (safe_factor**2)
+            * (jnp.sin(safe_factor) / safe_factor - jnp.cos(safe_factor))
         )
         attenuation = attenuation**2
 
