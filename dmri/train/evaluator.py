@@ -24,7 +24,7 @@ def build_pure_eval_fns(graphdef, sim_type):
 
     @jax.jit
     def log_prob_masks(params, state, data):
-        model = nnx.merge(graphdef, params,  state, copy=True)
+        model = nnx.merge(graphdef, params, state, copy=True)
         model.eval()
 
         p_mask = data["mask_prior"]
@@ -35,7 +35,13 @@ def build_pure_eval_fns(graphdef, sim_type):
 
     @jax.jit
     def sample_thetas(
-        params, state, rng, data, num_steps=64, t_min=None, t_max=None,
+        params,
+        state,
+        rng,
+        data,
+        num_steps=64,
+        t_min=None,
+        t_max=None,
     ):
         model = nnx.merge(graphdef, params, state, copy=True)
         model.eval()
@@ -56,7 +62,9 @@ def build_pure_eval_fns(graphdef, sim_type):
         )
         return sample_fn(rngs, acq, xs, model_mask)
 
-    def sample_thetas_multi(params, state, rng, data, num_samples=16, num_steps=64, t_min=None, t_max=None):
+    def sample_thetas_multi(
+        params, state, rng, data, num_samples=16, num_steps=64, t_min=None, t_max=None
+    ):
         model = nnx.merge(graphdef, params, state, copy=True)
         model.eval()
 
@@ -79,6 +87,7 @@ def build_pure_eval_fns(graphdef, sim_type):
         keys = jax.random.split(rng, num_samples)
         samples = jax.vmap(sample_once)(keys)
         return jnp.swapaxes(samples, 0, 1)
+
     sample_thetas_multi = jax.jit(
         sample_thetas_multi,
         static_argnames=("num_samples", "num_steps", "t_min", "t_max"),
@@ -86,7 +95,12 @@ def build_pure_eval_fns(graphdef, sim_type):
 
     @jax.jit
     def log_prob_thetas(
-        params, state, data, num_steps=64, t_min=None, t_max=None,
+        params,
+        state,
+        data,
+        num_steps=64,
+        t_min=None,
+        t_max=None,
     ):
         model = nnx.merge(graphdef, params, state, copy=True)
         model.eval()
@@ -179,7 +193,7 @@ class Evaluator(NamedTuple):
         *,
         iters=1,
         num_samples=16,
-        bandwidths=(0.1, 1., 10.0),
+        bandwidths=(0.1, 1.0, 10.0),
         n_bootstrap=128,
         ksd_seed=None,
     ):

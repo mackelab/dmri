@@ -1,9 +1,11 @@
+import os
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
 import jax
 import jax.numpy as jnp
 import numpy as np
+from dipy.io.gradients import read_bvals_bvecs
 from jax.tree_util import register_dataclass
 from probjax.utils.typing import Array, ArrayLike
 
@@ -124,7 +126,7 @@ class acquisition_scheme(AcquisitionScheme):  # noqa: N801
 
 
 @dataclass
-class ssfp_acquisition_scheme(AcquisitionScheme):
+class ssfp_acquisition_scheme(AcquisitionScheme):  # noqa: N801
     """A class representing a Steady-State Free Precession (SSFP) acquisition scheme.
 
     Fields:
@@ -144,12 +146,12 @@ class ssfp_acquisition_scheme(AcquisitionScheme):
     T1_raw: ArrayLike  # ms (will be converted to s in properties)
     T2_raw: ArrayLike  # ms (will be converted to s in properties)
     B1: ArrayLike  # unitless
-    diffGradAmps_raw: ArrayLike  # T/m (will be converted to G/mm in properties)
-    flipAngles_raw: ArrayLike = field(
+    diffGradAmps_raw: ArrayLike  # noqa: N815  # T/m (will be converted to G/mm in properties)
+    flipAngles_raw: ArrayLike = field(  # noqa: N815
         default_factory=lambda: 14.0
     )  # degrees (will be converted to radians in properties)
     TRs: ArrayLike = field(default_factory=lambda: 0.0210)  # seconds
-    diffGradDur: ArrayLike = field(default_factory=lambda: 0.01016)  # seconds
+    diffGradDur: ArrayLike = field(default_factory=lambda: 0.01016)  # noqa: N815  # seconds
     delta: ArrayLike = field(default_factory=lambda: 0.0106)
     Delta: ArrayLike = field(default_factory=lambda: 0.008)
     gyromag_ratio: ArrayLike = field(default_factory=lambda: 4258 * 2 * jnp.pi)  # Hz/G
@@ -241,10 +243,6 @@ register_dataclass(
     meta_fields=("delta", "Delta", "gyromag_ratio"),
 )
 
-
-import os
-
-from dipy.io.gradients import read_bvals_bvecs
 
 _bvals_typ, bvecs_typ = read_bvals_bvecs(
     os.path.join(os.path.dirname(__file__), "data/bvals"),

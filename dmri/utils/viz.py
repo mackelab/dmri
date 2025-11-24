@@ -1,5 +1,5 @@
 import os
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -8,12 +8,12 @@ import numpy as np
 import plotly.graph_objects as go
 from dipy.data import get_sphere
 from jax.typing import ArrayLike
+from matplotlib.patches import Circle
 from plotly.subplots import make_subplots
 
 from dmri.utils.dmriutils import cart2sph, sph2cart
 
 sphere_default = get_sphere(name="symmetric724")
-
 
 
 def set_style(style="dark"):
@@ -36,9 +36,9 @@ set_style()
 def _ensure_axis(
     ax=None,
     *,
-    projection: Optional[str] = None,
-    figsize: Optional[Tuple[float, float]] = None,
-    subplot_kw: Optional[Dict[str, Any]] = None,
+    projection: str | None = None,
+    figsize: tuple[float, float] | None = None,
+    subplot_kw: dict[str, Any] | None = None,
 ):
     """Return a Matplotlib axis, creating one if needed."""
     if ax is not None:
@@ -1086,15 +1086,15 @@ def plot_spherical_function(
     ax=None,
     cmap: str = "viridis",
     alpha: float = 0.7,
-    figsize: Optional[Tuple[float, float]] = (6, 6),
+    figsize: tuple[float, float] | None = (6, 6),
     hide_axes: bool = True,
     add_colorbar: bool = False,
-    surface_kwargs: Optional[Dict[str, Any]] = None,
+    surface_kwargs: dict[str, Any] | None = None,
 ):
     """Plot a scalar function that is defined on the sphere.
 
     Returns:
-        Tuple[matplotlib.figure.Figure, matplotlib.axes._subplots.Axes3DSubplot]
+        tuple[matplotlib.figure.Figure, matplotlib.axes._subplots.Axes3DSubplot]
     """
     surface_kwargs = dict(surface_kwargs or {})
     fig, ax = _ensure_axis(ax, projection="3d", figsize=figsize)
@@ -1141,12 +1141,12 @@ def plot_spherical_distribution_polar(
     ax=None,
     color=None,
     levels: int = 3,
-    figsize: Optional[Tuple[float, float]] = (6, 4),
+    figsize: tuple[float, float] | None = (6, 4),
     cmap: str = "viridis",
     filled: bool = False,
-    contour_kwargs: Optional[Dict[str, Any]] = None,
+    contour_kwargs: dict[str, Any] | None = None,
     show_axis_labels: bool = True,
-    title: Optional[str] = "Spherical Distribution PDF",
+    title: str | None = "Spherical Distribution PDF",
 ):
     """Plot spherical distribution in polar coordinates.
 
@@ -1217,14 +1217,14 @@ def plot_spherical_distribution_cartesian(
     n_samples: int = 1000,
     sphere=None,
     ax=None,
-    figsize: Optional[Tuple[float, float]] = (6, 6),
+    figsize: tuple[float, float] | None = (6, 6),
     cmap: str = "viridis",
-    vertex_kwargs: Optional[Dict[str, Any]] = None,
+    vertex_kwargs: dict[str, Any] | None = None,
     show_samples: bool = True,
-    sample_kwargs: Optional[Dict[str, Any]] = None,
+    sample_kwargs: dict[str, Any] | None = None,
     add_colorbar: bool = True,
-    colorbar_kwargs: Optional[Dict[str, Any]] = None,
-    title: Optional[str] = "Spherical Distribution PDF",
+    colorbar_kwargs: dict[str, Any] | None = None,
+    title: str | None = "Spherical Distribution PDF",
 ):
     """Plot spherical distribution in Cartesian coordinates.
 
@@ -1298,9 +1298,9 @@ def plot_spherical_distribution_fod(
     distribution,
     ax=None,
     alpha: float = 0.8,
-    figsize: Optional[Tuple[float, float]] = (7, 7),
-    cmap: Optional[str] = "viridis",
-    surface_kwargs: Optional[Dict[str, Any]] = None,
+    figsize: tuple[float, float] | None = (7, 7),
+    cmap: str | None = "viridis",
+    surface_kwargs: dict[str, Any] | None = None,
     hide_axes: bool = True,
 ):
     """Plot spherical distribution as a fiber orientation distribution (FOD).
@@ -1722,9 +1722,6 @@ def orthoview_ultracompact(
     return fig
 
 
-from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
-
-
 # ---------------------- helpers ----------------------
 def normalize_rows(X: np.ndarray, eps: float = 1e-12):
     n = np.linalg.norm(X, axis=1, keepdims=True) + eps
@@ -1817,9 +1814,9 @@ def plot_glyph_from_sticks(
     peak_nms_neighbors: int = 16,
     show_peaks: bool = False,
     ax=None,
-    figsize: Optional[Tuple[float, float]] = (7, 7),
-    surface_kwargs: Optional[Dict[str, Any]] = None,
-    peaks_kwargs: Optional[Dict[str, Any]] = None,
+    figsize: tuple[float, float] | None = (7, 7),
+    surface_kwargs: dict[str, Any] | None = None,
+    peaks_kwargs: dict[str, Any] | None = None,
     hide_axes: bool = True,
 ):
     """Render a spherical glyph built from discrete stick directions.
@@ -1911,9 +1908,6 @@ def plot_glyph_from_sticks(
     return fig, ax
 
 
-from matplotlib.patches import Circle
-
-
 def _norm_rows(X, eps=1e-12):
     return X / (np.linalg.norm(X, axis=1, keepdims=True) + eps)
 
@@ -1934,8 +1928,8 @@ def plot_stereographic_scatter(
     point_color="orientation",
     edge=True,
     ax=None,
-    figsize: Optional[Tuple[float, float]] = (5, 5),
-    facecolor: Optional[str] = "black",
+    figsize: tuple[float, float] | None = (5, 5),
+    facecolor: str | None = "black",
     frame_color: str = "white",
     draw_guides: bool = True,
 ):

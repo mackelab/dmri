@@ -1,6 +1,6 @@
 import copy
 from dataclasses import dataclass, field
-from typing import Any, List, Optional, Tuple, Type, cast
+from typing import Any, Optional, cast
 
 import jax
 import jax.numpy as jnp
@@ -31,7 +31,7 @@ from .tokenizer import DMRITokenizer, DMRITokenizerPP
 EmbeddingModule = (
     BvalBvecSignalEmbeddingNet | GroupedBvalBvecSignalEmbeddingNet | SSFPEmbeddingNet
 )
-TokenizerType = Type[DMRITokenizer]
+TokenizerType = type[DMRITokenizer]
 AcquisitionSchemeLike = acquisition_scheme | ssfp_acquisition_scheme
 
 
@@ -46,7 +46,7 @@ class DMRIInferenceModelConfig:
     precision: PrecisionLike | None = None
     preferred_element_type: DTypeLike | None = None
     tokenizer_cls: TokenizerType = DMRITokenizer
-    embedding_cls: Type[EmbeddingModule] = BvalBvecSignalEmbeddingNet
+    embedding_cls: type[EmbeddingModule] = BvalBvecSignalEmbeddingNet
     embedding_cfg: Any = field(default_factory=DMRIEmbeddingConfig)
     model_selection_cfg: Any = field(default_factory=DMRIModelSelectionConfig)
     theta_inference_cfg: DMRIThetaInferenceConfig = field(
@@ -66,14 +66,14 @@ class DMRIInferenceModelConfigMaskPriorAmortizedPP(
     DMRIInferenceModelConfigMaskPriorAmortized
 ):
     tokenizer_cls: TokenizerType = DMRITokenizerPP
-    embedding_cls: Type[EmbeddingModule] = BvalBvecSignalEmbeddingNet
+    embedding_cls: type[EmbeddingModule] = BvalBvecSignalEmbeddingNet
     embedding_cfg: Any = field(default_factory=DMRIEmbeddingConfig)
 
 
 @dataclass
 class SSFPInferenceModelConfig(DMRIInferenceModelConfig):
     tokenizer_cls: TokenizerType = DMRITokenizerPP
-    embedding_cls: Type[EmbeddingModule] = SSFPEmbeddingNet
+    embedding_cls: type[EmbeddingModule] = SSFPEmbeddingNet
     embedding_cfg: Any = field(default_factory=SSFPEmbeddingNetConfig)
 
 
@@ -98,9 +98,9 @@ class DMRIInferenceModel(nnx.Module):
         acq: AcquisitionSchemeLike,
         mask_prior: Optional[Array] = None,
         alpha_prior: Optional[Array] = None,
-        model_idx: Optional[List[int]] = None,
-        noise_idx: Optional[List[int]] = None,
-        t: Optional[ArrayLike] = None,
+        model_idx: list[int] | None = None,
+        noise_idx: list[int] | None = None,
+        t: ArrayLike | None = None,
     ) -> tuple[Array, Array]:
         # Embed model configuration
         batch_shape = model_mask.shape[:-1]
@@ -123,7 +123,6 @@ class DMRIInferenceModel(nnx.Module):
             mask_prior=mask_prior,
             additional_context=y_ctx,
         )
-
 
         # Get theta predictions
         if t is None:
@@ -289,13 +288,16 @@ class DMRIInferenceModel(nnx.Module):
         decode: bool = False,
     ) -> tuple[Array | None, Array]:
         if isinstance(
-            self.encoder, (BvalBvecSignalEmbeddingNet, GroupedBvalBvecSignalEmbeddingNet)
+            self.encoder,
+            (BvalBvecSignalEmbeddingNet, GroupedBvalBvecSignalEmbeddingNet),
         ):
             if not isinstance(acq, acquisition_scheme):
                 raise TypeError(
                     "Expected a diffusion acquisition scheme for the diffusion encoder."
                 )
-            return self.encoder(acq=acq, x=x, deterministic=deterministic, decode=decode)
+            return self.encoder(
+                acq=acq, x=x, deterministic=deterministic, decode=decode
+            )
         if isinstance(self.encoder, SSFPEmbeddingNet):
             if not isinstance(acq, ssfp_acquisition_scheme):
                 raise TypeError(
@@ -313,7 +315,7 @@ class DMRIInferenceModel(nnx.Module):
         alpha_prior: Optional[Array] = None,
         model_idx: Optional[list[int]] = None,
         noise_idx: Optional[list[int]] = None,
-    ) -> Tuple[Array, Optional[Array], Array, Optional[Array]]:
+    ) -> tuple[Array, Optional[Array], Array, Optional[Array]]:
         # Embed model configuration
         tokens_cfg = self.tokenizer.embed_cfgs(
             model_mask,
@@ -401,9 +403,7 @@ class DMRIInferenceModel(nnx.Module):
             attention_mask = None
 
         if use_loss_mask:
-            loss_mask = jax.vmap(self.tokenizer.simulator.theta_mask)(
-                model_mask
-            )
+            loss_mask = jax.vmap(self.tokenizer.simulator.theta_mask)(model_mask)
         else:
             loss_mask = None
 

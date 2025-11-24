@@ -1,13 +1,7 @@
 from abc import abstractmethod
 from collections.abc import Sequence
 from functools import partial
-from typing import (
-    Any,
-    Callable,
-    List,
-    Optional,
-    Tuple,
-)
+from typing import Any, Callable, Optional
 
 import jax
 import jax.numpy as jnp
@@ -233,8 +227,8 @@ class DMRITokenizer(Tokenizer):
         self.num_noises = len(simulator.noise_types)
         self.params_dims = tuple(simulator.split_idx())
 
-        self.model_indices: Tuple[int, ...] = tuple(range(self.num_models))
-        self.noise_indices: Tuple[int, ...] = tuple(range(self.num_noises))
+        self.model_indices: tuple[int, ...] = tuple(range(self.num_models))
+        self.noise_indices: tuple[int, ...] = tuple(range(self.num_noises))
         self._model_class_labels = [cls.__name__ for cls in simulator.model_types]
         linear_kwargs: dict[str, Any] = {}
         for name, value in (
@@ -300,7 +294,7 @@ class DMRITokenizer(Tokenizer):
         self.theta_decode_nets = theta_decode_nets
 
     def _init_class_embeddings(
-        self, key: RngKey, shape: Tuple[int, ...], dtype: jnp.dtype = jnp.float32
+        self, key: RngKey, shape: tuple[int, ...], dtype: jnp.dtype = jnp.float32
     ) -> Array:
         """Custom initializer that makes embeddings for same classes identical
         but orthogonal between different classes.
@@ -321,7 +315,7 @@ class DMRITokenizer(Tokenizer):
 
         # Create full embedding matrix by mapping class embeddings to all indices
         embeddings = jnp.zeros(shape, dtype=dtype)
-        for idx, name in enumerate(class_names):
+        for idx, _name in enumerate(class_names):
             embeddings = embeddings.at[idx, ...].set(class_embeddings[idx])
 
         return embeddings
@@ -381,11 +375,11 @@ class DMRITokenizer(Tokenizer):
 
     def get_indices_with_params(
         self, model_idx: Sequence[int], noise_idx: Sequence[int]
-    ) -> List[int]:
+    ) -> list[int]:
         """
         Returns a list of model and noise indices corresponding to the provided model and noise types.
         """
-        indices: List[int] = []
+        indices: list[int] = []
         for idx in model_idx:
             if self.simulator.model_types[idx].theta_dim > 0:
                 indices.append(idx)
@@ -685,7 +679,7 @@ class DMRITokenizer(Tokenizer):
 
         tokens_split = jnp.split(tokens, tokens.shape[-2], axis=-2)
 
-        net_subs: List[nnx.Module | None] = [self.theta_decode_nets[0]]
+        net_subs: list[nnx.Module | None] = [self.theta_decode_nets[0]]
         offset = 1
         if self.simulator.shared_parameter_type is not None:
             net_subs.append(self.theta_decode_nets[1])
@@ -766,7 +760,7 @@ class DMRITokenizerPP(DMRITokenizer):
     def _create_fraction_tokens(
         self,
         theta_fractions: Array,
-        model_idx: Tuple[int, ...],
+        model_idx: tuple[int, ...],
         theta_fraction_mask: Array,
     ) -> Array:
         """
@@ -932,7 +926,7 @@ class DMRITokenizerPP(DMRITokenizer):
 
         tokens_split = jnp.split(tokens, tokens.shape[-2], axis=-2)
 
-        net_subs: List[nnx.Module] = []
+        net_subs: list[nnx.Module] = []
 
         num_fractions = len(model_idx) - 1
         for _ in range(num_fractions):

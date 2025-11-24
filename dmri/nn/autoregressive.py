@@ -340,11 +340,11 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         if permute_order:
             assert rng is not None, "rng must be provided if permute_order is True"
             elements = jnp.arange(seq_len - 1)  # First element is padding token
+
             def rand_perm(key):
                 return jax.random.permutation(key, elements)
-            batch_orders = jax.vmap(rand_perm)(
-                jax.random.split(rng, batch_shape)
-            )
+
+            batch_orders = jax.vmap(rand_perm)(jax.random.split(rng, batch_shape))
 
             # Input tokens should be permuted, except the first element of dim -2
             tokens_except_first = input_tokens[..., 1:, :]

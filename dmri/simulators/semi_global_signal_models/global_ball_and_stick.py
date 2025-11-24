@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Callable
 
 import jax
 import jax.numpy as jnp
@@ -280,7 +281,7 @@ class GlobalMultiCompartment(SignalCompartment):
         model_fractions: ArrayLike,
         model_compartments: list,
         noise_compartments: list,
-        model_mask: Optional[ArrayLike] = None,
+        model_mask: ArrayLike | None = None,
         shared_parameter: SharedParameterState | None = None,
     ):
         self.model_fractions = model_fractions

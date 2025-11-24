@@ -433,7 +433,9 @@ class GroupedBvalBvecSignalEmbeddingNet(BvalBvecSignalEmbeddingNet):
     def _group_tokens(self, tokens: Array) -> Array:
         seq_len = tokens.shape[-2]
         if seq_len == 0:
-            raise ValueError("Cannot group tokens when no diffusion measurements exist.")
+            raise ValueError(
+                "Cannot group tokens when no diffusion measurements exist."
+            )
         pad_len = (-seq_len) % self.group_size
         mask = jnp.ones(tokens.shape[:-1], dtype=tokens.dtype)
         if pad_len:

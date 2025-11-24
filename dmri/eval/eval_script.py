@@ -5,21 +5,8 @@ from collections.abc import Mapping, Sequence
 from contextlib import nullcontext
 from types import SimpleNamespace
 
-import jax
-
-# memory_fraction = 0.98  # Use 98% of available memory
-# os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = str(memory_fraction)
-
-# Compilation cache!
-jax.config.update("jax_compilation_cache_dir", ".jax_cache")
-jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
-jax.config.update("jax_persistent_cache_min_compile_time_secs", 0.5)
-jax.config.update(
-    "jax_persistent_cache_enable_xla_caches", "xla_gpu_per_fusion_autotune_cache_dir"
-)
-
-
 import hydra
+import jax
 import jax.numpy as jnp
 import numpy as np
 from flax import nnx
@@ -41,6 +28,17 @@ from dmri.eval.sampling_methods import (
 from dmri.eval.selection import select_models
 from dmri.simulators import acquisition_scheme
 from dmri.train.utils import load_checkpoint
+
+# memory_fraction = 0.98  # Use 98% of available memory
+# os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = str(memory_fraction)
+
+# Compilation cache!
+jax.config.update("jax_compilation_cache_dir", ".jax_cache")
+jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
+jax.config.update("jax_persistent_cache_min_compile_time_secs", 0.5)
+jax.config.update(
+    "jax_persistent_cache_enable_xla_caches", "xla_gpu_per_fusion_autotune_cache_dir"
+)
 
 logo = r"""
 
@@ -282,7 +280,9 @@ def _iter_metric_specs(metrics_cfg):
         return []
     if isinstance(metrics_cfg, Mapping):
         iterable = metrics_cfg.items()
-    elif isinstance(metrics_cfg, Sequence) and not isinstance(metrics_cfg, (str, bytes)):
+    elif isinstance(metrics_cfg, Sequence) and not isinstance(
+        metrics_cfg, (str, bytes)
+    ):
         iterable = enumerate(metrics_cfg)
     else:
         raise TypeError(
@@ -389,9 +389,7 @@ def _maybe_run_metrics(
 
     metrics_cfg_to_run = metrics_cfg
     if model_parameters_brain is None and metrics_cfg:
-        metrics_cfg_to_run, skipped_metrics = _filter_metrics_without_theta(
-            metrics_cfg
-        )
+        metrics_cfg_to_run, skipped_metrics = _filter_metrics_without_theta(metrics_cfg)
         if skipped_metrics:
             log.warning(
                 "Skipping metrics requiring theta samples (%s) because none are available.",
@@ -471,7 +469,7 @@ def _main(cfg: DictConfig):
     cpu_device = _first_device("cpu")
     try:
         gpu_device = _first_device("gpu")
-    except:
+    except Exception:
         gpu_device = None
     heavy_device = gpu_device or cpu_device
     eval_devices = _resolve_eval_devices()
@@ -490,7 +488,7 @@ def _resolve_eval_devices():
     for kind in ("gpu", "tpu"):
         try:
             available = tuple(jax.devices(kind))
-        except:
+        except Exception:
             available = False
         if available:
             return available
@@ -789,8 +787,6 @@ def _run_eval_pipeline(
 
     if models_selected_brain is None:
         models_selected_brain = default_mask
-    if models_selected_brain is None and model_masks_synth is not None:
-        models_selected_brain = model_masks_synth
 
     # Evaluate metrics (including model selection metrics that do not need theta samples)
     metrics_cfg_raw = getattr(cfg.export, "metrics", None)

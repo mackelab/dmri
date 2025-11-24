@@ -14,7 +14,7 @@ import math
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any, Optional
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -415,9 +415,9 @@ def instantiate_dataloader(
     dataset: Any,
     loader_cfg: Any,
     *,
-    seed: Optional[int] = None,
-    default_shuffle: Optional[bool] = None,
-    default_drop_last: Optional[bool] = None,
+    seed: int | None = None,
+    default_shuffle: bool | None = None,
+    default_drop_last: bool | None = None,
 ) -> DataLoader:
     """Instantiate a probjax DataLoader with normalised parameters."""
     params = _config_to_mapping(loader_cfg)

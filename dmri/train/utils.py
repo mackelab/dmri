@@ -65,7 +65,7 @@ def load_checkpoint(path, which="latest"):
     model = build_model(cfg, sim_type)
     model.eval()
 
-    graphdef, params, state = nnx.split(model, nnx.Param,  ...)
+    graphdef, params, state = nnx.split(model, nnx.Param, ...)
 
     checkpoint_dir = os.path.join(path, "checkpoints")
     continue_training = True

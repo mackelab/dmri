@@ -26,22 +26,6 @@ big_sphere = get_sphere(name="repulsion724")
 bigger_hemisphere = HemiSphere(phi=big_sphere.phi, theta=big_sphere.theta)
 
 
-def diffusion_tensor_odf(dirs, evals, evecs):
-    """
-    Compute the ODF for a single diffusion tensor at directions `dirs`.
-    """
-    R = jnp.asarray(evecs)
-    eigvals_inv = 1.0 / evals
-    D_inv = R @ jnp.diag(eigvals_inv) @ R.T
-    det_factor = jnp.sqrt(jnp.prod(evals))
-
-    # Quadratic form u^T D_inv u
-    quad = jnp.sum(dirs @ D_inv * dirs, axis=1)
-    # ODF(u) = 1 / (4*pi * sqrt(det(D)) * (quad)^(3/2))
-    odf_vals = 1.0 / (4.0 * jnp.pi * det_factor * (quad**1.5))
-    return odf_vals
-
-
 def diffusion_tensor2d_odf(dirs, evals, evecs):
     """
     Compute the ODF for a single diffusion tensor at directions `dirs`.
@@ -138,7 +122,7 @@ def sample_single_from_odf_jax_degenerate(evals, evecs, rng, max_iter=10000):
     # evec1, evec2, evec3
     evec1 = evecs_sorted[:, 0]
     evec2 = evecs_sorted[:, 1]
-    evec3 = evecs_sorted[:, 2]
+    _evec3 = evecs_sorted[:, 2]
 
     # We assume lam3 == 0, lam1>0, lam2>0
     # Build the 2D inverse sub-tensor in that plane:
