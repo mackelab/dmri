@@ -84,7 +84,12 @@ Docstrings power these references. Sections are grouped to keep the table of con
           show_root_heading: true
           show_root_full_path: false
 
-    ::: dmri.simulators.local_signal_models.convolved_zeppelin.ConvolvedZeppelin
+    ::: dmri.simulators.local_signal_models.convolved_zeppelin.WatsonZeppelin
+        options:
+          show_root_heading: true
+          show_root_full_path: false
+
+    ::: dmri.simulators.local_signal_models.convolved_zeppelin.BinghamZeppelin
         options:
           show_root_heading: true
           show_root_full_path: false
@@ -111,7 +116,12 @@ Docstrings power these references. Sections are grouped to keep the table of con
           show_root_heading: true
           show_root_full_path: false
 
-    ::: dmri.simulators.local_signal_models.convolved_stick.ConvolvedStick
+    ::: dmri.simulators.local_signal_models.convolved_stick.WatsonStick
+        options:
+          show_root_heading: true
+          show_root_full_path: false
+
+    ::: dmri.simulators.local_signal_models.convolved_stick.BinghamStick
         options:
           show_root_heading: true
           show_root_full_path: false
@@ -123,17 +133,27 @@ Docstrings power these references. Sections are grouped to keep the table of con
           show_root_heading: true
           show_root_full_path: false
 
-    ::: dmri.simulators.local_signal_models.dti.DTIModel
+    ::: dmri.simulators.local_signal_models.dti.Dti
         options:
           show_root_heading: true
           show_root_full_path: false
 
-    ::: dmri.simulators.local_signal_models.noddi.NoddiModel
+    ::: dmri.simulators.local_signal_models.noddi.NoddiW
         options:
           show_root_heading: true
           show_root_full_path: false
 
-    ::: dmri.simulators.local_signal_models.sandi.SANDIModel
+    ::: dmri.simulators.local_signal_models.noddi.NoddiB
+        options:
+          show_root_heading: true
+          show_root_full_path: false
+
+    ::: dmri.simulators.local_signal_models.sandi.SandiW
+        options:
+          show_root_heading: true
+          show_root_full_path: false
+
+    ::: dmri.simulators.local_signal_models.sandi.SandiB
         options:
           show_root_heading: true
           show_root_full_path: false
