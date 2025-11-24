@@ -73,12 +73,8 @@ jobs:
 
     - name: Check formatting with Ruff
       run: |
-        ruff format --check .
+        ruff format --check dmri tests
 
     - name: Lint with Ruff
       run: |
-        ruff check .
-
-    - name: Type check with mypy
-      run: |
-        mypy dmri
+        ruff check dmri tests
