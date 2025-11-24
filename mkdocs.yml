@@ -76,6 +76,8 @@ nav:
   - Getting Started: getting-started.md
   - Guides:
       - Simulators & Priors: guides/simulators.md
+      - Simulator Tutorial (Notebook): guides/simulators_notebook.md
+      - Model Gallery (Notebook): guides/model_gallery.md
       - Training Runs: guides/training.md
       - Evaluation & Export: guides/evaluation.md
   - API Reference:

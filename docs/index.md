@@ -1,4 +1,4 @@
-# DMRI: Diffusion MRI Model Selection
+# DMRI: Package for simulations-based model selection and inference for diffusion MRI
 
 <div class="hero">
   <div class="hero__text">
@@ -20,9 +20,8 @@ dmri_eval +experiment=eval_b3s_best_model_selection</code></pre>
 
 ## Why this package
 
-- Model selection that stays numerically stable thanks to JAX-first implementations.
-- Simulator building blocks (ball, stick, zeppelin, SSFP, semi-global models) ready to combine.
-- Hydra-powered configuration makes runs reproducible and easy to sweep.
+- Simulator building blocks (ball, stick, zeppelin, SSFP, semi-global models) ready to combine implemented in native `jax` fully `jit` and `vmap` compliance allowing efficient and parallel simulation from combinatorial model families via automatic vectorizations and compilation.
+- Hydra-powered configuration makes runs reproducible and easy to sweep i.e. via `SLURM`.
 - Well-typed utilities for sampling, exporting NIfTIs, and composing acquisition schemes.
 
 ## How the docs are organized

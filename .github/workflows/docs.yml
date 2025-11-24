@@ -47,6 +47,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[docs]"
 
+      - name: Generate doc figures
+        run: |
+          python docs/generate_figures.py
+
       - name: Build MkDocs site
         run: |
           mkdocs build

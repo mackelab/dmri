@@ -1298,7 +1298,7 @@ def plot_spherical_distribution_fod(
     distribution,
     ax=None,
     alpha: float = 0.8,
-    figsize: tuple[float, float] | None = (7, 7),
+    figsize: tuple[float, float] | None = (5, 5),
     cmap: str | None = "viridis",
     surface_kwargs: dict[str, Any] | None = None,
     hide_axes: bool = True,
