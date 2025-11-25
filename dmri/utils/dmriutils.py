@@ -521,8 +521,8 @@ def reorder_angles_3fib(mu1, mu2, mu3, f1, f2, f3):
     new_f3 = jnp.zeros_like(f3)
 
     # Use first sample as reference vectors
-    v1_ref = sph2cart(mu1[0, 0], mu1[0, 1])
-    v2_ref = sph2cart(mu2[0, 0], mu2[0, 1])
+    v1_ref = jnp.stack(sph2cart(mu1[0, 0], mu1[0, 1]), axis=-1)
+    v2_ref = jnp.stack(sph2cart(mu2[0, 0], mu2[0, 1]), axis=-1)
     # v3_ref = sph2cart(mu3[0, 0], mu3[0, 1])
 
     # Copy first sample directly
@@ -536,9 +536,9 @@ def reorder_angles_3fib(mu1, mu2, mu3, f1, f2, f3):
     # Process remaining samples
     for j in range(1, mu1.shape[0]):
         # Convert current sample to cartesian
-        v1 = sph2cart(mu1[j, :])
-        v2 = sph2cart(mu2[j, :])
-        v3 = sph2cart(mu3[j, :])
+        v1 = jnp.stack(sph2cart(mu1[j, 0], mu1[j, 1]), axis=-1)
+        v2 = jnp.stack(sph2cart(mu2[j, 0], mu2[j, 1]), axis=-1)
+        v3 = jnp.stack(sph2cart(mu3[j, 0], mu3[j, 1]), axis=-1)
 
         # Calculate dot products with v1_ref
         dots = jnp.array([

@@ -213,6 +213,8 @@ class EDMSimformer(EDM):
         )
         # Prevent automatic parameter updates
         super().__init__(transformer, loss_type=loss_type)
+        # TODO: Make this modifiable from outside
+        self.solver_cfg.ode_method = "exp_ab2_scalarL"
 
     def loss(
         self,

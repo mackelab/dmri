@@ -44,6 +44,7 @@ def eval_in_batches(
     devices: Sequence[jax.Device] | str | None = None,
     preferred_device_kinds: Sequence[str] | None = ("gpu", "tpu"),
 ):
+    """Evaluate a function on data batches, overlapping host prep with device compute."""
     eval_results = []
     if logger is not None:
         print_fn = logger.info
@@ -55,6 +56,15 @@ def eval_in_batches(
 
     resolved_devices = _resolve_devices(devices, preferred_device_kinds)
     num_devices = len(resolved_devices)
+
+    def _finalize_single_result(res):
+        """Bring a device result to host as numpy."""
+        return np.asarray(jax.device_get(res))
+
+    def _finalize_pmap_result(res, original_batch_size):
+        np_results = np.asarray(res)
+        flat_results = np_results.reshape(-1, *np_results.shape[2:])
+        return flat_results[:original_batch_size]
 
     if num_devices > 1:
         # Use pmap when multiple devices are available
@@ -78,6 +88,7 @@ def eval_in_batches(
         current_batch_size = device_batch_size * num_devices
         batch_start = 0
 
+        pending_result = None
         while batch_start < data[0].shape[0]:
             try:
                 key, subkey = jax.random.split(key)
@@ -115,14 +126,11 @@ def eval_in_batches(
                 # Split keys for each device
                 device_keys = jax.random.split(subkey, num_devices)
 
-                # Run pmap
+                # Dispatch computation before blocking on previous result
                 pmap_results = pmap_fn(device_keys, *pmap_data)
-
-                # Reshape results back and remove padding
-                np_results = np.asarray(pmap_results)
-                flat_results = np_results.reshape(-1, *np_results.shape[2:])
-                batch_res = flat_results[:original_batch_size]
-                eval_results.append(batch_res)
+                if pending_result is not None:
+                    eval_results.append(_finalize_pmap_result(*pending_result))
+                pending_result = (pmap_results, original_batch_size)
                 batch_start = batch_end
             except Exception as e:
                 if (
@@ -140,7 +148,11 @@ def eval_in_batches(
                     )
                     continue
                 else:
+                    if pending_result is not None:
+                        eval_results.append(_finalize_pmap_result(*pending_result))
                     raise e
+        if pending_result is not None:
+            eval_results.append(_finalize_pmap_result(*pending_result))
     else:
         # Fallback to original single-device implementation
         single_device = resolved_devices[0]
@@ -148,6 +160,7 @@ def eval_in_batches(
         current_batch_size = batch_size
         batch_start = 0
 
+        pending_result = None
         while batch_start < data[0].shape[0]:
             try:
                 key, subkey = jax.random.split(key)
@@ -159,9 +172,14 @@ def eval_in_batches(
                     lambda x, start=batch_start, end=batch_end: x[start:end], data
                 )
                 batch_keys = jax.random.split(subkey, batch_data[0].shape[0])
-                batch_res = fn(batch_keys, *batch_data)
-                batch_res = np.array(batch_res)
-                eval_results.append(batch_res)
+                batch_data_device = jax.device_put(batch_data, single_device)
+                batch_keys_device = jax.device_put(batch_keys, single_device)
+
+                # Dispatch computation; fetch previous result while this runs to overlap host/device work.
+                batch_res = fn(batch_keys_device, *batch_data_device)
+                if pending_result is not None:
+                    eval_results.append(_finalize_single_result(pending_result))
+                pending_result = batch_res
                 batch_start = batch_end
             except Exception as e:
                 if (
@@ -176,7 +194,11 @@ def eval_in_batches(
                     current_batch_size = current_batch_size // 2
                     continue
                 else:
+                    if pending_result is not None:
+                        eval_results.append(_finalize_single_result(pending_result))
                     raise e
+        if pending_result is not None:
+            eval_results.append(_finalize_single_result(pending_result))
 
     result = np.concatenate(eval_results, axis=0)
 
@@ -288,6 +310,7 @@ def build_corrector(method, model, acq, model_mask, sim_type, params):
 
     if method == "auto":
         method = "smc_corrected" if model_mask.ndim < 3 else "mcmc_corrected"
+    print(model_mask.shape)
 
     if method == "uncorrected":
 
@@ -316,7 +339,7 @@ def build_corrector(method, model, acq, model_mask, sim_type, params):
                 num_inner_steps,
             )
             state = smc.init(theta)
-            state = state._replace(lmbda=lam_start)
+            state = state._replace(tempering_param=lam_start)
 
             def step(state, rng):
                 state, i = state
@@ -331,14 +354,14 @@ def build_corrector(method, model, acq, model_mask, sim_type, params):
     elif method == "mcmc_corrected":
         num_steps = params.get("num_steps", 5)
 
-        def corrector(key, theta, x, model_mask):
+        def _run_single(key, theta_single, x, mask_single):
             alg = hmc(
-                partial(posterior_fn, mask=model_mask, acq=acq, x=x),
+                partial(posterior_fn, mask=mask_single, acq=acq, x=x),
                 step_size,
                 jnp.ones(d),
                 num_integration_steps,
             )
-            state = alg.init(theta)
+            state = alg.init(theta_single)
 
             def step(state, key):
                 state, _ = alg.step(key, state)
@@ -347,6 +370,26 @@ def build_corrector(method, model, acq, model_mask, sim_type, params):
             keys = jax.random.split(key, num_steps)
             state, _ = jax.lax.scan(step, state, keys)
             return state.position
+
+        def corrector(key, theta, x, model_mask):
+            # Support batched theta/model_mask by vmapping over the sample dimension.
+            if theta.ndim == 1:
+                return _run_single(key, theta, x, model_mask)
+
+            num_samples = theta.shape[0]
+            keys = jax.random.split(key, num_samples)
+
+            if model_mask is None or model_mask.ndim == 1:
+                vmapped = jax.vmap(
+                    lambda k, t: _run_single(k, t, x, model_mask), in_axes=(0, 0)
+                )
+                return vmapped(keys, theta)
+
+            # model_mask is batched alongside theta; keep x shared across samples.
+            vmapped = jax.vmap(
+                lambda k, t, m: _run_single(k, t, x, m), in_axes=(0, 0, 0)
+            )
+            return vmapped(keys, theta, model_mask)
 
     else:
         raise ValueError(f"Method {method} not supported")
