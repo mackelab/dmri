@@ -10,3 +10,6 @@ defaults:
 
 export:
   name: ball3stick_inference_results_average_model_selection
+  metrics:
+    ksd:
+      enabled: false
