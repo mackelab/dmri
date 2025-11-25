@@ -71,7 +71,7 @@ def _to_cpu_array(value):
     if value is None or isinstance(value, np.ndarray):
         return value
     if isinstance(value, jax.Array):
-        return np.asarray(value)
+        return np.asarray(value, dtype=value.dtype)
     return value
 
 
@@ -616,6 +616,7 @@ def _run_eval_pipeline(
                 model,
                 acq,
                 model_mask_samples=models_sampled_brain,
+                devices=eval_devices,
             )
         models_selected_brain = _to_cpu_array(models_selected_brain)
     else:
@@ -674,85 +675,88 @@ def _run_eval_pipeline(
         cfg, "export_model_selection.name", "model_selection_results"
     )
     export_type = _cfg_get(cfg, "export_model_selection.type", "ball3stick")
-    exporter = get_model_selection_exporter(export_type)
-    feasible_model_probabilities = None
-    export_feasible_probs = bool(
-        _cfg_get(export_cfg, "export_feasible_model_probabilities", False)
-    )
-    if export_feasible_probs and export_type == "ball3stick":
-        if getattr(export_cfg, "feasible_models", None) is None:
-            log.warning(
-                "export_model_selection.feasible_models is not set; skipping feasible model probabilities."
-            )
-        else:
-            log.info("Evaluating feasible model probabilities for export.")
-            with _device_scope(heavy_device):
-                feasible_model_probabilities = _compute_feasible_model_probabilities(
-                    cfg, export_cfg, model, acq, full_data_flat_in_brain
+    if sample_mask:
+        log.info("Exporting model selection of type '%s'", export_type)
+        exporter = get_model_selection_exporter(export_type)
+        feasible_model_probabilities = None
+        export_feasible_probs = bool(
+            _cfg_get(export_cfg, "export_feasible_model_probabilities", False)
+        )
+        if False and  sample_mask and export_feasible_probs and export_type == "ball3stick":
+            # TODO: Fix this
+            if getattr(export_cfg, "feasible_models", None) is None:
+                log.warning(
+                    "export_model_selection.feasible_models is not set; skipping feasible model probabilities."
                 )
-            feasible_model_probabilities = _to_cpu_array(feasible_model_probabilities)
+            else:
+                log.info("Evaluating feasible model probabilities for export.")
+                with _device_scope(heavy_device):
+                    feasible_model_probabilities = _compute_feasible_model_probabilities(
+                        cfg, export_cfg, model, acq, full_data_flat_in_brain
+                    )
+                feasible_model_probabilities = _to_cpu_array(feasible_model_probabilities)
 
-    def _export_masks(masks, target_name, label):
-        if masks is None:
-            return False
-        out_path = os.path.join(checkpoint_root, cfg.model_name, target_name)
-        log.info("Exporting model selection %s to %s", label, out_path)
-        exporter(
-            cfg,
-            export_cfg,
-            masks,
-            out_path,
-            export_template,
-            brain_mask_flat,
-            data_norm.shape[:-1],
-            feasible_model_probabilities,
-        )
-        return True
+        def _export_masks(masks, target_name, label):
+            if masks is None:
+                return False
+            out_path = os.path.join(checkpoint_root, cfg.model_name, target_name)
+            log.info("Exporting model selection %s to %s", label, out_path)
+            exporter(
+                cfg,
+                export_cfg,
+                masks,
+                out_path,
+                export_template,
+                brain_mask_flat,
+                data_norm.shape[:-1],
+                feasible_model_probabilities,
+            )
+            return True
 
-    exported_selection = _export_masks(
-        models_selected_brain, export_name, label="results"
-    )
-
-    export_samples_enabled = bool(
-        _cfg_get(cfg, "export_model_selection.export_samples", True)
-    )
-    samples_name_cfg = _cfg_get(cfg, "export_model_selection.samples_name", None)
-    samples_name = (
-        samples_name_cfg
-        if samples_name_cfg not in (None, "")
-        else f"{export_name}_mask_samples"
-    )
-    if models_sampled_brain is not None:
-        if export_samples_enabled:
-            _export_masks(models_sampled_brain, samples_name, label="mask samples")
-        elif not exported_selection:
-            _export_masks(models_sampled_brain, export_name, label="mask samples")
-
-    # Evaluate metrics for sampled masks if configured
-    mask_metrics_cfg_raw = _cfg_get(cfg, "export_model_selection.metrics", None)
-    if cfg.sample_mask and mask_metrics_cfg_raw:
-        _maybe_run_metrics(
-            mask_metrics_cfg_raw,
-            cfg,
-            log,
-            checkpoint_root,
-            export_name,
-            sim_type,
-            acq,
-            full_data_flat_in_brain,
-            model_parameters_brain,
-            models_sampled_brain,
-            models_sampled_brain,
-            brain_mask_flat,
-            data_norm,
-            export_template,
-            thetas_synth,
-            true_model_mask,
-            heavy_device,
-            eval_devices,
-            add_default_ksd=False,
+        exported_selection = _export_masks(
+            models_selected_brain, export_name, label="results"
         )
 
+        export_samples_enabled = bool(
+            _cfg_get(cfg, "export_model_selection.export_samples", True)
+        )
+        samples_name_cfg = _cfg_get(cfg, "export_model_selection.samples_name", None)
+        samples_name = (
+            samples_name_cfg
+            if samples_name_cfg not in (None, "")
+            else f"{export_name}_mask_samples"
+        )
+        if models_sampled_brain is not None:
+            if export_samples_enabled:
+                _export_masks(models_sampled_brain, samples_name, label="mask samples")
+            elif not exported_selection:
+                _export_masks(models_sampled_brain, export_name, label="mask samples")
+
+        # Evaluate metrics for sampled masks if configured
+        mask_metrics_cfg_raw = _cfg_get(cfg, "export_model_selection.metrics", None)
+        if cfg.sample_mask and mask_metrics_cfg_raw:
+            _maybe_run_metrics(
+                mask_metrics_cfg_raw,
+                cfg,
+                log,
+                checkpoint_root,
+                export_name,
+                sim_type,
+                acq,
+                full_data_flat_in_brain,
+                model_parameters_brain,
+                models_sampled_brain,
+                models_sampled_brain,
+                brain_mask_flat,
+                data_norm,
+                export_template,
+                thetas_synth,
+                true_model_mask,
+                heavy_device,
+                eval_devices,
+                add_default_ksd=False,
+            )
+    log.info("Exporting inferred parameters.")
     # Export samples
     if model_parameters_brain is not None:
         out_path = os.path.join(checkpoint_root, cfg.model_name, cfg.export.name)
@@ -774,16 +778,17 @@ def _run_eval_pipeline(
                 export_template,
             )
         else:
-            export_thetas_to_files_ball3stick(
-                cfg,
-                model_parameters_brain,
-                sim_type,
-                None,
-                brain_mask_flat,
-                data_norm.shape[:-1],
-                out_path,
-                export_template,
-            )
+            with _device_scope(heavy_device):
+                export_thetas_to_files_ball3stick(
+                    cfg,
+                    model_parameters_brain,
+                    sim_type,
+                    None,
+                    brain_mask_flat,
+                    data_norm.shape[:-1],
+                    out_path,
+                    export_template,
+                )
 
     if models_selected_brain is None:
         models_selected_brain = default_mask

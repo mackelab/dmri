@@ -1,6 +1,8 @@
 # @package _global_
 
 
+mask_sample.p_mask: 0.35
+
 defaults:
   - _self_
   - override /export: ball3stick

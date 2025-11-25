@@ -3,6 +3,8 @@ import os
 import jax
 import numpy as np
 
+import logging
+
 from dmri.simulators.local_signal_models.ball import MultiShellStaticBall
 from dmri.utils.dmriutils import export_nifti, make_dyads, reorder_angles_3fib, sph2cart
 
@@ -59,7 +61,7 @@ def export_thetas_to_files_ball3stick(
 
     if not os.path.exists(out_path):
         os.makedirs(out_path)
-
+    logging.info(f"Exporting raw inferred parameters to {out_path}")
     # Export raw samples
     full_thetas = embed_in_full_brain_array(
         thetas, brain_mask_flat, brain_shape
@@ -94,12 +96,12 @@ def export_thetas_to_files_ball3stick(
             sim_type.from_theta(theta, model_mask=model_mask).noise_compartments[0].snr
         )
 
-    fractions = np.array(jax.vmap(jax.vmap(to_fractions))(thetas))
-    diffusitivity = np.array(jax.vmap(jax.vmap(to_diffusivities))(thetas))
-    mu1 = np.array(jax.vmap(jax.vmap(direction_s1))(thetas))
-    mu2 = np.array(jax.vmap(jax.vmap(direction_s2))(thetas))
-    mu3 = np.array(jax.vmap(jax.vmap(direction_s3))(thetas))
-    snr = np.array(jax.vmap(jax.vmap(snr))(thetas))
+    fractions = np.array(jax.vmap(jax.vmap(to_fractions))(thetas), dtype=np.float32)
+    diffusitivity = np.array(jax.vmap(jax.vmap(to_diffusivities))(thetas), dtype=np.float32)
+    mu1 = np.array(jax.vmap(jax.vmap(direction_s1))(thetas), dtype=np.float32)
+    mu2 = np.array(jax.vmap(jax.vmap(direction_s2))(thetas), dtype=np.float32)
+    mu3 = np.array(jax.vmap(jax.vmap(direction_s3))(thetas), dtype=np.float32)
+    snr = np.array(jax.vmap(jax.vmap(snr))(thetas), dtype=np.float32)
 
     # To save multishell stds
     is_multi_shell = sim_type.model_types[0] is MultiShellStaticBall
@@ -135,6 +137,7 @@ def export_thetas_to_files_ball3stick(
         fractions = fractions
 
     if cfg.export.sort_by_fractions:
+        logging.info("Sorting fiber fractions and corresponding directions.")
         # Keep ball fraction unchanged
         fractions_new = np.zeros_like(fractions)
         fractions_new[..., 0] = fractions[..., 0]
@@ -178,6 +181,7 @@ def export_thetas_to_files_ball3stick(
         assert np.all(fractions[..., 2] >= fractions[..., 3]), (
             "f2 should be greater than f3"
         )
+    logging.info("Exporting moments and processed inferred parameters.")
 
     # Moments
     fractions_mean = np.mean(fractions, axis=1)
@@ -342,6 +346,13 @@ def export_thetas_to_files_ball3stick(
     mu3_cart = jax.vmap(jax.vmap(sph2cart, in_axes=(0, 0)), in_axes=(0, 0))(
         mu3_theta, mu3_phi
     )
+
+    mu1_cart = np.stack(mu1_cart, dtype=np.float32, axis=-1)
+    mu2_cart = np.stack(mu2_cart, dtype=np.float32, axis=-1)
+    mu3_cart = np.stack(mu3_cart, dtype=np.float32, axis=-1)
+    print("mu1_cart shape:", mu1_cart.shape)
+
+
 
     # Export cartesian samples
     full_mu1_cart = embed_in_full_brain_array(mu1_cart, brain_mask_flat, brain_shape)

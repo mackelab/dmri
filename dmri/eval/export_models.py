@@ -34,7 +34,7 @@ def export_model_selection_ball3stick(
         return embed_in_full_brain_array(values, brain_mask_flat, brain_shape)
 
     def save(image, filename):
-        export_nifti(image, orig_data, out_path, filename)
+        export_nifti(image.astype(np.float32), orig_data, out_path, filename)
 
     model_mask = np.asarray(model_mask)
     full_model_mask = embed(model_mask).astype(np.float32)

@@ -2,7 +2,7 @@ num_samples: 50
 eval_batch_size: 30_000
 
 params:
-  num_steps: 16
+  num_steps: 2
   t_max: 80
 
 defaults:
