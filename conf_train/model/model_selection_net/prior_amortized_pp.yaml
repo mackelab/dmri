@@ -14,5 +14,5 @@ params:
   precision: null
   dtype: null
   preferred_element_type: null
-  outnorm: true
-  outlayer: 'linear'  # 'linear' or 'mlp'
+  outnorm: false
+  outlayer: 'mlp'  # 'linear' or 'mlp'

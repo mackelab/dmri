@@ -74,7 +74,7 @@ class DMRIInferenceModelConfigMaskPriorAmortizedPPP(
     DMRIInferenceModelConfigMaskPriorAmortized
 ):
     tokenizer_cls: TokenizerType = DMRITokenizerPPP
-    embedding_cls: Type[EmbeddingModule] = BvalBvecSignalEmbeddingNet
+    embedding_cls: type[EmbeddingModule] = BvalBvecSignalEmbeddingNet
     embedding_cfg: Any = field(default_factory=DMRIEmbeddingConfig)
 
 

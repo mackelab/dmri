@@ -1,0 +1,32 @@
+inner_steps: 500
+checkpoint_freq: 20_000
+eval_freq: 40_000
+continue_training: false
+max_train_hours: 72
+model_selection_weight: 1.0
+model_inference_loss_weight: 1.0
+weight_by_complexity: False
+track_ema: true
+ema_decay: 0.999
+cut_off_tsm: 0.0
+label_smoothing: 0.00
+use_loss_mask: true
+restart_optimizer: false
+recovery_threshold: 5.0
+permute_order: false
+
+eval:
+  nnl_theta:
+    iters: 5
+  nnl_mask:
+    iters: 5
+  ksd:
+    iters: 1
+    num_samples: 16
+    bandwidths: [0.05, 0.1, 0.5]
+    n_bootstrap: 128
+    seed: null
+
+defaults:
+  - optimizer: radam2
+  - dataloader: datastream

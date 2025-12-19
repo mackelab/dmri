@@ -149,7 +149,7 @@ class BinaryAutoregressiveDecoder(nnx.Module):
                 rngs=rngs,
             **precision_kwargs,
             )
-        elif outlayer == "MLP":
+        elif outlayer == "mlp":
             self.output = MLP([model_dim, widening_factor * model_dim, 1], rngs=rngs, **precision_kwargs)
         else:
             raise ValueError(f"Unknown outlayer type: {outlayer}")
