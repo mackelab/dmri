@@ -26,7 +26,7 @@ from .embedding_net import (
     SSFPEmbeddingNetConfig,
 )
 from .simformer import DMRIThetaInferenceConfig, EDMSimformer
-from .tokenizer import DMRITokenizer, DMRITokenizerPP
+from .tokenizer import DMRITokenizer, DMRITokenizerPP, DMRITokenizerPPP
 
 EmbeddingModule = (
     BvalBvecSignalEmbeddingNet | GroupedBvalBvecSignalEmbeddingNet | SSFPEmbeddingNet
@@ -67,6 +67,14 @@ class DMRIInferenceModelConfigMaskPriorAmortizedPP(
 ):
     tokenizer_cls: TokenizerType = DMRITokenizerPP
     embedding_cls: type[EmbeddingModule] = BvalBvecSignalEmbeddingNet
+    embedding_cfg: Any = field(default_factory=DMRIEmbeddingConfig)
+
+@dataclass
+class DMRIInferenceModelConfigMaskPriorAmortizedPPP(
+    DMRIInferenceModelConfigMaskPriorAmortized
+):
+    tokenizer_cls: TokenizerType = DMRITokenizerPPP
+    embedding_cls: Type[EmbeddingModule] = BvalBvecSignalEmbeddingNet
     embedding_cfg: Any = field(default_factory=DMRIEmbeddingConfig)
 
 
