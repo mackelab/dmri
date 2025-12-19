@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 import optax
 from flax import nnx
-from probjax.nn import CausalMask, GaussianFourierEmbedding, Transformer
+from probjax.nn import CausalMask, GaussianFourierEmbedding, Transformer, MLP
 from probjax.nn.layers.attention import flex_attention
 from probjax.utils.typing import Array, ArrayLike, DTypeLike, PrecisionLike, RngKey
 
@@ -31,6 +31,8 @@ class DMRIModelSelectionConfig:
     param_dtype: DTypeLike | None = None
     precision: PrecisionLike | None = None
     preferred_element_type: DTypeLike | None = None
+    outlayer: str = "linear"
+    outnorm: bool = True
 
 
 @dataclass
@@ -68,6 +70,8 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         param_dtype: DTypeLike | None = None,
         precision: PrecisionLike | None = None,
         preferred_element_type: DTypeLike | None = None,
+        outlayer: str = "linear",
+        outnorm: bool = True,
     ):
         self.model_dim = model_dim
         self.num_heads = num_heads
@@ -134,13 +138,22 @@ class BinaryAutoregressiveDecoder(nnx.Module):
             normalize_qk_cross_attn=normalize_qk_cross_attn,
             **precision_kwargs,
         )
-        self.out_norm = nnx.LayerNorm(model_dim, rngs=rngs)
-        self.output = nnx.Linear(
-            model_dim,
-            1,
-            rngs=rngs,
+        if outnorm:
+            self.out_norm = nnx.LayerNorm(model_dim, rngs=rngs)
+        else:
+            self.out_norm = lambda x: x  # Identity
+        if outlayer == "linear":
+            self.output = nnx.Linear(
+                model_dim,
+                1,
+                rngs=rngs,
             **precision_kwargs,
-        )
+            )
+        elif outlayer == "MLP":
+            self.output = MLP([model_dim, widening_factor * model_dim, 1], rngs=rngs, **precision_kwargs)
+        else:
+            raise ValueError(f"Unknown outlayer type: {outlayer}")
+
 
     def __call__(
         self,
@@ -181,6 +194,10 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         self, model_mask: ArrayLike, tokenizer: Tokenizer, **kwargs: Any
     ) -> Array:
         input_tokens = tokenizer.encode(model_mask=model_mask, **kwargs)
+        input_tokens = tokenizer.embed_model_mask(
+            input_tokens,
+            model_mask,
+        )
         *_, _, model_dim = input_tokens.shape
 
         assert model_dim == self.model_dim, (
@@ -331,11 +348,10 @@ class BinaryAutoregressiveDecoder(nnx.Module):
             assert rng is not None, "rng must be provided if permute_order is True"
 
         if tokens_cfg is None:
-            input_tokens = self._encode_model_mask(model_mask, tokenizer, **kwargs)
-            *batch_shape, seq_len, _ = input_tokens.shape
+            input_tokens = tokenizer.encode(model_mask=model_mask, **kwargs)
         else:
             input_tokens = tokens_cfg
-            *batch_shape, seq_len, _ = input_tokens.shape
+        *batch_shape, seq_len, _ = input_tokens.shape
 
         if permute_order:
             assert rng is not None, "rng must be provided if permute_order is True"
@@ -362,6 +378,15 @@ class BinaryAutoregressiveDecoder(nnx.Module):
             # Target should be permuted
             model_mask = jax.vmap(permute_batch_element)(model_mask, batch_orders)
 
+        # Ensure the model mask embedding is used
+        input_tokens = tokenizer.embed_model_mask(
+            input_tokens,
+            model_mask,
+        )
+        *_, _, model_dim = input_tokens.shape
+        assert model_dim == self.model_dim, (
+            f"Token dim mismatch, is {model_dim}, expected {self.model_dim}"
+        )
         if label_smoothing > 0.0:
             model_mask = model_mask * (1.0 - label_smoothing) + 0.5 * label_smoothing
 
