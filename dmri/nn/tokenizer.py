@@ -25,6 +25,15 @@ class Tokenizer(nnx.Module):
     def decode(self, *args: Any, **kwargs: Any) -> Array:
         pass
 
+    def embed_model_mask(
+        self,
+        tokens_cfg: Array,
+        model_mask: ArrayLike,
+        **kwargs: Any,
+    ) -> Array:
+        del model_mask, kwargs
+        return tokens_cfg
+
 
 class ScalarTokenizer(Tokenizer):
     def __init__(
@@ -319,6 +328,12 @@ class DMRITokenizer(Tokenizer):
             embeddings = embeddings.at[idx, ...].set(class_embeddings[idx])
 
         return embeddings
+
+    def select_cfg_for_theta(
+        self,
+        tokens_cfg: Array,
+    ) -> Array:
+        return tokens_cfg[...,1:,:]
 
     def encode(
         self,
@@ -622,7 +637,7 @@ class DMRITokenizer(Tokenizer):
 
         # Add configuration tokens for shared parameters
         tokens_cfg_fractions = tokens_cfg[..., :1, :]
-        tokens_cfg_models = tokens_cfg[..., 1:, :]
+        tokens_cfg_models = self.select_cfg_for_theta(tokens_cfg)
         indices = self.get_indices_with_params(model_idx, noise_idx)
 
         token_cfg_models_with_params = tokens_cfg_models[..., indices, :]
@@ -883,7 +898,7 @@ class DMRITokenizerPP(DMRITokenizer):
             encode_nets,
         )
         val_embeddings = jnp.concatenate(val_embeddings, axis=-2)
-        val_tokens_cfg = tokens_cfg[..., 1:, :]
+        val_tokens_cfg = self.select_cfg_for_theta(tokens_cfg)
         indices_with_params = self.get_indices_with_params(model_idx, noise_idx)
 
         model_tokens = val_tokens_cfg[..., indices_with_params, :] + val_embeddings
@@ -960,3 +975,285 @@ class DMRITokenizerPP(DMRITokenizer):
             theta_mask = mask_fn(model_mask)
             out = jnp.where(theta_mask, out, 0.0)
         return out
+
+
+
+class DMRITokenizerPPP(DMRITokenizerPP):
+    def __init__(
+        self,
+        simulator,
+        rngs,
+        token_dim=64,
+        theta_encode_nets=None,
+        theta_decode_nets=None,
+        dtype: DTypeLike | None = None,
+        param_dtype: DTypeLike | None = None,
+        precision: PrecisionLike | None = None,
+        preferred_element_type: DTypeLike | None = None,
+    ):
+        super().__init__(
+            simulator,
+            token_dim=token_dim,
+            theta_encode_nets=theta_encode_nets,
+            theta_decode_nets=theta_decode_nets,
+            dtype=dtype,
+            param_dtype=param_dtype,
+            precision=precision,
+            preferred_element_type=preferred_element_type,
+            rngs=rngs,
+        )
+        self.start_end_token = nnx.Embed(2, token_dim//2, rngs=rngs)
+        self.model_mask_emb = nnx.Embed(2, token_dim, rngs=rngs)
+        self.cfg_emb = nnx.Linear(
+            token_dim, token_dim - token_dim//2, rngs=rngs, **self._linear_kwargs
+        )
+
+    def embed_model_mask(
+        self,
+        tokens_cfg: Array,
+        model_mask: Array,
+    ) -> Array:
+        """
+        Embeds the model mask into tokens.
+
+        Args:
+            model_mask (ArrayLike): A binary mask indicating active model components.
+
+        Returns:
+            ArrayLike: The embedded tokens for each model/noise component.
+        """
+        # Convert boolean mask to int (0 or 1)
+        tokens_cfg = tokens_cfg[..., 1:, :]  # Remove fraction token
+        tokens_cfg = self.cfg_emb(tokens_cfg)
+        ndims = tokens_cfg.ndim-1
+        start_token = self.start_end_token(jnp.array(0, dtype=jnp.int32))
+        start_token = start_token.reshape((ndims-1)*(1,)+(-1,))
+        start_token = jnp.broadcast_to(start_token, tokens_cfg.shape[:-2] + (start_token.shape[-1],))
+        end_token = self.start_end_token(jnp.array(1, dtype=jnp.int32))
+        end_token = end_token.reshape((ndims-1)*(1,)+(-1,))
+        end_token = jnp.broadcast_to(end_token, tokens_cfg.shape[:-2] + (end_token.shape[-1],))
+        # Build ordered tokens with start and end tokens
+        tokens_inc = jnp.concatenate([tokens_cfg[..., :-1, :], tokens_cfg[..., 1:, :]], axis=-1)
+        tokens_start = jnp.concatenate([tokens_cfg[..., 0, :], start_token], axis=-1)
+        tokens_end = jnp.concatenate([tokens_cfg[..., -1, :], end_token], axis=-1)
+        tokens_cfg = jnp.concatenate(
+            [tokens_start[...,None,:], tokens_inc, tokens_end[...,None,:]],
+            axis=-2,
+        )
+        model_mask_int = model_mask.astype(jnp.int32)
+        embedded_mask = self.model_mask_emb(model_mask_int)
+        embedded_mask = jnp.concatenate([jnp.zeros((embedded_mask.shape[:-2] + (1, embedded_mask.shape[-1]))), embedded_mask], axis=-2)
+        return tokens_cfg + embedded_mask
+
+    def embed_cfgs(
+        self,
+        model_mask: Array,
+        alpha_prior: Optional[ArrayLike] = None,
+        model_idx: Optional[Sequence[int]] = None,
+        noise_idx: Optional[Sequence[int]] = None,
+    ) -> Array:
+        """
+        Embeds the configuration of model and noise types into tokens.
+
+        Token Structure:
+            The output tokens have the following structure:
+
+            1. alpha_token (B, 1, token_dim):
+               - Represents the prior fractions for model components
+               - Position: First token in the sequence
+               - Shape: (batch_dims..., 1, token_dim)
+
+            2. idx_tokens (B, T, token_dim):
+               - Represents the embedded indices for each model and noise component
+               - Value: If the component mask is True the token will be the embedded
+                 index, if the component mask is False the token will be zero
+               - Position: Follows the alpha_token
+               - Shape: (batch_dims..., T, token_dim) where T is the number of components
+               - Components that are not active (masked out) will have zero token values
+
+            The final output is a concatenation of these tokens along the second-to-last axis,
+            resulting in a tensor of shape (batch_dims..., 1+T, token_dim).
+
+        Args:
+            model_mask (ArrayLike): A binary mask indicating active model components.
+            alpha_prior (Optional[ArrayLike]): Prior fractions for model components.
+            model_idx (Optional[Sequence[int]]): Indices of model components.
+            noise_idx (Optional[Sequence[int]]): Indices of noise components.
+
+        Returns:
+            ArrayLike: The embedded tokens for each model/noise component.
+        """
+        if model_idx is None:
+            model_idx = self.model_indices
+        if noise_idx is None:
+            noise_idx = self.noise_indices
+        if alpha_prior is None:
+            alpha_prior = self.simulator.fraction_prior
+
+        idx = tuple(int(i) for i in model_idx) + tuple(
+            self.num_models + int(i) for i in noise_idx
+        )
+        assert len(idx) == model_mask.shape[-1], (
+            f"model_mask shape last axis {model_mask.shape} does not match the number of model components {len(idx)}"
+        )
+
+        *batch_dims, T = model_mask.shape
+        # Broadcast alpha_prior to the batch dims
+        alpha_prior = jnp.broadcast_to(alpha_prior, batch_dims + [self.num_models])
+
+        # Get the fraction prior token, which will always be in the beginning
+        alpha_token = self.embed_fraction(alpha_prior)[
+            ..., None, :
+        ]  # (B, 1, token_dim)
+        # Get the component tokens
+        idx = jnp.array(idx, dtype=jnp.int32)
+        idx_tokens = self.embed_idx(idx)  # (T, token_dim)
+        for _ in range(len(batch_dims)):
+            idx_tokens = idx_tokens[None, ...]  # (1, T, token_dim)
+        idx_tokens = idx_tokens
+        idx_tokens = jnp.broadcast_to(
+            idx_tokens, batch_dims + [T, idx_tokens.shape[-1]]
+        )
+        # Combine the tokens
+        tokens = jnp.concatenate([alpha_token, idx_tokens], axis=-2)
+        return tokens
+
+class DMRITokenizerPPP(DMRITokenizerPP):
+    def __init__(
+        self,
+        simulator,
+        rngs,
+        token_dim=64,
+        theta_encode_nets=None,
+        theta_decode_nets=None,
+        dtype: DTypeLike | None = None,
+        param_dtype: DTypeLike | None = None,
+        precision: PrecisionLike | None = None,
+        preferred_element_type: DTypeLike | None = None,
+    ):
+        super().__init__(
+            simulator,
+            token_dim=token_dim,
+            theta_encode_nets=theta_encode_nets,
+            theta_decode_nets=theta_decode_nets,
+            dtype=dtype,
+            param_dtype=param_dtype,
+            precision=precision,
+            preferred_element_type=preferred_element_type,
+            rngs=rngs,
+        )
+        self.start_end_token = nnx.Embed(2, token_dim//2, rngs=rngs)
+        self.model_mask_emb = nnx.Embed(2, token_dim, rngs=rngs)
+        self.cfg_emb = nnx.Linear(
+            token_dim, token_dim - token_dim//2, rngs=rngs, **self._linear_kwargs
+        )
+
+    def embed_model_mask(
+        self,
+        tokens_cfg: Array,
+        model_mask: Array,
+    ) -> Array:
+        """
+        Embeds the model mask into tokens.
+
+        Args:
+            model_mask (ArrayLike): A binary mask indicating active model components.
+
+        Returns:
+            ArrayLike: The embedded tokens for each model/noise component.
+        """
+        # Convert boolean mask to int (0 or 1)
+        tokens_cfg = tokens_cfg[..., 1:, :]  # Remove fraction token
+        tokens_cfg = self.cfg_emb(tokens_cfg)
+        ndims = tokens_cfg.ndim-1
+        start_token = self.start_end_token(jnp.array(0, dtype=jnp.int32))
+        start_token = start_token.reshape((ndims-1)*(1,)+(-1,))
+        start_token = jnp.broadcast_to(start_token, tokens_cfg.shape[:-2] + (start_token.shape[-1],))
+        end_token = self.start_end_token(jnp.array(1, dtype=jnp.int32))
+        end_token = end_token.reshape((ndims-1)*(1,)+(-1,))
+        end_token = jnp.broadcast_to(end_token, tokens_cfg.shape[:-2] + (end_token.shape[-1],))
+        # Build ordered tokens with start and end tokens
+        tokens_inc = jnp.concatenate([tokens_cfg[..., :-1, :], tokens_cfg[..., 1:, :]], axis=-1)
+        tokens_start = jnp.concatenate([tokens_cfg[..., 0, :], start_token], axis=-1)
+        tokens_end = jnp.concatenate([tokens_cfg[..., -1, :], end_token], axis=-1)
+        tokens_cfg = jnp.concatenate(
+            [tokens_start[...,None,:], tokens_inc, tokens_end[...,None,:]],
+            axis=-2,
+        )
+        model_mask_int = model_mask.astype(jnp.int32)
+        embedded_mask = self.model_mask_emb(model_mask_int)
+        embedded_mask = jnp.concatenate([jnp.zeros((embedded_mask.shape[:-2] + (1, embedded_mask.shape[-1]))), embedded_mask], axis=-2)
+        return tokens_cfg + embedded_mask
+
+    def embed_cfgs(
+        self,
+        model_mask: Array,
+        alpha_prior: Optional[ArrayLike] = None,
+        model_idx: Optional[Sequence[int]] = None,
+        noise_idx: Optional[Sequence[int]] = None,
+    ) -> Array:
+        """
+        Embeds the configuration of model and noise types into tokens.
+
+        Token Structure:
+            The output tokens have the following structure:
+
+            1. alpha_token (B, 1, token_dim):
+               - Represents the prior fractions for model components
+               - Position: First token in the sequence
+               - Shape: (batch_dims..., 1, token_dim)
+
+            2. idx_tokens (B, T, token_dim):
+               - Represents the embedded indices for each model and noise component
+               - Value: If the component mask is True the token will be the embedded
+                 index, if the component mask is False the token will be zero
+               - Position: Follows the alpha_token
+               - Shape: (batch_dims..., T, token_dim) where T is the number of components
+               - Components that are not active (masked out) will have zero token values
+
+            The final output is a concatenation of these tokens along the second-to-last axis,
+            resulting in a tensor of shape (batch_dims..., 1+T, token_dim).
+
+        Args:
+            model_mask (ArrayLike): A binary mask indicating active model components.
+            alpha_prior (Optional[ArrayLike]): Prior fractions for model components.
+            model_idx (Optional[Sequence[int]]): Indices of model components.
+            noise_idx (Optional[Sequence[int]]): Indices of noise components.
+
+        Returns:
+            ArrayLike: The embedded tokens for each model/noise component.
+        """
+        if model_idx is None:
+            model_idx = self.model_indices
+        if noise_idx is None:
+            noise_idx = self.noise_indices
+        if alpha_prior is None:
+            alpha_prior = self.simulator.fraction_prior
+
+        idx = tuple(int(i) for i in model_idx) + tuple(
+            self.num_models + int(i) for i in noise_idx
+        )
+        assert len(idx) == model_mask.shape[-1], (
+            f"model_mask shape last axis {model_mask.shape} does not match the number of model components {len(idx)}"
+        )
+
+        *batch_dims, T = model_mask.shape
+        # Broadcast alpha_prior to the batch dims
+        alpha_prior = jnp.broadcast_to(alpha_prior, batch_dims + [self.num_models])
+
+        # Get the fraction prior token, which will always be in the beginning
+        alpha_token = self.embed_fraction(alpha_prior)[
+            ..., None, :
+        ]  # (B, 1, token_dim)
+        # Get the component tokens
+        idx = jnp.array(idx, dtype=jnp.int32)
+        idx_tokens = self.embed_idx(idx)  # (T, token_dim)
+        for _ in range(len(batch_dims)):
+            idx_tokens = idx_tokens[None, ...]  # (1, T, token_dim)
+        idx_tokens = idx_tokens
+        idx_tokens = jnp.broadcast_to(
+            idx_tokens, batch_dims + [T, idx_tokens.shape[-1]]
+        )
+        # Combine the tokens
+        tokens = jnp.concatenate([alpha_token, idx_tokens], axis=-2)
+        return tokens
