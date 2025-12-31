@@ -1,0 +1,22 @@
+# @package _global_
+name: updated_all_3_6_8_128_model_prior_with_convs_2gpus
+use_wandb: true
+
+hydra:
+  sweeper:
+    params:
+      wandb.project: all_conv
+      train.continue_training: true
+      model.embedding_net.params.num_layers: 3
+      model.inference_net.params.num_layers: 8
+      model.model_selection_net.params.num_layers: 6
+      train.ema_decay: 0.999
+
+defaults:
+  - _self_
+  - override /partition: 2h100_long
+  - override /simulator: all_models
+  - override /train/dataloader: datastream_multigpu
+  - override /simulator/acquisition_scheme: multi
+  - override /model: dmri_pp
+  - override /train: new

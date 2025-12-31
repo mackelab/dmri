@@ -351,7 +351,7 @@ class TotalParamPenalizedPrior(MaskPrior):
         u_alpha: float = 1.0,
         u_beta: float = 1.0,
         penalty_min: float = 0.0,  # min worst-case logit penalty (often 0)
-        penalty_max: float = 5.0,  # max worst-case logit penalty
+        penalty_max: float = 4.0,  # max worst-case logit penalty
         penalty_mode: str = "linear",  # "quadratic" or "linear"
         eps: float = 1e-3,
     ) -> None:

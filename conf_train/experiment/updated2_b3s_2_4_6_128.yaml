@@ -1,11 +1,11 @@
 # @package _global_
-name: updated2_msb3s_2_4_6_128
+name: updated2_b3s_2_4_6_128
 use_wandb: true
 
 hydra:
   sweeper:
     params:
-      wandb.project: msb3s1
+      wandb.project: b3s
       train.continue_training: true
       model.model_dim: 128
       model.embedding_net.params.num_layers: 2
@@ -16,7 +16,7 @@ hydra:
 defaults:
   - _self_
   - override /partition: h100_long
-  - override /simulator: multishell_ball3stick_shared
+  - override /simulator: ball3stick_shared
   - override /simulator/acquisition_scheme: multi
   - override /model: dmri_pp
-  - override /train: new2
+  - override /train: new

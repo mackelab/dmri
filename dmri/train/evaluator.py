@@ -167,7 +167,7 @@ class Evaluator(NamedTuple):
         if iters == 0:
             return 0.0
         for eval_data in loader:
-            total_log_prob += jnp.mean(self.log_prob_masks(params, state, eval_data))
+            total_log_prob += jnp.nanmean(self.log_prob_masks(params, state, eval_data))
             i += 1
             if i == iters:
                 break
@@ -179,7 +179,7 @@ class Evaluator(NamedTuple):
         if iters == 0:
             return 0.0
         for eval_data in loader:
-            total_log_prob += jnp.mean(self.log_prob_thetas(params, state, eval_data))
+            total_log_prob += jnp.nanmean(self.log_prob_thetas(params, state, eval_data))
             i += 1
             if i == iters:
                 break

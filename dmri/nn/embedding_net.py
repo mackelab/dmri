@@ -24,7 +24,7 @@ def soft_squash(signal, tau=0.5):
 class DMRIEmbeddingConfig:
     num_layers: int = 3
     num_heads: int = 4
-    widening_factor: int = 2
+    widening_factor: int = 4
     use_flash_attention: bool = False
     attn_size: int = 16
     dropout_rate: float = 0.0
@@ -80,6 +80,7 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
         max_bval: float = 4000.0,
         min_signal: float = 0.0,
         max_signal: float = 1.0,
+        soft_squash_signals: bool = True,
         log_transform_signals: bool = False,
         use_flash_attention: bool = False,
         embed_signals: str = "repeat",
@@ -109,6 +110,7 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
         self.out_norm = out_norm
         self.reduce_factor = reduce_factor
         self.model_dim = model_dim // reduce_factor
+        self.soft_squash_signals = soft_squash_signals
 
         precision_kwargs = {
             "dtype": dtype,
@@ -227,7 +229,8 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
             )
         signals = jnp.asarray(signals)
         normalized = (signals - self.min_signal) / (self.max_signal - self.min_signal)
-        normalized = soft_squash(normalized)
+        if self.soft_squash_signals:
+            normalized = soft_squash(normalized)
         transformed = self.min_signal + normalized * (self.max_signal - self.min_signal)
         if self.log_transform_signals:
             transformed = jnp.log(jnp.clip(transformed, a_min=1e-8))

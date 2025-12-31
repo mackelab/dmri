@@ -1,7 +1,6 @@
 import copy
 from dataclasses import dataclass, field
-from typing import Any, Optional, cast
-
+from typing import Any, NamedTuple, Optional, cast
 import jax
 import jax.numpy as jnp
 from flax import nnx
@@ -33,6 +32,111 @@ EmbeddingModule = (
 )
 TokenizerType = type[DMRITokenizer]
 AcquisitionSchemeLike = acquisition_scheme | ssfp_acquisition_scheme
+
+
+class EvidenceDiagnostics(NamedTuple):
+    ess: Array
+    max_weight_share: Array
+    num_finite: Array
+
+
+def _logmeanexp_and_delta_se(
+    log_w: Array,
+) -> tuple[Array, Array, EvidenceDiagnostics]:
+    """Return log-mean-exp, delta-method SE, and basic diagnostics."""
+    finite = jnp.isfinite(log_w)
+    lw = jnp.where(finite, log_w, -jnp.inf)
+
+    lw_max = jnp.max(lw)
+    all_invalid = ~jnp.isfinite(lw_max)
+
+    shifted = lw - lw_max
+    w = jnp.exp(shifted)
+
+    n = lw.shape[0]
+    n_f = jnp.sum(finite).astype(lw.dtype)
+
+    mean_w = jnp.mean(w)
+    mean_w2 = jnp.mean(w * w)
+    var_w = jnp.maximum(mean_w2 - mean_w * mean_w, 0.0)
+
+    se_log = jnp.sqrt(var_w / jnp.asarray(n, lw.dtype)) / jnp.maximum(mean_w, 1e-30)
+
+    log_mean = lw_max + jnp.log(jnp.maximum(mean_w, 1e-300))
+
+    sum_w = jnp.sum(w)
+    ess = (sum_w * sum_w) / jnp.maximum(jnp.sum(w * w), 1e-30)
+    max_share = jnp.max(w) / jnp.maximum(sum_w, 1e-30)
+
+    log_mean = jnp.where(all_invalid, -jnp.inf, log_mean)
+    se_log = jnp.where(all_invalid, jnp.inf, se_log)
+    diag = EvidenceDiagnostics(
+        ess=jnp.where(all_invalid, 0.0, ess),
+        max_weight_share=jnp.where(all_invalid, 1.0, max_share),
+        num_finite=n_f,
+    )
+    return log_mean, se_log, diag
+
+
+def _update_logw_moments(
+    state: tuple[Array, Array, Array, Array],
+    log_w: Array,
+) -> tuple[Array, Array, Array, Array]:
+    """Update streaming log-weight moments for log-mean-exp + SE."""
+    m, s1, s2, num_finite = state
+    finite = jnp.isfinite(log_w)
+    any_finite = jnp.any(finite)
+    lw = jnp.where(finite, log_w, -jnp.inf)
+    batch_max = jnp.max(lw)
+
+    shifted = jnp.where(any_finite, lw - batch_max, 0.0)
+    batch_s1 = jnp.where(any_finite, jnp.sum(jnp.exp(shifted)), 0.0)
+    batch_s2 = jnp.where(any_finite, jnp.sum(jnp.exp(2.0 * shifted)), 0.0)
+
+    prev_finite = jnp.isfinite(m)
+    new_m = jnp.maximum(m, batch_max)
+    rescale_old = jnp.where(prev_finite, jnp.exp(m - new_m), 0.0)
+    rescale_new = jnp.where(any_finite, jnp.exp(batch_max - new_m), 0.0)
+    rescale_old2 = jnp.where(prev_finite, jnp.exp(2.0 * (m - new_m)), 0.0)
+    rescale_new2 = jnp.where(any_finite, jnp.exp(2.0 * (batch_max - new_m)), 0.0)
+
+    new_s1 = s1 * rescale_old + batch_s1 * rescale_new
+    new_s2 = s2 * rescale_old2 + batch_s2 * rescale_new2
+    new_num_finite = num_finite + jnp.sum(finite).astype(num_finite.dtype)
+    return new_m, new_s1, new_s2, new_num_finite
+
+
+def _finalize_logw_moments(
+    state: tuple[Array, Array, Array, Array],
+    n: int | Array,
+) -> tuple[Array, Array, EvidenceDiagnostics]:
+    """Finalize log-mean-exp and delta-method SE from streaming moments."""
+    m, s1, s2, num_finite = state
+    n_arr = jnp.asarray(n, dtype=s1.dtype)
+    all_invalid = num_finite <= 0
+
+    mean_w = s1 / jnp.maximum(n_arr, 1.0)
+    mean_w2 = s2 / jnp.maximum(n_arr, 1.0)
+    var_w = jnp.maximum(mean_w2 - mean_w * mean_w, 0.0)
+    se_log = jnp.sqrt(var_w / jnp.maximum(n_arr, 1.0)) / jnp.maximum(mean_w, 1e-30)
+
+    log_mean = m + jnp.log(jnp.maximum(mean_w, 1e-300))
+    log_mean = jnp.where(all_invalid, -jnp.inf, log_mean)
+    se_log = jnp.where(all_invalid, jnp.inf, se_log)
+
+    ess = (s1 * s1) / jnp.maximum(s2, 1e-30)
+    max_share = 1.0 / jnp.maximum(s1, 1e-30)
+    diag = EvidenceDiagnostics(
+        ess=jnp.where(all_invalid, 0.0, ess),
+        max_weight_share=jnp.where(all_invalid, 1.0, max_share),
+        num_finite=num_finite,
+    )
+    return log_mean, se_log, diag
+
+
+def _logsumexp(x: Array) -> Array:
+    m = jnp.max(x)
+    return m + jnp.log(jnp.sum(jnp.exp(x - m)))
 
 
 @dataclass
@@ -394,7 +498,6 @@ class DMRIInferenceModel(nnx.Module):
             rng, permute_rng = jax.random.split(rng)
         else:
             permute_rng = rng
-
         model_mask_loss = self.model_decoder.loss_fn(
             model_mask,
             self.tokenizer,
@@ -440,6 +543,7 @@ class DMRIInferenceModel(nnx.Module):
         acq: AcquisitionSchemeLike,
         x: Array,
         mask_prior: Array | None = None,
+        temperature: float = 1.0,
     ) -> Array:
         # Update for different model configs
         mask_prior = jnp.asarray(mask_prior) if mask_prior is not None else None
@@ -451,6 +555,7 @@ class DMRIInferenceModel(nnx.Module):
             dim=self.tokenizer.num_models + self.tokenizer.num_noises,
             mask_prior=mask_prior,
             additional_context=y_ctx,
+            temperature=temperature,
         )
         return model_mask
 
@@ -471,6 +576,27 @@ class DMRIInferenceModel(nnx.Module):
             additional_context=y_ctx,
         )
         return log_prob
+
+    def sample_and_log_prob_mask(
+        self,
+        rng: RngKey,
+        acq: AcquisitionSchemeLike,
+        x: Array,
+        mask_prior: Array | None = None,
+        temperature: float = 1.0,
+    ) -> tuple[Array, Array]:
+        mask_prior_arr = jnp.asarray(mask_prior) if mask_prior is not None else None
+        y_ctx, y = self._encode_observations(acq, x)
+        model_mask, log_prob = self.model_decoder.sample_and_log_prob(
+            rng,
+            tokenizer=self.tokenizer,
+            y=y,
+            dim=self.tokenizer.num_models + self.tokenizer.num_noises,
+            mask_prior=mask_prior_arr,
+            additional_context=y_ctx,
+            temperature=temperature,
+        )
+        return model_mask, log_prob
 
     def sample_theta(
         self,
@@ -537,6 +663,231 @@ class DMRIInferenceModel(nnx.Module):
         )
 
         return log_prob
+
+    def sample_and_log_prob_theta(
+        self,
+        rng: RngKey,
+        acq: AcquisitionSchemeLike,
+        x: Array,
+        model_mask: Array,
+        sample_method: str = "ode",
+        num_steps: int = 64,
+        last_euler_step: bool = True,
+        t_min: float | None = None,
+        t_max: float | None = None,
+    ) -> tuple[Array, Array]:
+        y_ctx, y = self._encode_observations(acq, x)
+        tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
+
+        attention_mask = self.marginalization_mask(model_mask)
+        theta, log_prob = self.inference_decoder.sample_and_log_prob(
+            rng,
+            y=y,
+            tokenizer=self.tokenizer,
+            dim=self.cfg.simulator.theta_dim,
+            tokens_cfg=tokens_cfg,
+            attention_mask=attention_mask,
+            model_mask=model_mask,
+            sample_method=sample_method,
+            context=y_ctx,
+            t_max=t_max,
+            t_min=t_min,
+            num_steps=num_steps,
+            last_euler_step=last_euler_step,
+        )
+
+        return theta, log_prob
+
+    def estimate_evidence(
+        self,
+        rng: RngKey,
+        acq: AcquisitionSchemeLike,
+        x: Array,
+        model_mask: Array,
+        num_samples: int = 128,
+        num_steps: int = 64,
+        last_euler_step: bool = True,
+        t_min: float | None = None,
+        t_max: float | None = None,
+        estimator: str = "importance",
+        defensive_eps: float = 0.05,
+        bridge_iters: int = 30,
+        bridge_alpha: float = 0.5,
+        batch_size: int = 1024,
+    ) -> tuple[Array, Array]:
+        """Return (log_evidence, std_log_evidence) for the chosen estimator.
+
+        Estimators:
+          - "importance": defensive importance sampling using q (and optional prior mix)
+          - "bridge": Meng–Wong bridge sampling using q-samples
+
+        batch_size limits memory by chunking importance sampling.
+        """
+        y_ctx, y = self._encode_observations(acq, x)
+        tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
+        attention_mask = self.marginalization_mask(model_mask)
+        theta_mask = self.cfg.simulator.theta_mask(model_mask)
+
+        num_samples_int = int(num_samples)
+        if num_samples_int <= 0:
+            raise ValueError("num_samples must be positive.")
+        batch_size = int(batch_size)
+        if batch_size <= 0:
+            raise ValueError("batch_size must be positive.")
+        batch_size = min(batch_size, num_samples_int)
+
+        rngs = jax.random.split(rng, num_samples_int)
+        log_prior_const = -0.5 * jnp.log(2.0 * jnp.pi)
+
+        def sample_q_once(key: RngKey) -> tuple[Array, Array]:
+            return self.inference_decoder.sample_and_log_prob(
+                key,
+                y=y,
+                tokenizer=self.tokenizer,
+                dim=self.cfg.simulator.theta_dim,
+                tokens_cfg=tokens_cfg,
+                attention_mask=attention_mask,
+                model_mask=model_mask,
+                context=y_ctx,
+                t_max=t_max,
+                t_min=t_min,
+                num_steps=num_steps,
+                last_euler_step=last_euler_step,
+            )
+
+        def log_likelihood(theta: Array) -> Array:
+            simulator = self.cfg.simulator.from_theta(theta, model_mask=model_mask)
+            ll = simulator.log_likelihood(acq, x)
+            ll = jnp.sum(ll)
+            return jnp.where(jnp.isfinite(ll), ll, -jnp.inf)
+
+        def log_prior(theta: Array) -> Array:
+            logp = -0.5 * jnp.square(theta) + log_prior_const
+            logp = logp * theta_mask.astype(theta.dtype)
+            return jnp.sum(logp, axis=-1)
+
+        v_log_likelihood = jax.vmap(log_likelihood)
+        v_log_prior = jax.vmap(log_prior)
+
+        estimator_key = estimator.lower()
+        if estimator_key in (
+            "harmonic_mean",
+            "hm",
+            "generalized_harmonic_mean",
+            "ghm",
+        ):
+            estimator_key = "bridge"
+        if estimator_key in ("importance", "importance_sampling", "is"):
+            if defensive_eps > 0.0 and not hasattr(self.inference_decoder, "log_prob"):
+                raise ValueError(
+                    "defensive_eps>0 requires inference_decoder.log_prob(theta, ...)"
+                )
+
+            if defensive_eps <= 0.0:
+                def log_w_batch(keys_batch: Array) -> Array:
+                    thetas, log_q = jax.vmap(sample_q_once)(keys_batch)
+                    ll = v_log_likelihood(thetas)
+                    lp = v_log_prior(thetas)
+                    return ll + lp - log_q
+
+                state = (
+                    jnp.asarray(-jnp.inf, dtype=y.dtype),
+                    jnp.asarray(0.0, dtype=y.dtype),
+                    jnp.asarray(0.0, dtype=y.dtype),
+                    jnp.asarray(0.0, dtype=y.dtype),
+                )
+                for start in range(0, num_samples_int, batch_size):
+                    log_w = log_w_batch(rngs[start : start + batch_size])
+                    state = _update_logw_moments(state, log_w)
+            else:
+                eps = defensive_eps
+
+                def sample_once(key: RngKey) -> tuple[Array, Array]:
+                    key_u, key_p, key_q = jax.random.split(key, 3)
+                    u = jax.random.uniform(key_u, ())
+
+                    def sample_from_prior() -> tuple[Array, Array]:
+                        theta = jax.random.normal(
+                            key_p, (self.cfg.simulator.theta_dim,), dtype=y.dtype
+                        )
+                        theta = theta * theta_mask.astype(theta.dtype)
+                        log_q = self.inference_decoder.log_prob(
+                            theta,
+                            y=y,
+                            tokenizer=self.tokenizer,
+                            tokens_cfg=tokens_cfg,
+                            attention_mask=attention_mask,
+                            model_mask=model_mask,
+                            context=y_ctx,
+                            t_max=t_max,
+                            t_min=t_min,
+                            num_steps=num_steps,
+                        )
+                        return theta, log_q
+
+                    def sample_from_q() -> tuple[Array, Array]:
+                        return sample_q_once(key_q)
+
+                    return jax.lax.cond(u < eps, sample_from_prior, sample_from_q)
+
+                def log_w_batch(keys_batch: Array) -> Array:
+                    thetas, log_q = jax.vmap(sample_once)(keys_batch)
+                    ll = v_log_likelihood(thetas)
+                    lp = v_log_prior(thetas)
+                    log_f = ll + lp
+                    log_qdef = jnp.logaddexp(
+                        jnp.log1p(-eps) + log_q,
+                        jnp.log(eps) + lp,
+                    )
+                    return log_f - log_qdef
+
+                state = (
+                    jnp.asarray(-jnp.inf, dtype=y.dtype),
+                    jnp.asarray(0.0, dtype=y.dtype),
+                    jnp.asarray(0.0, dtype=y.dtype),
+                    jnp.asarray(0.0, dtype=y.dtype),
+                )
+                for start in range(0, num_samples_int, batch_size):
+                    log_w = log_w_batch(rngs[start : start + batch_size])
+                    state = _update_logw_moments(state, log_w)
+
+            logZ, se_logZ, _ = _finalize_logw_moments(state, num_samples_int)
+            return logZ, se_logZ
+        if estimator_key in ("bridge", "bridge_sampling", "bs"):
+            thetas, log_q = jax.lax.map(sample_q_once, rngs, batch_size=8192)
+            ll = v_log_likelihood(thetas)
+            lp = v_log_prior(thetas)
+            log_f = ll + lp
+
+            logZ, _, _ = _logmeanexp_and_delta_se(log_f - log_q)
+            alpha = bridge_alpha
+
+            def one_iter(logZ_curr: Array) -> Array:
+                log_denom = jnp.logaddexp(
+                    jnp.log(alpha) + log_f,
+                    jnp.log1p(-alpha) + logZ_curr + log_q,
+                )
+                log_num_terms = log_f - log_denom
+                num = jnp.asarray(log_num_terms.shape[0], dtype=log_num_terms.dtype)
+                log_num = _logsumexp(log_num_terms) - jnp.log(num)
+                log_den_terms = log_q - log_denom
+                den = jnp.asarray(log_den_terms.shape[0], dtype=log_den_terms.dtype)
+                log_den = _logsumexp(log_den_terms) - jnp.log(den)
+                return log_num - log_den
+
+            def body(_, logZ_curr: Array) -> Array:
+                return one_iter(logZ_curr)
+
+            logZ = jax.lax.fori_loop(0, bridge_iters, body, logZ)
+
+            log_denom = jnp.logaddexp(
+                jnp.log(alpha) + log_f,
+                jnp.log1p(-alpha) + logZ + log_q,
+            )
+            log_a = log_f - log_denom
+            _, se_logZ, _ = _logmeanexp_and_delta_se(log_a)
+            return logZ, se_logZ
+        raise ValueError(f"Unknown evidence estimator: {estimator}")
 
     def score_theta(
         self,

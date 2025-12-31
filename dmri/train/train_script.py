@@ -513,6 +513,7 @@ def build_loss_fn(cfg: DictConfig, graphdef: Any):
 
         for batch, subkey in zip(batches, rngs):
             print(cfg.train.permute_order)
+            print(jax.tree_util.tree_map(lambda x: x.shape, batch))
             losses = model.loss_fn(
                 subkey,
                 **batch,

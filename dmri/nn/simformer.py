@@ -24,7 +24,7 @@ from dmri.nn.tokenizer import Tokenizer
 class DMRIThetaInferenceConfig:
     num_layers: int = 6
     num_heads: int = 4
-    widening_factor: int = 3
+    widening_factor: int = 4
     attn_size: int = 16
     time_embed_dim: int = 64
     dropout_rate: float = 0.0
@@ -381,6 +381,65 @@ class EDMSimformer(EDM):
 
         else:
             raise ValueError(f"Sample method {sample_method} not recognized.")
+
+    def sample_and_log_prob(
+        self,
+        rng: RngKey,
+        tokenizer: Tokenizer,
+        y: Array,
+        dim: int,
+        tokens_cfg: Optional[Array] = None,
+        model_mask: Optional[ArrayLike] = None,
+        context: Optional[ArrayLike] = None,
+        attention_mask: Optional[ArrayLike] = None,
+        sample_method: str = "ode",
+        num_steps: int = 64,
+        last_euler_step: bool = False,
+        t_min: float | None = None,
+        t_max: float | None = None,
+    ) -> tuple[Array, Array]:
+        rng, rng_init = jax.random.split(rng)
+        t_min = t_min if t_min is not None else self.train_cfg.t_min
+        t_max = t_max if t_max is not None else self.train_cfg.t_max
+        eps = jax.random.normal(rng_init, (dim,)) * self.marginal_std(t_max)
+        ts = self.solver_cfg.solve_schedule(
+            t_max=t_max, t_min=t_min, num_steps=num_steps
+        )
+
+        drift = self.solver_cfg.build_ode_drift(
+            self,
+            tokenizer,
+            y=y,
+            tokens_cfg=tokens_cfg,
+            model_mask=model_mask,
+            context=context,
+            attention_mask=attention_mask,
+        )
+
+        def drift_with_logp(t, state):
+            data, logp = state
+            dx_dt = drift(t, data)
+            div = jnp.trace(jax.jacrev(lambda z: drift(t, z))(data))
+            return (dx_dt, div)
+
+        sample, logp = odeint(
+            drift_with_logp,
+            (eps, jnp.array(0.0, dtype=eps.dtype)),
+            ts,
+            collect_trace=False,
+            method=self.solver_cfg.ode_method,
+        )
+        if last_euler_step and t_min is not None and t_min > 0.0:
+            dt = -ts[-1]
+            f_tmin = drift(ts[-1], sample)
+            div_tmin = jnp.trace(jax.jacrev(lambda z: drift(ts[-1], z))(sample))
+            sample = sample + f_tmin * dt
+            logp = logp + div_tmin * dt
+
+        sigma = self.marginal_std(t_max)
+        base_logp = -0.5 * jnp.sum(eps**2) / sigma**2
+        base_logp += -0.5 * dim * jnp.log(2 * np.pi * sigma**2)
+        return sample, jnp.squeeze(logp + base_logp)
 
     def log_prob(
         self,

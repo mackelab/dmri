@@ -17,7 +17,7 @@ from dmri.nn.tokenizer import Tokenizer
 class DMRIModelSelectionConfig:
     num_layers: int = 4
     num_heads: int = 4
-    widening_factor: int = 3
+    widening_factor: int = 4
     attn_size: int = 16
     dropout_rate: float = 0.0
     prior_params_embed_dim: int = 0
@@ -184,7 +184,7 @@ class BinaryAutoregressiveDecoder(nnx.Module):
             decode=decode,
             deterministic=deterministic,
         )
-        output_tokens = self.out_norm(output_tokens)
+        #output_tokens = self.out_norm(output_tokens)
         # Reduce to logits
         logits = self.output(output_tokens)
         # Remove the first "padding" token output
@@ -419,6 +419,7 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         dim,
         mask_prior: Optional[Array] = None,
         additional_context: Optional[Array] = None,
+        temperature: float = 1.0,
     ):
         return naive_autoregressive_decoding(
             self,
@@ -428,6 +429,28 @@ class BinaryAutoregressiveDecoder(nnx.Module):
             dim,
             mask_prior=mask_prior,
             additional_context=additional_context,
+            temperature=temperature,
+        )
+
+    def sample_and_log_prob(
+        self,
+        key,
+        tokenizer,
+        y,
+        dim,
+        mask_prior: Optional[Array] = None,
+        additional_context: Optional[Array] = None,
+        temperature: float = 1.0,
+    ) -> tuple[Array, Array]:
+        return naive_autoregressive_decoding_with_log_prob(
+            self,
+            key,
+            tokenizer,
+            y,
+            dim,
+            mask_prior=mask_prior,
+            additional_context=additional_context,
+            temperature=temperature,
         )
 
     def log_prob(
@@ -463,8 +486,10 @@ def naive_autoregressive_decoding(
     dim: int,
     mask_prior: Optional[Array] = None,
     additional_context: Optional[Array] = None,
+    temperature: float = 1.0,
 ) -> Array:
     x = jnp.zeros((dim,), dtype=jnp.bool_)
+    temperature = jnp.asarray(temperature, dtype=y.dtype)
 
     def scan_fn(carry: tuple[Array, int], k: RngKey) -> tuple[tuple[Array, int], None]:
         x, i = carry
@@ -475,7 +500,8 @@ def naive_autoregressive_decoding(
             mask_prior=mask_prior,
             additional_context=additional_context,
         )
-        p_i = jax.nn.sigmoid(logits[i])
+        logit_i = logits[i] / temperature
+        p_i = jax.nn.sigmoid(logit_i)
 
         x_i = jax.random.bernoulli(k, p_i)
         x = x.at[i].set(x_i)
@@ -485,3 +511,46 @@ def naive_autoregressive_decoding(
     x, _ = jax.lax.scan(scan_fn, (x, 0), keys)
 
     return x[0]
+
+
+@partial(jax.jit, static_argnums=(2, 4))
+def naive_autoregressive_decoding_with_log_prob(
+    model: BinaryAutoregressiveDecoder,
+    key: RngKey,
+    tokenizer: Tokenizer,
+    y: Array,
+    dim: int,
+    mask_prior: Optional[Array] = None,
+    additional_context: Optional[Array] = None,
+    temperature: float = 1.0,
+) -> tuple[Array, Array]:
+    x = jnp.zeros((dim,), dtype=jnp.bool_)
+    log_prob = jnp.array(0.0, dtype=jnp.float32)
+    temperature = jnp.asarray(temperature, dtype=y.dtype)
+
+    def scan_fn(
+        carry: tuple[Array, int, Array], k: RngKey
+    ) -> tuple[tuple[Array, int, Array], None]:
+        x, i, log_prob = carry
+        logits = model(
+            x.astype(jnp.int32),
+            tokenizer,
+            y=y,
+            mask_prior=mask_prior,
+            additional_context=additional_context,
+        )
+        logit_i = logits[i] / temperature
+        p_i = jax.nn.sigmoid(logit_i)
+        x_i = jax.random.bernoulli(k, p_i)
+        log_prob_i = jnp.where(
+            x_i,
+            jax.nn.log_sigmoid(logit_i),
+            jax.nn.log_sigmoid(-logit_i),
+        )
+        x = x.at[i].set(x_i)
+        return (x, i + 1, log_prob + log_prob_i), None
+
+    keys = jax.random.split(key, (dim,))
+    (x, _, log_prob), _ = jax.lax.scan(scan_fn, (x, 0, log_prob), keys)
+
+    return x, log_prob

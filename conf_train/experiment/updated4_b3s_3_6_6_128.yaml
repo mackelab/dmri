@@ -1,22 +1,22 @@
 # @package _global_
-name: updated2_msb3s_2_4_6_128
+name: updated4_b3s_3_6_6_128
 use_wandb: true
 
 hydra:
   sweeper:
     params:
-      wandb.project: msb3s1
+      wandb.project: b3s
       train.continue_training: true
       model.model_dim: 128
-      model.embedding_net.params.num_layers: 2
+      model.embedding_net.params.num_layers: 3
       model.inference_net.params.num_layers: 6
-      model.model_selection_net.params.num_layers: 4
+      model.model_selection_net.params.num_layers: 6
       train.ema_decay: 0.999
 
 defaults:
   - _self_
   - override /partition: h100_long
-  - override /simulator: multishell_ball3stick_shared
+  - override /simulator: ball3stick_shared
   - override /simulator/acquisition_scheme: multi
   - override /model: dmri_pp
   - override /train: new2

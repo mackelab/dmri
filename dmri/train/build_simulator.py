@@ -80,12 +80,12 @@ def build_simulator(cfg: DictConfig):
                 rng0, rng1, rng2, rng3 = jax.random.split(rng, 4)
                 acq = acq_fn(rng0)
                 theta = jax.random.normal(rng1, shape=(sim_type.theta_dim,))
-                mask_prior_sample = mask_prior_dist.sample(rng2)
+                rng_p, rng_m = jax.random.split(rng2, 2)
                 if mask_prior_hyperparameter is None:
-                    p_mask = mask_prior_sample.hyperparameters
+                    p_mask = mask_prior_dist.sample_hyperparameters(rng_p)
                 else:
                     p_mask = mask_prior_hyperparameter
-                model_mask = mask_prior_sample.model_mask
+                model_mask = mask_prior_dist.sample_model_mask(rng_m, p_mask)
 
                 output = {
                     "mask_prior": p_mask,

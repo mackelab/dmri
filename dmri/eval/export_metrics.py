@@ -1221,7 +1221,7 @@ def _normalize_metric_specs(
                     data["aggregations"] = [
                         {"type": "mean", "name": "mean"},
                         {"type": "median", "name": "median"},
-                        {"type": "percentile", "q": [5, 95], "name": "p{q}"},
+                        {"type": "percentile", "q": [i/100 for i in range(1, 100)], "name": "p{q}"},
                     ]
         output_filename = data.get(
             "output_filename", DEFAULT_OUTPUT_FILENAMES.get(metric_type)
