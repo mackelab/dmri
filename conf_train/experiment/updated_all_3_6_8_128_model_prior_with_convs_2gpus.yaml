@@ -7,10 +7,12 @@ hydra:
     params:
       wandb.project: all_conv
       train.continue_training: true
+      train.restart_optimizer: true
       model.embedding_net.params.num_layers: 3
       model.inference_net.params.num_layers: 8
       model.model_selection_net.params.num_layers: 6
       train.ema_decay: 0.999
+      train.optimizer.learning_rate: 1e-4
 
 defaults:
   - _self_

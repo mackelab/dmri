@@ -10,7 +10,7 @@ write_summary: true
 summary_filename: ksd_summary.json
 options:
   # Bandwidths (in preconditioned space) used for the multi-scale KSD kernel.
-  bandwidths: [0.1, 0.5, 1.0]
+  bandwidths: [0.1, 0.5, 1.0, 10.]
   # Number of wild-bootstrap replicates for the test statistic.
   n_bootstrap: 256
   # If a probabilistic model mask is present, threshold it to a deterministic mask.
@@ -19,6 +19,12 @@ options:
   max_samples: null
   # Random seed for bootstrap / bandwidth sampling.
   random_seed: 0
+  # Optional voxel subset for expensive metrics (set to null to use all voxels).
+  voxel_subset_size: null
+  # Optional fraction of voxels to evaluate (0 < fraction <= 1).
+  voxel_subset_fraction: null
+  # Seed for voxel subset selection (defaults to random_seed).
+  voxel_subset_seed: 0
   # Export a p-value map alongside the KSD statistic.
   export_pvalue: true
   pvalue_output_filename: metric_ksd_pvalue.nii.gz

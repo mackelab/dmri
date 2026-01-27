@@ -1,6 +1,6 @@
 # @package _global_
 mask_sample:
-  p_mask: 0.1
+  p_mask: 0.3
 
 defaults:
   - _self_
@@ -10,7 +10,7 @@ defaults:
   - override /model_selection: average
 
 export:
-  name: ball3stick_inference_results_average_model_selection01
+  name: ball3stick_inference_results_average_model_selection03
   metrics:
     ksd:
       enabled: false

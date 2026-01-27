@@ -4,10 +4,6 @@ sample_mask: false
 select_models: false
 seed: 42424242
 default_mask: [True, True, True, True, True]
-slice:
-  x: null
-  y: null
-  z: 52
 
 
 defaults:
@@ -16,5 +12,11 @@ defaults:
   - override /theta_sample: uncorrected
   - override /data: synthetic
 
+data:
+  num_voxels: 16384
+
+
+model_name: updated_all_3_6_8_128_model_prior_with_convs_2gpus
+
 export:
-  name: test
+  name: synthetic_eval

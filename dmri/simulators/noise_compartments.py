@@ -24,7 +24,23 @@ from dmri.simulators.base import NoiseCompartment
 # Note: We now follow: https://www.biorxiv.org/content/10.1101/2024.11.19.624267v1.full.pdf
 # Uses a inverse uniform distribution to sample the std or a uniform distribution on the snr
 # and then compute the std by 1/snr
+@jax.jit
+def rician_mean(nu, sigma, eps=1e-12):
+    """
+    Mean of a Rician(nu, sigma) distribution.
 
+    nu: noncentrality parameter (>= 0 typically), array-like
+    sigma: scale parameter (> 0), array-like
+    eps: small positive value to avoid division by 0
+    """
+    sigma = jnp.maximum(sigma, eps)
+    z = (nu * nu) / (4.0 * sigma * sigma)  # z >= 0
+
+    # i0e(z) = exp(-z) * I0(z), i1e(z) = exp(-z) * I1(z)
+    i0e = jax.scipy.special.i0e(z)
+    i1e = jax.scipy.special.i1e(z)
+
+    return sigma * jnp.sqrt(jnp.pi / 2.0) * ((1.0 + 2.0 * z) * i0e + (2.0 * z) * i1e)
 
 class RicianNoise(NoiseCompartment):
     theta_dim = 1
@@ -34,6 +50,15 @@ class RicianNoise(NoiseCompartment):
 
     def noise(self, signal, rng):
         return add_rician_noise(rng, signal, 1 / self.snr)
+
+    def mean(self, signal):
+        sigma = 1.0 / self.snr
+        nu = signal
+
+        # Approximation of the Rician mean
+        mean_rician = rician_mean(nu, sigma)
+
+        return mean_rician
 
     def log_likelihood(self, signal_pred, signal_true):
         sigma = 1.0 / self.snr
@@ -74,6 +99,9 @@ class GaussianNoise(NoiseCompartment):
 
     def noise(self, signal, rng):
         return add_gaussian_noise(rng, signal, 1 / self.snr)
+
+    def mean(self, signal):
+        return signal
 
     def log_likelihood(self, signal_pred, signal_true):
         log_likelihood = jax.scipy.stats.norm.logpdf(

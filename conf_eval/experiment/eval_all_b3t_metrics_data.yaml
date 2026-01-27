@@ -1,0 +1,21 @@
+# @package _global_
+
+sample_mask: false
+select_models: false
+seed: 42424242
+default_mask: [True, False, False, False, False, False, False, True, True, True, True, False]
+
+
+defaults:
+  - _self_
+  - override /export: raw
+  - override /theta_sample: uncorrected
+  - override /data: file
+
+data:
+  data_folder: data
+
+model_name: updated_all_3_6_8_128_model_prior
+
+export:
+  name: data_eval_b3t

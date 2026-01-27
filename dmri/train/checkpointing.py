@@ -1,5 +1,6 @@
 import logging
 import os
+import shutil
 from typing import Any, Optional
 
 import orbax.checkpoint as ocp
@@ -23,6 +24,7 @@ class CheckpointManager:
         recovery_threshold: float = float("inf"),
         continue_training: bool = False,
     ) -> None:
+        self._max_to_keep = max_to_keep
         self.ckpt_dir = ckpt_dir
         self.best_ckpt_dir = os.path.join(ckpt_dir, "best")
         os.makedirs(self.ckpt_dir, exist_ok=True)
@@ -51,6 +53,30 @@ class CheckpointManager:
                 logging.info(f"Continuing from step {latest}")
             else:
                 logging.info("No existing checkpoints found; starting fresh.")
+
+    def reset_for_partial_restore(self, log: Optional[logging.Logger] = None) -> None:
+        """Purge existing checkpoints so new saves use the updated structure."""
+        self.wait_until_finished()
+        for directory in (self.ckpt_dir, self.best_ckpt_dir):
+            if not os.path.isdir(directory):
+                os.makedirs(directory, exist_ok=True)
+                continue
+            for entry in os.listdir(directory):
+                path = os.path.join(directory, entry)
+                try:
+                    if os.path.isdir(path):
+                        shutil.rmtree(path)
+                    else:
+                        os.remove(path)
+                except OSError as exc:
+                    if log is not None:
+                        log.warning(f"Failed to remove old checkpoint item {path}: {exc}")
+        opts = ocp.CheckpointManagerOptions(max_to_keep=self._max_to_keep, create=True)
+        self.manager = ocp.CheckpointManager(self.ckpt_dir, options=opts)
+        best_opts = ocp.CheckpointManagerOptions(max_to_keep=1, create=True)
+        self.best_manager = ocp.CheckpointManager(self.best_ckpt_dir, options=best_opts)
+        self.best_val_loss = float("inf")
+        self.prev_metric = None
 
     def _build_save_args(
         self,
@@ -87,24 +113,36 @@ class CheckpointManager:
         self,
         *,
         params: Any,
-        optimizer_state: Any,
+        optimizer_state: Any | None,
         params_ema: Any = None,
         model_state: Any = None,
         ema_state: Any = None,
         rng: Any = None,
+        partial_restore: bool = False,
     ) -> ocp.args.Composite:
+        def _pytree_restore(item: Any) -> ocp.args.CheckpointArgs:
+            if not partial_restore:
+                return ocp.args.StandardRestore(item)  # type: ignore
+            restore_args = ocp.checkpoint_utils.construct_restore_args(item)
+            return ocp.args.PyTreeRestore(
+                item=item,
+                restore_args=restore_args,
+                partial_restore=True,
+            )
+
         items: dict[str, ocp.args.CheckpointArgs] = {
-            "params": ocp.args.StandardRestore(params),  # type: ignore
-            "optimizer_state": ocp.args.StandardRestore(optimizer_state),  # type: ignore
+            "params": _pytree_restore(params),
             "step": ocp.args.JsonRestore(),
             "loss": ocp.args.JsonRestore(),
         }
+        if optimizer_state is not None:
+            items["optimizer_state"] = _pytree_restore(optimizer_state)
         if params_ema is not None:
-            items["params_ema"] = ocp.args.StandardRestore(params_ema)  # type: ignore
+            items["params_ema"] = _pytree_restore(params_ema)
         if model_state is not None:
-            items["model_state"] = ocp.args.StandardRestore(model_state)  # type: ignore
+            items["model_state"] = _pytree_restore(model_state)
         if ema_state is not None:
-            items["ema_state"] = ocp.args.StandardRestore(ema_state)  # type: ignore
+            items["ema_state"] = _pytree_restore(ema_state)
         if rng is not None:
             items["rng"] = ocp.args.ArrayRestore(rng)  # type: ignore
         return ocp.args.Composite(**items)
@@ -143,12 +181,13 @@ class CheckpointManager:
         self,
         step: Optional[int],
         params: Any,
-        optimizer_state: Any,
+        optimizer_state: Any | None,
         from_best: bool = False,
         params_ema: Any = None,
         model_state: Any = None,
         ema_state: Any = None,
         rng: Any = None,
+        partial_restore: bool = False,
     ):
         manager = self.best_manager if from_best else self.manager
         target_step = manager.latest_step() if step is None else step
@@ -163,6 +202,7 @@ class CheckpointManager:
             model_state=model_state,
             ema_state=ema_state,
             rng=rng,
+            partial_restore=partial_restore,
         )
         return manager.restore(target_step, args=args)
 

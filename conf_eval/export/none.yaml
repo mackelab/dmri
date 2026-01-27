@@ -2,8 +2,6 @@ defaults:
   - _self_
   - metrics@metrics.reconstruction_mse: reconstruction_mse
   - metrics@metrics.ksd: ksd
-  - metrics@metrics.sbc: sbc
-  - metrics@metrics.ess: ess
 
-name: "raw_inference_results"
-type: "raw"
+name: "metrics_only"
+type: "none"

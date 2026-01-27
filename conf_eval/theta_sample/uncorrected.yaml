@@ -3,8 +3,9 @@ num_samples: 50
 eval_batch_size: 30_000
 
 params:
-  num_steps: 256
+  num_steps: 96
   t_max: 80
+  t_min: 5e-4
 
 defaults:
   - corrector: none

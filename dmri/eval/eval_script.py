@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import hydra
 import jax
 import jax.numpy as jnp
+import nibabel as nb
 import numpy as np
 from flax import nnx
 from omegaconf import DictConfig, ListConfig, OmegaConf
@@ -73,6 +74,18 @@ def _to_cpu_array(value):
     if isinstance(value, jax.Array):
         return np.asarray(value, dtype=value.dtype)
     return value
+
+
+def _put_tree_on_device(value, device):
+    if device is None:
+        return value
+
+    def _maybe_put(x):
+        if isinstance(x, (jax.Array, np.ndarray)):
+            return jax.device_put(x, device)
+        return x
+
+    return jax.tree_util.tree_map(_maybe_put, value)
 
 
 def _to_int(value):
@@ -209,6 +222,119 @@ def _apply_slice_to_brain(slice_cfg, brain_mask, data_norm, logger):
 def _cfg_get(cfg, key, default=None):
     value = OmegaConf.select(cfg, key)
     return default if value is None else value
+
+
+def _find_theta_samples_file(
+    export_dir, filename="thetas.nii.gz", allow_missing: bool = False
+):
+    if not export_dir:
+        if allow_missing:
+            return None
+        raise ValueError("Export directory is not set.")
+    if not os.path.isdir(export_dir):
+        if allow_missing:
+            return None
+        raise FileNotFoundError(f"Export directory does not exist: {export_dir}")
+    matches = []
+    for root, _, files in os.walk(export_dir):
+        if filename in files:
+            matches.append(os.path.join(root, filename))
+    if not matches:
+        if allow_missing:
+            return None
+        raise FileNotFoundError(
+            f"Could not find {filename} under export directory {export_dir}."
+        )
+    if len(matches) > 1:
+        raise ValueError(
+            f"Found multiple {filename} files under export directory {export_dir}: {matches}"
+        )
+    return matches[0]
+
+
+def _format_loaded_thetas(
+    theta_data,
+    brain_mask_flat,
+    brain_shape,
+    expected_num_samples,
+    expected_theta_dim,
+):
+    if theta_data.ndim < 2:
+        raise ValueError(
+            f"Theta samples must have at least 2 dimensions, got {theta_data.shape}."
+        )
+
+    num_voxels = int(np.count_nonzero(brain_mask_flat))
+    spatial_dims = len(brain_shape)
+
+    if theta_data.shape[:spatial_dims] == tuple(brain_shape):
+        theta_flat = theta_data.reshape(-1, *theta_data.shape[spatial_dims:])
+        theta_flat = theta_flat[brain_mask_flat, ...]
+    elif theta_data.shape[0] == num_voxels:
+        theta_flat = theta_data
+    else:
+        raise ValueError(
+            "Theta samples shape does not match brain volume or in-brain flat shape. "
+            f"Got {theta_data.shape}, expected spatial {tuple(brain_shape)} or "
+            f"{num_voxels} in-brain voxels."
+        )
+
+    if theta_flat.ndim == 2:
+        theta_flat = theta_flat[:, None, :]
+    elif theta_flat.ndim != 3:
+        raise ValueError(
+            "Theta samples must have shape (voxels, samples, theta_dim) or "
+            f"(voxels, theta_dim), got {theta_flat.shape}."
+        )
+
+    if expected_theta_dim is not None and theta_flat.shape[-1] != expected_theta_dim:
+        raise ValueError(
+            "Theta samples last dimension mismatch: expected theta_dim "
+            f"{expected_theta_dim}, got {theta_flat.shape[-1]}."
+        )
+    if expected_num_samples is not None and theta_flat.shape[1] != expected_num_samples:
+        raise ValueError(
+            "Theta samples count mismatch: expected num_samples "
+            f"{expected_num_samples}, got {theta_flat.shape[1]}."
+        )
+    if theta_flat.shape[0] != num_voxels:
+        raise ValueError(
+            "Theta samples voxel count mismatch: expected "
+            f"{num_voxels}, got {theta_flat.shape[0]}."
+        )
+
+    return theta_flat
+
+
+def _load_theta_samples_from_disk(
+    export_dir,
+    brain_mask_flat,
+    brain_shape,
+    expected_num_samples,
+    expected_theta_dim,
+    logger,
+    theta_path=None,
+):
+    if theta_path is None:
+        theta_path = _find_theta_samples_file(export_dir)
+    logger.info("Loading theta samples from %s", theta_path)
+    theta_img = nb.load(theta_path)
+    theta_data = np.asarray(theta_img.dataobj)
+    if theta_data.dtype != np.float32:
+        theta_data = theta_data.astype(np.float32)
+
+    theta_flat = _format_loaded_thetas(
+        theta_data,
+        brain_mask_flat,
+        brain_shape,
+        expected_num_samples,
+        expected_theta_dim,
+    )
+    logger.info("Loaded theta samples shape: %s", theta_flat.shape)
+    nan_count = int(np.isnan(theta_flat).sum())
+    if nan_count:
+        logger.warning("Loaded theta samples contain %d NaNs.", nan_count)
+    return theta_flat
 
 
 def _default_ksd_metric(seed):
@@ -359,6 +485,7 @@ def _maybe_run_metrics(
     export_name,
     sim_type,
     acq,
+    model,
     full_data_flat_in_brain,
     model_parameters_brain,
     model_mask,
@@ -402,6 +529,7 @@ def _maybe_run_metrics(
             cfg=cfg,
             sim_type=sim_type,
             acq=acq,
+            model=model,
             full_data_flat_in_brain=full_data_flat_in_brain,
             model_parameters_brain=model_parameters_brain,
             model_mask=model_mask,
@@ -517,6 +645,10 @@ def _run_eval_pipeline(
     checkpoint, model, _ = load_checkpoint(path_checkpoint)
     graphdef, params, static, state = nnx.split(model, nnx.Param, nnx.Intermediate, ...)
     params = checkpoint[cfg.params_name]
+    if heavy_device is not None:
+        params = _put_tree_on_device(params, heavy_device)
+        static = _put_tree_on_device(static, heavy_device)
+        state = _put_tree_on_device(state, heavy_device)
     model = nnx.merge(graphdef, params, static, state, copy=True)
     model.eval()
     sim_type = model.tokenizer.simulator
@@ -636,19 +768,33 @@ def _run_eval_pipeline(
     # Sample theta
     key, key_theta = jax.random.split(key)
     if cfg.sample_theta:
-        log.info("Sampling thetas")
-        with _device_scope(heavy_device):
-            model_parameters_brain = sample_theta(
-                cfg,
-                key_theta,
-                model,
-                acq,
-                full_data_flat_in_brain,
+        export_dir = os.path.join(checkpoint_root, cfg.model_name, cfg.export.name)
+        theta_path = _find_theta_samples_file(export_dir, allow_missing=True)
+        if theta_path is not None:
+            log.info("Found existing theta samples; loading from disk.")
+            model_parameters_brain = _load_theta_samples_from_disk(
+                export_dir,
+                brain_mask_flat,
+                brain_mask.shape,
+                _cfg_get(cfg, "theta_sample.num_samples", None),
+                sim_type.theta_dim,
                 log,
-                model_mask=models_selected_brain,
-                devices=eval_devices,
-                default_mask=default_mask,
+                theta_path=theta_path,
             )
+        else:
+            log.info("Sampling thetas")
+            with _device_scope(heavy_device):
+                model_parameters_brain = sample_theta(
+                    cfg,
+                    key_theta,
+                    model,
+                    acq,
+                    full_data_flat_in_brain,
+                    log,
+                    model_mask=models_selected_brain,
+                    devices=eval_devices,
+                    default_mask=default_mask,
+                )
         model_parameters_brain = _to_cpu_array(model_parameters_brain)
     else:
         model_parameters_brain = None
@@ -743,6 +889,7 @@ def _run_eval_pipeline(
                 export_name,
                 sim_type,
                 acq,
+                model,
                 full_data_flat_in_brain,
                 model_parameters_brain,
                 models_sampled_brain,
@@ -766,7 +913,9 @@ def _run_eval_pipeline(
             if isinstance(export_cfg, DictConfig)
             else getattr(export_cfg, "type", "ball3stick")
         )
-        if export_type == "raw":
+        if export_type == "none":
+            log.info("Skipping inferred parameter export (export.type=none).")
+        elif export_type == "raw":
             export_thetas_raw(
                 cfg,
                 model_parameters_brain,
@@ -803,6 +952,7 @@ def _run_eval_pipeline(
         cfg.export.name,
         sim_type,
         acq,
+        model,
         full_data_flat_in_brain,
         model_parameters_brain,
         models_selected_brain,

@@ -609,6 +609,7 @@ class DMRIInferenceModel(nnx.Module):
         last_euler_step: bool = True,
         t_min: float | None = None,
         t_max: float | None = None,
+        temperature: float = 1.0,
     ) -> Array:
         y_ctx, y = self._encode_observations(acq, x)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
@@ -630,6 +631,7 @@ class DMRIInferenceModel(nnx.Module):
             t_min=t_min,
             num_steps=num_steps,
             last_euler_step=last_euler_step,
+            temperature=temperature,
         )
 
         return theta

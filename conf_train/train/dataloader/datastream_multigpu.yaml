@@ -1,8 +1,8 @@
 name: SimulationDataset
 
 dataset:
-  simulation_batch_size: 4096
-  buffer_size: 786432
+  simulation_batch_size: 2048
+  buffer_size: 4194304
   jit_simulator: true
   return_numpy: false
   simulation_device:
@@ -10,7 +10,7 @@ dataset:
     index: 1
 
 train_loader:
-  batch_size: 2048
+  batch_size: 1024
   shuffle: true
   drop_last: true
   loop: true

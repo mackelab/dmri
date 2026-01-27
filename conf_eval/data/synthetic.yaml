@@ -2,9 +2,9 @@
 source: synthetic
 use_true_model_mask_for_synthetic: true
 clip_outliers: false
-num_voxels: 512
+num_voxels: 4096
 # Fixed mask-prior hyperparameter (e.g., u for TotalParamPenalizedPrior or p for BetaBernoulli)
-model_mask_hyperparameter: null
+model_mask_hyperparameter: 0.25
 # Optional: configure synthetic acquisition using simulator configs (e.g. hcp, hardi)
 acquisition_scheme: hcp
 # List of b-values (one per gradient direction)

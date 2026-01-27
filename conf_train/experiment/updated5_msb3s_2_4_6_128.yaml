@@ -1,5 +1,5 @@
 # @package _global_
-name: updated2_msb3s_2_4_6_128
+name: updated5_msb3s_2_4_6_128
 use_wandb: true
 
 hydra:
@@ -12,7 +12,6 @@ hydra:
       model.inference_net.params.num_layers: 6
       model.model_selection_net.params.num_layers: 4
       train.ema_decay: 0.999
-      train.partial_restore: true
 
 defaults:
   - _self_
@@ -20,4 +19,5 @@ defaults:
   - override /simulator: multishell_ball3stick_shared
   - override /simulator/acquisition_scheme: multi
   - override /model: dmri_pp
-  - override /train: new2
+  - override /train: new
+  - override /train/dataloader: datastream_large

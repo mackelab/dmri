@@ -13,6 +13,12 @@ options:
   reference_samples_path: null
   num_directions: 128
   random_seed: 0
+  # Optional voxel subset for expensive metrics (set to null to use all voxels).
+  voxel_subset_size: null
+  # Optional fraction of voxels to evaluate (0 < fraction <= 1).
+  voxel_subset_fraction: null
+  # Seed for voxel subset selection (defaults to random_seed).
+  voxel_subset_seed: 0
 aggregations:
   - type: mean
     name: mean

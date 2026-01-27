@@ -3,6 +3,7 @@ source: synthetic
 use_true_model_mask_for_synthetic: true
 clip_outliers: false
 num_voxels: 512
+model_mask_hyperparameter: 0.25
 # Optional: configure synthetic acquisition using simulator configs (e.g. hcp, hardi)
 acquisition_scheme: hcp_large
 # List of b-values (one per gradient direction)

@@ -322,6 +322,7 @@ class EDMSimformer(EDM):
         last_euler_step: bool = False,
         t_min: float | None = None,
         t_max: float | None = None,
+        temperature: float = 1.0,
     ) -> Array:
         rng, rng_init = jax.random.split(rng)
         eps = jax.random.normal(rng_init, (dim,)) * self.marginal_std(
@@ -343,8 +344,17 @@ class EDMSimformer(EDM):
                 context=context,
                 attention_mask=attention_mask,
             )
+            # TODO: Move this to probjax
+            if temperature != 1.0:
+                def drift_with_temp(t, x, *args, **kwargs):
+                    snr = 1/t**2
+                    r = (1. + snr) / (1. + temperature * snr)
+                    return r * drift.nonlin(t, x, *args, **kwargs)
+                new_drift = type(drift)(drift.lin_coeff, drift_with_temp)
+            else:
+                new_drift = drift
             out = odeint(
-                drift, eps, ts, collect_trace=False, method=self.solver_cfg.ode_method
+                new_drift, eps, ts, collect_trace=False, method=self.solver_cfg.ode_method
             )
             if last_euler_step and t_min is not None and t_min > 0.0:
                 # One last Euler step at t_min
@@ -405,6 +415,7 @@ class EDMSimformer(EDM):
         ts = self.solver_cfg.solve_schedule(
             t_max=t_max, t_min=t_min, num_steps=num_steps
         )
+        theta_mask = tokenizer.simulator.theta_mask(model_mask)
 
         drift = self.solver_cfg.build_ode_drift(
             self,
@@ -419,8 +430,11 @@ class EDMSimformer(EDM):
         def drift_with_logp(t, state):
             data, logp = state
             dx_dt = drift(t, data)
-            div = jnp.trace(jax.jacrev(lambda z: drift(t, z))(data))
-            return (dx_dt, div)
+            div = jnp.sum(
+                jnp.diagonal(jax.jacrev(lambda z: drift(t, z))(data)) * theta_mask
+            )
+            # Integrating from t_max -> t_min, so accumulate with negative divergence.
+            return (dx_dt, -div)
 
         sample, logp = odeint(
             drift_with_logp,
@@ -432,13 +446,18 @@ class EDMSimformer(EDM):
         if last_euler_step and t_min is not None and t_min > 0.0:
             dt = -ts[-1]
             f_tmin = drift(ts[-1], sample)
-            div_tmin = jnp.trace(jax.jacrev(lambda z: drift(ts[-1], z))(sample))
+            div_tmin = jnp.sum(
+                jnp.diagonal(jax.jacrev(lambda z: drift(ts[-1], z))(sample))
+                * theta_mask
+            )
             sample = sample + f_tmin * dt
-            logp = logp + div_tmin * dt
+            logp = logp - div_tmin * dt
 
         sigma = self.marginal_std(t_max)
-        base_logp = -0.5 * jnp.sum(eps**2) / sigma**2
-        base_logp += -0.5 * dim * jnp.log(2 * np.pi * sigma**2)
+        theta_count = jnp.sum(theta_mask, axis=-1, keepdims=True)
+        quad = jnp.sum(eps**2 * theta_mask, axis=-1, keepdims=True)
+        base_logp = -0.5 * quad / sigma**2
+        base_logp += -0.5 * theta_count * jnp.log(2 * np.pi * sigma**2)
         return sample, jnp.squeeze(logp + base_logp)
 
     def log_prob(
@@ -454,11 +473,10 @@ class EDMSimformer(EDM):
         t_max: float | None = None,
         num_steps: int = 64,
     ) -> Array:
-        if t_min is None:
-            t_min = 1e-3
-        if t_max is None:
-            t_max = self.train_cfg.t_max
+        t_min = t_min if t_min is not None else self.train_cfg.t_min
+        t_max = t_max if t_max is not None else self.train_cfg.t_max
         ts = self.solver_cfg.solve_schedule(t_min, t_max, num_steps)[::-1]
+        theta_mask = tokenizer.simulator.theta_mask(model_mask)
 
         def dx_dt_fn(t, z):
             f_ = self.drift(t, z)
@@ -481,7 +499,8 @@ class EDMSimformer(EDM):
         def drift(t, state):
             data, _ = state
             dx_dt = dx_dt_fn(t, data)
-            div = jnp.trace(jax.jacrev(lambda z: dx_dt_fn(t, z))(data))
+            div = jnp.diagonal(jax.jacrev(lambda z: dx_dt_fn(t, z))(data))
+            div = jnp.sum(div * theta_mask)
             return (dx_dt, div)
 
         x_final = odeint(
@@ -494,8 +513,10 @@ class EDMSimformer(EDM):
         x_final, logp_final = x_final
 
         sigma = self.marginal_std(t_max)
-        base_logp = -0.5 * jnp.sum(x_final**2) / sigma**2
-        base_logp += -0.5 * x_final.shape[-1] * jnp.log(2 * np.pi * sigma**2)
+        theta_count = jnp.sum(theta_mask, axis=-1, keepdims=True)
+        quad = jnp.sum(x_final**2 * theta_mask, axis=-1, keepdims=True)
+        base_logp = -0.5 * quad / sigma**2
+        base_logp += -0.5 * theta_count * jnp.log(2 * np.pi * sigma**2)
         final = logp_final + base_logp
 
         return jnp.squeeze(final)

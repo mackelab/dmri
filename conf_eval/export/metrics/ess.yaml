@@ -1,0 +1,33 @@
+# Effective sample size (ESS) per voxel via importance weights.
+key: ess
+type: ess
+output_filename: metric_ess.nii.gz
+batch_size: 1024
+sample_reduction: none
+sample_axis: 1
+requires_theta_samples: true
+write_summary: true
+summary_filename: ess_summary.json
+options:
+  # Limit the number of theta samples per voxel (set to null to keep all).
+  max_samples: null
+  # Parameters for log_q evaluation.
+  log_prob_num_steps: 128
+  log_prob_t_min: 5e-4
+  log_prob_t_max: 80.
+  # Random seed for deterministic batching.
+  random_seed: 0
+  # Optional voxel subset for expensive metrics (set to null to use all voxels).
+  voxel_subset_size: null
+  # Optional fraction of voxels to evaluate (0 < fraction <= 1).
+  voxel_subset_fraction: null
+  # Seed for voxel subset selection (defaults to random_seed).
+  voxel_subset_seed: 0
+aggregations:
+  - type: mean
+    name: mean
+  - type: median
+    name: median
+  - type: percentile
+    q: [5, 95]
+    name: p{q}

@@ -88,6 +88,7 @@ class MetricContext:
     brain_mask_flat: np.ndarray
     data_norm: np.ndarray
     orig_data: Any
+    model: Any | None = None
     out_path: str | None = None
     true_model_parameters: np.ndarray | None = None
     true_model_mask: np.ndarray | None = None
@@ -97,6 +98,8 @@ DEFAULT_OUTPUT_FILENAMES: Mapping[str, str] = {
     "reconstruction_mse": "error_reconstruction.nii.gz",
     "posterior_nll": "metric_posterior_nll.nii.gz",
     "ksd": "metric_ksd.nii.gz",
+    "ess": "metric_ess.nii.gz",
+    "effective_sample_size": "metric_ess.nii.gz",
     "sbc_marginal_coverage": "metric_sbc_marginal_coverage.nii.gz",
     "sbc_model_mask": "metric_sbc_model_mask.nii.gz",
     "model_selection_calibration": "metric_model_selection_calibration_error.nii.gz",
@@ -251,6 +254,12 @@ def _compute_swd_metric(
             f" theta samples {theta.shape}."
         )
 
+    num_voxels_full = theta.shape[0]
+    subset_indices = _select_voxel_subset(spec, num_voxels_full)
+    if subset_indices is not None:
+        theta = theta[subset_indices]
+        reference = reference[subset_indices]
+
     num_voxels = theta.shape[0]
     num_samples = theta.shape[1]
     feature_dim = int(np.prod(theta.shape[2:]))
@@ -282,7 +291,10 @@ def _compute_swd_metric(
         distances += np.sqrt(np.maximum(w2, 0.0))
 
     distances /= num_directions
-    return distances.astype(np.float32)
+    distances = distances.astype(np.float32)
+    if subset_indices is not None:
+        distances = _scatter_metric_values(distances, subset_indices, num_voxels_full)
+    return distances
 
 
 def _compute_ksd_metric(
@@ -318,12 +330,21 @@ def _compute_ksd_metric(
     theta = np.moveaxis(theta, sample_axis, 1)
     if max_samples is not None:
         theta = theta[:, : int(max_samples)]
+    num_voxels_full = theta.shape[0]
+    subset_indices = _select_voxel_subset(spec, num_voxels_full)
+    if subset_indices is not None:
+        theta = theta[subset_indices]
     if theta.shape[1] < 2:
-        return np.full(theta.shape[0], np.nan, dtype=np.float32)
+        values = np.full(theta.shape[0], np.nan, dtype=np.float32)
+        if subset_indices is not None:
+            values = _scatter_metric_values(values, subset_indices, num_voxels_full)
+        return values
     theta = np.nan_to_num(theta, nan=0.0, posinf=0.0, neginf=0.0)
     theta = theta.reshape(theta.shape[0], theta.shape[1], -1)
 
     data = np.asarray(context.full_data_flat_in_brain)
+    if subset_indices is not None:
+        data = data[subset_indices]
     data = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
 
     sim_type = context.sim_type
@@ -333,8 +354,12 @@ def _compute_ksd_metric(
         mask_arr = np.asarray(model_mask)
         if mask_arr.ndim == 1:
             mask_arr = np.broadcast_to(mask_arr, (num_voxels, mask_arr.shape[-1]))
-        elif mask_arr.shape[0] != num_voxels:
-            mask_arr = np.broadcast_to(mask_arr, (num_voxels,) + mask_arr.shape[1:])
+        elif mask_arr.shape[0] != num_voxels_full:
+            mask_arr = np.broadcast_to(
+                mask_arr, (num_voxels_full,) + mask_arr.shape[1:]
+            )
+        if subset_indices is not None and mask_arr.shape[0] == num_voxels_full:
+            mask_arr = mask_arr[subset_indices]
         model_mask = mask_arr.astype(np.bool_)
 
     bandwidths_jnp = jnp.asarray(bandwidths)
@@ -383,6 +408,12 @@ def _compute_ksd_metric(
     ksd_values = values[..., 0]
     p_values = values[..., 1]
 
+    if subset_indices is not None:
+        ksd_values = _scatter_metric_values(
+            ksd_values, subset_indices, num_voxels_full
+        )
+        p_values = _scatter_metric_values(p_values, subset_indices, num_voxels_full)
+
     if export_pvalue and context.out_path:
         full_map = embed_in_full_brain_array(
             p_values,
@@ -392,6 +423,133 @@ def _compute_ksd_metric(
         export_nifti(full_map, context.orig_data, context.out_path, pvalue_filename)
 
     return ksd_values
+
+
+def _compute_ess_metric(
+    spec: MetricSpec,
+    context: MetricContext,
+    devices: Sequence[jax.Device] | str | None,
+) -> np.ndarray:
+    """Compute effective sample size (ESS) per voxel via importance weights."""
+
+    if context.model_parameters_brain is None:
+        raise ValueError(
+            f"Metric '{spec.key}' requires theta samples but none are available."
+        )
+    if context.model is None:
+        raise ValueError(
+            f"Metric '{spec.key}' requires a model to evaluate log_q, but none was provided."
+        )
+
+    options = dict(spec.options or {})
+    max_samples = options.get("max_samples", options.get("num_samples"))
+    log_prob_num_steps = options.get("log_prob_num_steps", 64)
+    if log_prob_num_steps is None:
+        log_prob_num_steps = 64
+    log_prob_num_steps = int(log_prob_num_steps)
+    log_prob_t_min = options.get("log_prob_t_min")
+    log_prob_t_max = options.get("log_prob_t_max")
+    seed = int(options.get("random_seed", getattr(context.cfg, "seed", 0)))
+
+    theta = np.asarray(context.model_parameters_brain)
+    sample_axis = 1 if spec.sample_axis is None else spec.sample_axis
+    theta = np.moveaxis(theta, sample_axis, 1)
+    if max_samples is not None:
+        theta = theta[:, : int(max_samples)]
+    num_voxels_full = theta.shape[0]
+    subset_indices = _select_voxel_subset(spec, num_voxels_full)
+    if subset_indices is not None:
+        theta = theta[subset_indices]
+    if theta.shape[1] == 0:
+        values = np.full(theta.shape[0], np.nan, dtype=np.float32)
+        if subset_indices is not None:
+            values = _scatter_metric_values(values, subset_indices, num_voxels_full)
+        return values
+    theta = np.nan_to_num(theta, nan=0.0, posinf=0.0, neginf=0.0)
+    theta = theta.reshape(theta.shape[0], theta.shape[1], -1)
+
+    data = np.asarray(context.full_data_flat_in_brain)
+    if subset_indices is not None:
+        data = data[subset_indices]
+    data = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
+
+    sim_type = context.sim_type
+    num_voxels = theta.shape[0]
+    model_mask = context.model_mask
+    if model_mask is None:
+        num_components = len(sim_type.model_types) + len(sim_type.noise_types)
+        model_mask = np.ones((num_voxels, num_components), dtype=np.bool_)
+    else:
+        mask_arr = np.asarray(model_mask)
+        if mask_arr.ndim == 1:
+            mask_arr = np.broadcast_to(mask_arr, (num_voxels, mask_arr.shape[-1]))
+        elif mask_arr.shape[0] != num_voxels_full:
+            mask_arr = np.broadcast_to(
+                mask_arr, (num_voxels_full,) + mask_arr.shape[1:]
+            )
+        if subset_indices is not None and mask_arr.shape[0] == num_voxels_full:
+            mask_arr = mask_arr[subset_indices]
+        model_mask = mask_arr.astype(np.bool_)
+
+    def log_q(theta, mask, acq, x):
+        return context.model.log_prob_theta(
+            theta,
+            acq,
+            x,
+            mask,
+            num_steps=log_prob_num_steps,
+            t_min=log_prob_t_min,
+            t_max=log_prob_t_max,
+        )
+
+    def _ess_single(_, theta_voxel, x_voxel, mask_voxel):
+        mask = jnp.asarray(mask_voxel, dtype=jnp.bool_)
+        theta_mask = sim_type.theta_mask(mask).astype(theta_voxel.dtype)
+
+        def log_posterior_masked(theta):
+            theta = theta * theta_mask
+            simulator = sim_type.from_theta(theta, model_mask=mask)
+            ll = simulator.log_likelihood(context.acq, x_voxel)
+            logpdf = jax.scipy.stats.norm.logpdf(theta, 0.0, 1.0)
+            logpdf = jnp.where(theta_mask, logpdf, 0.0)
+            logpdf = jnp.sum(logpdf)
+            return ll + logpdf
+
+        logp = jax.vmap(log_posterior_masked)(theta_voxel)
+        logq = jax.vmap(log_q, in_axes=(0, None, None, None))(
+            theta_voxel, mask, context.acq, x_voxel
+        )
+        logw = logp - logq
+        finite = jnp.isfinite(logw)
+        lw = jnp.where(finite, logw, -jnp.inf)
+        lw_max = jnp.max(lw)
+        all_invalid = ~jnp.isfinite(lw_max)
+        shifted = lw - lw_max
+        w = jnp.where(finite, jnp.exp(shifted), 0.0)
+        sum_w = jnp.sum(w)
+        sum_w2 = jnp.sum(w * w)
+        ess = (sum_w * sum_w) / jnp.maximum(sum_w2, 1e-30)
+        return jnp.where(all_invalid, 0.0, ess)
+
+    ess_fn = jax.vmap(_ess_single, in_axes=(0, 0, 0, 0))
+
+    values = eval_in_batches(
+        ess_fn,
+        jax.random.PRNGKey(seed),
+        theta,
+        data,
+        model_mask,
+        batch_size=spec.batch_size,
+        devices=devices,
+        preferred_device_kinds=spec.preferred_device_kinds,
+    )
+    # Normalize by number of samples to get ESS fraction.
+    num_samples = theta.shape[1]
+    values = values / float(num_samples)
+    values = np.asarray(values, dtype=np.float32)
+    if subset_indices is not None:
+        values = _scatter_metric_values(values, subset_indices, num_voxels_full)
+    return values
 
 
 def _compute_sbc_marginal_coverage(
@@ -732,6 +890,8 @@ _METRIC_REGISTRY: Mapping[
         spec, context
     ),
     "ksd": _compute_ksd_metric,
+    "ess": _compute_ess_metric,
+    "effective_sample_size": _compute_ess_metric,
     "sbc_marginal_coverage": _compute_sbc_marginal_coverage,
     "sbc_model_mask": _compute_sbc_model_mask,
     "model_selection_calibration": _compute_model_selection_calibration,
@@ -741,6 +901,52 @@ _METRIC_REGISTRY: Mapping[
 
 # ---------------------------------------------------------------------------
 # Helpers
+
+
+def _select_voxel_subset(spec: MetricSpec, num_voxels: int) -> np.ndarray | None:
+    options = dict(spec.options or {})
+    subset_size = options.get("voxel_subset_size")
+    subset_fraction = options.get("voxel_subset_fraction")
+    if subset_size is None and subset_fraction is None:
+        return None
+
+    target_size = None
+    if subset_fraction is not None:
+        fraction = float(subset_fraction)
+        if fraction <= 0.0 or fraction > 1.0:
+            raise ValueError(
+                f"Metric '{spec.key}' expects voxel_subset_fraction in (0, 1], got {fraction}."
+            )
+        target_size = max(1, int(round(num_voxels * fraction)))
+    if subset_size is not None:
+        size = int(subset_size)
+        if size <= 0:
+            raise ValueError(
+                f"Metric '{spec.key}' expects voxel_subset_size > 0, got {size}."
+            )
+        target_size = size if target_size is None else min(target_size, size)
+
+    if target_size is None or target_size >= num_voxels:
+        return None
+
+    seed = options.get("voxel_subset_seed", options.get("random_seed", 0))
+    rng = np.random.default_rng(int(seed))
+    indices = rng.choice(num_voxels, size=target_size, replace=False)
+    return np.sort(indices)
+
+
+def _scatter_metric_values(
+    values: np.ndarray, indices: np.ndarray, num_voxels: int
+) -> np.ndarray:
+    if values.shape[0] != indices.shape[0]:
+        raise ValueError(
+            "Mismatch between subset values and indices: "
+            f"{values.shape[0]} vs {indices.shape[0]}."
+        )
+    dtype = values.dtype if np.issubdtype(values.dtype, np.floating) else np.float32
+    full = np.full((num_voxels,) + values.shape[1:], np.nan, dtype=dtype)
+    full[indices] = values
+    return full
 
 
 def _evaluate_metric_function(

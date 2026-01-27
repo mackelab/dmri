@@ -142,7 +142,7 @@ class MultiCompartment(SignalCompartment):
         if num_models == 0:
             return jnp.zeros_like(acq.bvals)
 
-        signals = [m.signal(acq) for m in model_compartments]
+        signals = [jnp.atleast_1d(m.signal(acq)) for m in model_compartments]
         stacked = jnp.stack(signals, axis=0)
         return jnp.sum(stacked * model_fractions[:, None], axis=0)
 
@@ -183,11 +183,17 @@ class MultiCompartment(SignalCompartment):
 
         # Add noise
         num_noise = len(noise_compartments)
-        if rng is not None and num_noise > 0:
+        if num_noise > 0:
             noise_mask = cls._noise_mask(model_mask, len(model_compartments), num_noise)
-            noise_outputs = [
-                noise_compartments[i].noise(base_signal, rng) for i in range(num_noise)
-            ]
+            if rng is None:
+                # Compute mean
+                noise_outputs = [
+                    noise_compartments[i].mean(base_signal) for i in range(num_noise)
+                ]
+            else:
+                noise_outputs = [
+                    noise_compartments[i].noise(base_signal, rng) for i in range(num_noise)
+                ]
             stacked_noise = jnp.stack(noise_outputs, axis=0)
             mask_weights = cls._mask_weights(
                 noise_mask, stacked_noise.ndim, stacked_noise.dtype

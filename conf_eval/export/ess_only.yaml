@@ -1,0 +1,6 @@
+defaults:
+  - _self_
+  - metrics@metrics.ess: ess
+
+name: "ess_only_results"
+type: "raw"

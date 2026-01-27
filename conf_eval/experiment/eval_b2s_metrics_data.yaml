@@ -3,18 +3,17 @@
 sample_mask: false
 select_models: false
 seed: 42424242
-default_mask: [True, True, True, True, True]
-slice:
-  x: null
-  y: null
-  z: 52
+default_mask: [True, True, True, False, True]
 
 
 defaults:
   - _self_
   - override /export: raw
   - override /theta_sample: uncorrected
-  - override /data: synthetic
+  - override /data: file
+
+data:
+  data_folder: data
 
 export:
-  name: test
+  name: data_eval_b2s
