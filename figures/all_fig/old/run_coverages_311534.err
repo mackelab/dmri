@@ -1,0 +1,49 @@
+/weka/macke/mgloeckler90/dmri/figures/all_fig/./ksd_eval_all.py:145: RuntimeWarning: divide by zero encountered in divide
+  data_norm = data / s0[..., None]
+/weka/macke/mgloeckler90/dmri/figures/all_fig/./ksd_eval_all.py:145: RuntimeWarning: invalid value encountered in divide
+  data_norm = data / s0[..., None]
+W0110 18:16:45.776543 1710603 bfc_allocator.cc:501] Allocator (GPU_0_bfc) ran out of memory trying to allocate 6.10GiB (rounded to 6553600000)requested by op 
+If the cause is memory fragmentation maybe the environment variable 'TF_GPU_ALLOCATOR=cuda_malloc_async' will improve the situation. 
+Current allocation summary follows.
+Current allocation summary follows.
+W0110 18:16:45.778018 1710603 bfc_allocator.cc:512] *********************************_***************************************************************___
+E0110 18:16:45.778071 1710603 pjrt_stream_executor_client.cc:2085] Execution of replica 0 failed: RESOURCE_EXHAUSTED: Out of memory while trying to allocate 6.10GiB. [tf-allocator-allocation-error='']
+Traceback (most recent call last):
+  File "/weka/macke/mgloeckler90/dmri/figures/all_fig/./ksd_eval_all.py", line 1131, in <module>
+    main()
+  File "/weka/macke/mgloeckler90/dmri/figures/all_fig/./ksd_eval_all.py", line 940, in main
+    model_masks_selected_long = sample_selected_masks(
+                                ^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/figures/all_fig/./ksd_eval_all.py", line 564, in sample_selected_masks
+    return jax.vmap(sample_one)(keys, dataset)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/figures/all_fig/./ksd_eval_all.py", line 559, in sample_one
+    return model.sample_mask(
+           ^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/dmri/nn/dmri_reconstruction_model.py", line 550, in sample_mask
+    y_ctx, y = self._encode_observations(acq, x)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/dmri/nn/dmri_reconstruction_model.py", line 411, in _encode_observations
+    return self.encoder(
+           ^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/dmri/nn/embedding_net.py", line 337, in __call__
+    out_tokens = self.transformer(
+                 ^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/probjax/nn/nets/transformer.py", line 314, in __call__
+    q = self.attention_blocks[i](
+        ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/probjax/nn/layers/attention.py", line 182, in __call__
+    x = self.attention_fn(
+        ^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/probjax/nn/layers/attention.py", line 358, in flex_attention
+    output = mha(
+             ^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/probjax/nn/pallas_kernels/attention.py", line 1042, in mha
+    return _mha_impl(
+           ^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/probjax/nn/pallas_kernels/attention.py", line 1000, in _mha_impl
+    pallas_out = pl.pallas_call(
+                 ^^^^^^^^^^^^^^^
+jax.errors.JaxRuntimeError: RESOURCE_EXHAUSTED: Out of memory while trying to allocate 6.10GiB.
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.

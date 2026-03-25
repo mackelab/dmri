@@ -1,0 +1,1 @@
+python confussion_matrix.py --checkpoint /home/macke/mgloeckler90/dmri/results/updated_all_3_6_8_128_model_prior --json --support-lambda 0.99 --num-support-classes 50 --save-fig all_confusion_matrix.svg --support-mode auto > all.json

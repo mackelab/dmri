@@ -1,0 +1,18 @@
+/weka/macke/mgloeckler90/dmri/figures/all_fig/./eval_fods.py:886: UserWarning: Pass ['bvecs'] as keyword args. From version 2.0.0 passing these as positional arguments will result in an error. 
+  gtab = gradient_table(bvals, bvecs)
+INFO:root:Continuing from step 2000000
+INFO:__main__:all batch 0:500
+INFO:__main__:all batch 500:1000
+INFO:__main__:all batch 1000:1500
+INFO:__main__:all batch 1500:2000
+INFO:__main__:all batch 2000:2500
+INFO:__main__:all batch 2500:3000
+INFO:__main__:all batch 3000:3500
+INFO:__main__:all batch 3500:4000
+INFO:__main__:all batch 4000:4500
+INFO:__main__:all batch 4500:5000
+INFO:__main__:all batch 5000:5500
+INFO:__main__:all batch 5500:6000
+INFO:__main__:all batch 6000:6500
+INFO:__main__:all batch 6500:7000
+slurmstepd: error: *** JOB 311709 ON mlcbm012 CANCELLED AT 2026-01-11T19:28:02 ***

@@ -174,84 +174,37 @@ class BoundedGaussianNoise(GaussianNoise):
         return (u * (cls.max_snr - cls.min_snr) + cls.min_snr,)
 
 
-class RicianNoiseSNR7080(BoundedRicianNoise):
-    min_snr = 70
-    max_snr = 80
-
-
-class RicianNoiseSNR6070(BoundedRicianNoise):
+class RicianNoiseSNR6090(BoundedRicianNoise):
     min_snr = 60
-    max_snr = 70
+    max_snr = 90
 
 
-class RicianNoiseSNR5060(BoundedRicianNoise):
-    min_snr = 50
+class RicianNoiseSNR3060(BoundedRicianNoise):
+    min_snr = 30
     max_snr = 60
 
 
-class RicianNoiseSNR4050(BoundedRicianNoise):
-    min_snr = 40
-    max_snr = 50
-
-
-class RicianNoiseSNR3040(BoundedRicianNoise):
-    min_snr = 30
-    max_snr = 40
-
-
-class RicianNoiseSNR2030(BoundedRicianNoise):
-    min_snr = 20
+class RicianNoiseSNR0330(BoundedRicianNoise):
+    min_snr = 3
     max_snr = 30
 
 
-class RicianNoiseSNR1020(BoundedRicianNoise):
-    min_snr = 10
-    max_snr = 20
 
 
-class RicianNoiseSNR310(BoundedRicianNoise):
-    min_snr = 3
-    max_snr = 10
-
-
-class GaussianNoiseSNR7080(BoundedGaussianNoise):
-    min_snr = 70
-    max_snr = 80
-
-
-class GaussianNoiseSNR6070(BoundedGaussianNoise):
+class GaussianNoiseSNR6090(BoundedGaussianNoise):
     min_snr = 60
-    max_snr = 70
+    max_snr = 90
 
 
-class GaussianNoiseSNR5060(BoundedGaussianNoise):
-    min_snr = 50
+class GaussianNoiseSNR3060(BoundedGaussianNoise):
+    min_snr = 30
     max_snr = 60
 
 
-class GaussianNoiseSNR4050(BoundedGaussianNoise):
-    min_snr = 40
-    max_snr = 50
-
-
-class GaussianNoiseSNR3040(BoundedGaussianNoise):
-    min_snr = 30
-    max_snr = 40
-
-
-class GaussianNoiseSNR2030(BoundedGaussianNoise):
-    min_snr = 20
+class GaussianNoiseSNR0330(BoundedGaussianNoise):
+    min_snr = 3
     max_snr = 30
 
-
-class GaussianNoiseSNR1020(BoundedGaussianNoise):
-    min_snr = 10
-    max_snr = 20
-
-
-class GaussianNoiseSNR310(BoundedGaussianNoise):
-    min_snr = 3
-    max_snr = 10
 
 
 def add_rician_noise(rng, signal, sigma_g):

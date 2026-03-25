@@ -1,0 +1,31 @@
+/weka/macke/mgloeckler90/dmri/figures/all_fig/./eval_fods.py:934: UserWarning: Pass ['bvecs'] as keyword args. From version 2.0.0 passing these as positional arguments will result in an error. 
+  gtab = gradient_table(bvals, bvecs)
+INFO:root:Continuing from step 2000000
+INFO:__main__:Resuming b3s: 19754/227840 voxels already computed.
+INFO:__main__:b3s resume: starting at index 19500.
+INFO:__main__:b3s batch 19500:20000
+INFO:__main__:b3s batch 20000:20500
+INFO:__main__:b3s batch 20500:21000
+INFO:__main__:b3s batch 21000:21500
+INFO:__main__:b3s batch 21500:22000
+INFO:__main__:b3s batch 22000:22500
+INFO:__main__:b3s batch 22500:23000
+INFO:__main__:b3s batch 23000:23500
+INFO:__main__:b3s batch 23500:24000
+INFO:__main__:b3s batch 24000:24500
+INFO:__main__:b3s batch 24500:25000
+INFO:__main__:b3s batch 25000:25500
+INFO:__main__:b3s batch 25500:26000
+INFO:__main__:b3s batch 26000:26500
+INFO:__main__:b3s batch 26500:27000
+INFO:__main__:b3s batch 27000:27500
+INFO:__main__:b3s batch 27500:28000
+INFO:__main__:b3s batch 28000:28500
+INFO:__main__:b3s batch 28500:29000
+INFO:__main__:b3s batch 29000:29500
+INFO:__main__:b3s batch 29500:30000
+INFO:__main__:b3s batch 30000:30500
+INFO:__main__:b3s batch 30500:31000
+INFO:__main__:b3s batch 31000:31500
+INFO:__main__:b3s batch 31500:32000
+slurmstepd: error: *** JOB 311866 ON mlcbm007 CANCELLED AT 2026-01-12T17:35:59 ***

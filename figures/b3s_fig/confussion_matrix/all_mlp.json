@@ -1,0 +1,523 @@
+Training classifier...
+classifier_step 500/200000 loss=0.7557
+classifier_step 1000/200000 loss=0.5147
+classifier_step 1500/200000 loss=0.5106
+classifier_step 2000/200000 loss=0.5014
+classifier_step 2500/200000 loss=0.4606
+classifier_step 3000/200000 loss=0.4908
+classifier_step 3500/200000 loss=0.5106
+classifier_step 4000/200000 loss=0.5375
+classifier_step 4500/200000 loss=0.5401
+classifier_step 5000/200000 loss=0.4650
+classifier_step 5500/200000 loss=0.4903
+classifier_step 6000/200000 loss=0.4820
+classifier_step 6500/200000 loss=0.4932
+classifier_step 7000/200000 loss=0.5040
+classifier_step 7500/200000 loss=0.4493
+classifier_step 8000/200000 loss=0.3453
+classifier_step 8500/200000 loss=0.5560
+classifier_step 9000/200000 loss=0.5340
+classifier_step 9500/200000 loss=0.5629
+classifier_step 10000/200000 loss=0.5563
+classifier_step 10500/200000 loss=0.4692
+classifier_step 11000/200000 loss=0.4587
+classifier_step 11500/200000 loss=0.4095
+classifier_step 12000/200000 loss=0.5244
+classifier_step 12500/200000 loss=0.5145
+classifier_step 13000/200000 loss=0.5551
+classifier_step 13500/200000 loss=0.5308
+classifier_step 14000/200000 loss=0.4666
+classifier_step 14500/200000 loss=0.4620
+classifier_step 15000/200000 loss=0.4439
+classifier_step 15500/200000 loss=0.4275
+classifier_step 16000/200000 loss=0.4763
+classifier_step 16500/200000 loss=0.5157
+classifier_step 17000/200000 loss=0.4836
+classifier_step 17500/200000 loss=0.4853
+classifier_step 18000/200000 loss=0.5491
+classifier_step 18500/200000 loss=0.5040
+classifier_step 19000/200000 loss=0.3891
+classifier_step 19500/200000 loss=0.4602
+classifier_step 20000/200000 loss=0.4256
+classifier_step 20500/200000 loss=0.4737
+classifier_step 21000/200000 loss=0.4720
+classifier_step 21500/200000 loss=0.4897
+classifier_step 22000/200000 loss=0.4186
+classifier_step 22500/200000 loss=0.4306
+classifier_step 23000/200000 loss=0.3735
+classifier_step 23500/200000 loss=0.3807
+classifier_step 24000/200000 loss=0.3841
+classifier_step 24500/200000 loss=0.4213
+classifier_step 25000/200000 loss=0.4826
+classifier_step 25500/200000 loss=0.4979
+classifier_step 26000/200000 loss=0.3783
+classifier_step 26500/200000 loss=0.3875
+classifier_step 27000/200000 loss=0.2654
+classifier_step 27500/200000 loss=0.4244
+classifier_step 28000/200000 loss=0.4979
+classifier_step 28500/200000 loss=0.4147
+classifier_step 29000/200000 loss=0.3627
+classifier_step 29500/200000 loss=0.3224
+classifier_step 30000/200000 loss=0.4516
+classifier_step 30500/200000 loss=0.3708
+classifier_step 31000/200000 loss=0.3393
+classifier_step 31500/200000 loss=0.3664
+classifier_step 32000/200000 loss=0.3629
+classifier_step 32500/200000 loss=0.3717
+classifier_step 33000/200000 loss=0.3126
+classifier_step 33500/200000 loss=0.3282
+classifier_step 34000/200000 loss=0.4157
+classifier_step 34500/200000 loss=0.3988
+classifier_step 35000/200000 loss=0.4173
+classifier_step 35500/200000 loss=0.4049
+classifier_step 36000/200000 loss=0.4531
+classifier_step 36500/200000 loss=0.3409
+classifier_step 37000/200000 loss=0.3961
+classifier_step 37500/200000 loss=0.3529
+classifier_step 38000/200000 loss=0.4331
+classifier_step 38500/200000 loss=0.3262
+classifier_step 39000/200000 loss=0.3426
+classifier_step 39500/200000 loss=0.3760
+classifier_step 40000/200000 loss=0.3760
+classifier_step 40500/200000 loss=0.3088
+classifier_step 41000/200000 loss=0.3850
+classifier_step 41500/200000 loss=0.3340
+classifier_step 42000/200000 loss=0.3142
+classifier_step 42500/200000 loss=0.3214
+classifier_step 43000/200000 loss=0.3645
+classifier_step 43500/200000 loss=0.3646
+classifier_step 44000/200000 loss=0.3276
+classifier_step 44500/200000 loss=0.2862
+classifier_step 45000/200000 loss=0.3361
+classifier_step 45500/200000 loss=0.1808
+classifier_step 46000/200000 loss=0.3239
+classifier_step 46500/200000 loss=0.2879
+classifier_step 47000/200000 loss=0.3512
+classifier_step 47500/200000 loss=0.3189
+classifier_step 48000/200000 loss=0.3134
+classifier_step 48500/200000 loss=0.2922
+classifier_step 49000/200000 loss=0.2805
+classifier_step 49500/200000 loss=0.2747
+classifier_step 50000/200000 loss=0.3422
+classifier_step 50500/200000 loss=0.3048
+classifier_step 51000/200000 loss=0.3163
+classifier_step 51500/200000 loss=0.3254
+classifier_step 52000/200000 loss=0.2895
+classifier_step 52500/200000 loss=0.2915
+classifier_step 53000/200000 loss=0.3009
+classifier_step 53500/200000 loss=0.2840
+classifier_step 54000/200000 loss=0.2609
+classifier_step 54500/200000 loss=0.3516
+classifier_step 55000/200000 loss=0.3102
+classifier_step 55500/200000 loss=0.3221
+classifier_step 56000/200000 loss=0.3083
+classifier_step 56500/200000 loss=0.2839
+classifier_step 57000/200000 loss=0.3071
+classifier_step 57500/200000 loss=0.2749
+classifier_step 58000/200000 loss=0.2918
+classifier_step 58500/200000 loss=0.3461
+classifier_step 59000/200000 loss=0.1716
+classifier_step 59500/200000 loss=0.3493
+classifier_step 60000/200000 loss=0.3567
+classifier_step 60500/200000 loss=0.2883
+classifier_step 61000/200000 loss=0.3344
+classifier_step 61500/200000 loss=0.3149
+classifier_step 62000/200000 loss=0.3063
+classifier_step 62500/200000 loss=0.2575
+classifier_step 63000/200000 loss=0.3167
+classifier_step 63500/200000 loss=0.2679
+classifier_step 64000/200000 loss=0.2963
+classifier_step 64500/200000 loss=0.4167
+classifier_step 65000/200000 loss=0.3543
+classifier_step 65500/200000 loss=0.3699
+classifier_step 66000/200000 loss=0.3377
+classifier_step 66500/200000 loss=0.3033
+classifier_step 67000/200000 loss=0.3243
+classifier_step 67500/200000 loss=0.2942
+classifier_step 68000/200000 loss=0.2344
+classifier_step 68500/200000 loss=0.3661
+classifier_step 69000/200000 loss=0.3267
+classifier_step 69500/200000 loss=0.3081
+classifier_step 70000/200000 loss=0.3185
+classifier_step 70500/200000 loss=0.2812
+classifier_step 71000/200000 loss=0.2686
+classifier_step 71500/200000 loss=0.2551
+classifier_step 72000/200000 loss=0.2724
+classifier_step 72500/200000 loss=0.3266
+classifier_step 73000/200000 loss=0.3830
+classifier_step 73500/200000 loss=0.2617
+classifier_step 74000/200000 loss=0.2340
+classifier_step 74500/200000 loss=0.3386
+classifier_step 75000/200000 loss=0.3224
+classifier_step 75500/200000 loss=0.2667
+classifier_step 76000/200000 loss=0.3458
+classifier_step 76500/200000 loss=0.3820
+classifier_step 77000/200000 loss=0.3207
+classifier_step 77500/200000 loss=0.4150
+classifier_step 78000/200000 loss=0.3173
+classifier_step 78500/200000 loss=0.3251
+classifier_step 79000/200000 loss=0.2635
+classifier_step 79500/200000 loss=0.2272
+classifier_step 80000/200000 loss=0.2955
+classifier_step 80500/200000 loss=0.3185
+classifier_step 81000/200000 loss=0.3060
+classifier_step 81500/200000 loss=0.2574
+classifier_step 82000/200000 loss=0.2461
+classifier_step 82500/200000 loss=0.2207
+classifier_step 83000/200000 loss=0.3006
+classifier_step 83500/200000 loss=0.2534
+classifier_step 84000/200000 loss=0.2015
+classifier_step 84500/200000 loss=0.3119
+classifier_step 85000/200000 loss=0.3084
+classifier_step 85500/200000 loss=0.3110
+classifier_step 86000/200000 loss=0.2602
+classifier_step 86500/200000 loss=0.1794
+classifier_step 87000/200000 loss=0.2789
+classifier_step 87500/200000 loss=0.2257
+classifier_step 88000/200000 loss=0.2523
+classifier_step 88500/200000 loss=0.2405
+classifier_step 89000/200000 loss=0.3053
+classifier_step 89500/200000 loss=0.3420
+classifier_step 90000/200000 loss=0.2011
+classifier_step 90500/200000 loss=0.3235
+classifier_step 91000/200000 loss=0.3308
+classifier_step 91500/200000 loss=0.3108
+classifier_step 92000/200000 loss=0.3188
+classifier_step 92500/200000 loss=0.2833
+classifier_step 93000/200000 loss=0.2867
+classifier_step 93500/200000 loss=0.3123
+classifier_step 94000/200000 loss=0.2567
+classifier_step 94500/200000 loss=0.3001
+classifier_step 95000/200000 loss=0.2500
+classifier_step 95500/200000 loss=0.2098
+classifier_step 96000/200000 loss=0.3608
+classifier_step 96500/200000 loss=0.3449
+classifier_step 97000/200000 loss=0.3070
+classifier_step 97500/200000 loss=0.3209
+classifier_step 98000/200000 loss=0.2798
+classifier_step 98500/200000 loss=0.3018
+classifier_step 99000/200000 loss=0.2726
+classifier_step 99500/200000 loss=0.1811
+classifier_step 100000/200000 loss=0.2815
+classifier_step 100500/200000 loss=0.3276
+classifier_step 101000/200000 loss=0.3417
+classifier_step 101500/200000 loss=0.2814
+classifier_step 102000/200000 loss=0.2550
+classifier_step 102500/200000 loss=0.2425
+classifier_step 103000/200000 loss=0.2507
+classifier_step 103500/200000 loss=0.2677
+classifier_step 104000/200000 loss=0.3505
+classifier_step 104500/200000 loss=0.3697
+classifier_step 105000/200000 loss=0.3816
+classifier_step 105500/200000 loss=0.3153
+classifier_step 106000/200000 loss=0.2992
+classifier_step 106500/200000 loss=0.2835
+classifier_step 107000/200000 loss=0.2521
+classifier_step 107500/200000 loss=0.3130
+classifier_step 108000/200000 loss=0.3346
+classifier_step 108500/200000 loss=0.3794
+classifier_step 109000/200000 loss=0.3204
+classifier_step 109500/200000 loss=0.3462
+classifier_step 110000/200000 loss=0.3386
+classifier_step 110500/200000 loss=0.2670
+classifier_step 111000/200000 loss=0.2682
+classifier_step 111500/200000 loss=0.2669
+classifier_step 112000/200000 loss=0.2861
+classifier_step 112500/200000 loss=0.3269
+classifier_step 113000/200000 loss=0.3700
+classifier_step 113500/200000 loss=0.1364
+classifier_step 114000/200000 loss=0.4167
+classifier_step 114500/200000 loss=0.2710
+classifier_step 115000/200000 loss=0.2639
+classifier_step 115500/200000 loss=0.2561
+classifier_step 116000/200000 loss=0.3251
+classifier_step 116500/200000 loss=0.3697
+classifier_step 117000/200000 loss=0.3100
+classifier_step 117500/200000 loss=0.2979
+classifier_step 118000/200000 loss=0.2601
+classifier_step 118500/200000 loss=0.2283
+classifier_step 119000/200000 loss=0.3168
+classifier_step 119500/200000 loss=0.2947
+classifier_step 120000/200000 loss=0.3308
+classifier_step 120500/200000 loss=0.2670
+classifier_step 121000/200000 loss=0.2631
+classifier_step 121500/200000 loss=0.2147
+classifier_step 122000/200000 loss=0.2630
+classifier_step 122500/200000 loss=0.3340
+classifier_step 123000/200000 loss=0.2925
+classifier_step 123500/200000 loss=0.3170
+classifier_step 124000/200000 loss=0.2639
+classifier_step 124500/200000 loss=0.2795
+classifier_step 125000/200000 loss=0.2797
+classifier_step 125500/200000 loss=0.1530
+classifier_step 126000/200000 loss=0.2864
+classifier_step 126500/200000 loss=0.2975
+classifier_step 127000/200000 loss=0.2851
+classifier_step 127500/200000 loss=0.2313
+classifier_step 128000/200000 loss=0.3203
+classifier_step 128500/200000 loss=0.3119
+classifier_step 129000/200000 loss=0.2589
+classifier_step 129500/200000 loss=0.2526
+classifier_step 130000/200000 loss=0.2332
+classifier_step 130500/200000 loss=0.3136
+classifier_step 131000/200000 loss=0.2713
+classifier_step 131500/200000 loss=0.2949
+classifier_step 132000/200000 loss=0.2334
+classifier_step 132500/200000 loss=0.3485
+classifier_step 133000/200000 loss=0.3533
+classifier_step 133500/200000 loss=0.3037
+classifier_step 134000/200000 loss=0.2553
+classifier_step 134500/200000 loss=0.2128
+classifier_step 135000/200000 loss=0.2199
+classifier_step 135500/200000 loss=0.3133
+classifier_step 136000/200000 loss=0.3026
+classifier_step 136500/200000 loss=0.2940
+classifier_step 137000/200000 loss=0.2490
+classifier_step 137500/200000 loss=0.2295
+classifier_step 138000/200000 loss=0.2231
+classifier_step 138500/200000 loss=0.2667
+classifier_step 139000/200000 loss=0.3235
+classifier_step 139500/200000 loss=0.2696
+classifier_step 140000/200000 loss=0.2897
+classifier_step 140500/200000 loss=0.2566
+classifier_step 141000/200000 loss=0.3460
+classifier_step 141500/200000 loss=0.3028
+classifier_step 142000/200000 loss=0.2482
+classifier_step 142500/200000 loss=0.3209
+classifier_step 143000/200000 loss=0.3129
+classifier_step 143500/200000 loss=0.2910
+classifier_step 144000/200000 loss=0.2900
+classifier_step 144500/200000 loss=0.3549
+classifier_step 145000/200000 loss=0.2579
+classifier_step 145500/200000 loss=0.2228
+classifier_step 146000/200000 loss=0.3502
+classifier_step 146500/200000 loss=0.3509
+classifier_step 147000/200000 loss=0.3020
+classifier_step 147500/200000 loss=0.2457
+classifier_step 148000/200000 loss=0.2074
+classifier_step 148500/200000 loss=0.3722
+classifier_step 149000/200000 loss=0.2636
+classifier_step 149500/200000 loss=0.2523
+classifier_step 150000/200000 loss=0.1813
+classifier_step 150500/200000 loss=0.3056
+classifier_step 151000/200000 loss=0.2025
+classifier_step 151500/200000 loss=0.3008
+classifier_step 152000/200000 loss=0.3241
+classifier_step 152500/200000 loss=0.2990
+classifier_step 153000/200000 loss=0.3765
+classifier_step 153500/200000 loss=0.3498
+classifier_step 154000/200000 loss=0.2529
+classifier_step 154500/200000 loss=0.2849
+classifier_step 155000/200000 loss=0.2757
+classifier_step 155500/200000 loss=0.2630
+classifier_step 156000/200000 loss=0.3179
+classifier_step 156500/200000 loss=0.4100
+classifier_step 157000/200000 loss=0.3152
+classifier_step 157500/200000 loss=0.3005
+classifier_step 158000/200000 loss=0.2674
+classifier_step 158500/200000 loss=0.2515
+classifier_step 159000/200000 loss=0.2531
+classifier_step 159500/200000 loss=0.2663
+classifier_step 160000/200000 loss=0.2929
+classifier_step 160500/200000 loss=0.3246
+classifier_step 161000/200000 loss=0.3271
+classifier_step 161500/200000 loss=0.3054
+classifier_step 162000/200000 loss=0.2867
+classifier_step 162500/200000 loss=0.2999
+classifier_step 163000/200000 loss=0.2832
+classifier_step 163500/200000 loss=0.3260
+classifier_step 164000/200000 loss=0.3198
+classifier_step 164500/200000 loss=0.3076
+classifier_step 165000/200000 loss=0.2859
+classifier_step 165500/200000 loss=0.2775
+classifier_step 166000/200000 loss=0.2357
+classifier_step 166500/200000 loss=0.2246
+classifier_step 167000/200000 loss=0.2427
+classifier_step 167500/200000 loss=0.2604
+classifier_step 168000/200000 loss=0.3254
+classifier_step 168500/200000 loss=0.3534
+classifier_step 169000/200000 loss=0.3198
+classifier_step 169500/200000 loss=0.3036
+classifier_step 170000/200000 loss=0.3383
+classifier_step 170500/200000 loss=0.2938
+classifier_step 171000/200000 loss=0.3336
+classifier_step 171500/200000 loss=0.2520
+classifier_step 172000/200000 loss=0.2205
+classifier_step 172500/200000 loss=0.2418
+classifier_step 173000/200000 loss=0.3428
+classifier_step 173500/200000 loss=0.3379
+classifier_step 174000/200000 loss=0.2984
+classifier_step 174500/200000 loss=0.3097
+classifier_step 175000/200000 loss=0.2707
+classifier_step 175500/200000 loss=0.3173
+classifier_step 176000/200000 loss=0.3147
+classifier_step 176500/200000 loss=0.2654
+classifier_step 177000/200000 loss=0.2586
+classifier_step 177500/200000 loss=0.2401
+classifier_step 178000/200000 loss=0.3211
+classifier_step 178500/200000 loss=0.3267
+classifier_step 179000/200000 loss=0.2890
+classifier_step 179500/200000 loss=0.2822
+classifier_step 180000/200000 loss=0.3396
+classifier_step 180500/200000 loss=0.3005
+classifier_step 181000/200000 loss=0.2982
+classifier_step 181500/200000 loss=0.2936
+classifier_step 182000/200000 loss=0.2174
+classifier_step 182500/200000 loss=0.2076
+classifier_step 183000/200000 loss=0.3270
+classifier_step 183500/200000 loss=0.3351
+classifier_step 184000/200000 loss=0.3169
+classifier_step 184500/200000 loss=0.3101
+classifier_step 185000/200000 loss=0.2734
+classifier_step 185500/200000 loss=0.2751
+classifier_step 186000/200000 loss=0.2252
+classifier_step 186500/200000 loss=0.3623
+classifier_step 187000/200000 loss=0.3046
+classifier_step 187500/200000 loss=0.3418
+classifier_step 188000/200000 loss=0.2939
+classifier_step 188500/200000 loss=0.2769
+classifier_step 189000/200000 loss=0.2659
+classifier_step 189500/200000 loss=0.2362
+classifier_step 190000/200000 loss=0.2435
+classifier_step 190500/200000 loss=0.3486
+classifier_step 191000/200000 loss=0.3437
+classifier_step 191500/200000 loss=0.2873
+classifier_step 192000/200000 loss=0.3136
+classifier_step 192500/200000 loss=0.2609
+classifier_step 193000/200000 loss=0.2273
+classifier_step 193500/200000 loss=0.2434
+classifier_step 194000/200000 loss=0.2349
+classifier_step 194500/200000 loss=0.2720
+classifier_step 195000/200000 loss=0.3754
+classifier_step 195500/200000 loss=0.3509
+classifier_step 196000/200000 loss=0.3488
+classifier_step 196500/200000 loss=0.2871
+classifier_step 197000/200000 loss=0.3224
+classifier_step 197500/200000 loss=0.2838
+classifier_step 198000/200000 loss=0.3442
+classifier_step 198500/200000 loss=0.2391
+classifier_step 199000/200000 loss=0.2551
+classifier_step 199500/200000 loss=0.2412
+classifier_step 200000/200000 loss=0.3672
+{
+  "num_samples": 2500000,
+  "num_classes": 50,
+  "top1_micro": 0.2903908,
+  "top1_macro": 0.06016002385334269,
+  "top5_micro": 0.5089548,
+  "top5_macro": 0.4,
+  "macro_precision": 0.08661885822163866,
+  "macro_recall": 0.06016002385334269,
+  "macro_f1": 0.05507102776631915,
+  "weighted_f1": 0.22718624599166434,
+  "support_min": 7392,
+  "support_max": 300449,
+  "support_mean": 50000.0,
+  "classifier": "all_mlp",
+  "support_lambda": 0.99,
+  "params_used": "ema",
+  "support_counts": [
+    300449,
+    299759,
+    64264,
+    64264,
+    64076,
+    63994,
+    28066,
+    27544,
+    15365,
+    13178,
+    13364,
+    22527,
+    22484,
+    22654,
+    22341,
+    22476,
+    11611,
+    28078,
+    28069,
+    47022,
+    47057,
+    47605,
+    18734,
+    18392,
+    13373,
+    195381,
+    195256,
+    90169,
+    35858,
+    36229,
+    35587,
+    11396,
+    18624,
+    15558,
+    27982,
+    27978,
+    27751,
+    28175,
+    35767,
+    35573,
+    35642,
+    64196,
+    64634,
+    64207,
+    64076,
+    9123,
+    15751,
+    15495,
+    15454,
+    7392
+  ],
+  "support_labels": [
+    "",
+    "",
+    "B1S | G",
+    "B1S | G",
+    "B1S | R",
+    "B1S | R",
+    "B2S | G",
+    "B2S | G",
+    "BST | G",
+    "BS2Z | G",
+    "BS2Z | G",
+    "BSZ | G",
+    "BSZ | G",
+    "BSZ | G",
+    "BSZ | R",
+    "BSZ | R",
+    "BSZ2 | G",
+    "B1T | G",
+    "B1T | R",
+    "B1Z | R",
+    "B1Z | R",
+    "B1Z | R",
+    "B2Z | G",
+    "B2Z | R",
+    "BZT | R",
+    "Ball | G",
+    "Ball | R",
+    "S | R",
+    "S2 | G",
+    "S2 | G",
+    "S2 | R",
+    "S2T | R",
+    "ST | G",
+    "S2Z | R",
+    "SZ | G",
+    "SZ | R",
+    "SZ | R",
+    "SZ | R",
+    "T | G",
+    "T | G",
+    "T | R",
+    "Z | G",
+    "Z | G",
+    "Z | R",
+    "Z | R",
+    "Z2T | G",
+    "ZT | G",
+    "ZT | R",
+    "ZT | R",
+    "ZT2 | R"
+  ]
+}

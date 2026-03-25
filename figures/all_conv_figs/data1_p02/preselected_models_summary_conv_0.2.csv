@@ -1,0 +1,17 @@
+Model,Count,Mask,DOF
+Ball,28272,"[True, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False]",1
+Ball>Stick,11995,"[True, True, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False]",5
+Ball>Stick>Stick,6225,"[True, True, True, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False]",9
+Ball>Stick>Stick>Stick,6225,"[True, True, True, True, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False]",13
+Ball>Zeppelin,48964,"[True, False, False, False, True, False, False, False, False, False, False, False, False, False, False, False, False, False, False]",6
+Ball>Zeppelin>Zeppelin,5329,"[True, False, False, False, True, True, False, False, False, False, False, False, False, False, False, False, False, False, False]",11
+Ball>Zeppelin>Zeppelin>Zeppelin,447,"[True, False, False, False, True, True, True, False, False, False, False, False, False, False, False, False, False, False, False]",16
+Ball>Dti,13455,"[True, False, False, False, False, False, False, True, False, False, False, False, False, False, False, False, False, False, False]",8
+Ball>Dti>Dti,6426,"[True, False, False, False, False, False, False, True, True, False, False, False, False, False, False, False, False, False, False]",15
+Ball>Dti>Dti>Dti,2545,"[True, False, False, False, False, False, False, True, True, True, False, False, False, False, False, False, False, False, False]",22
+Ball>Dot>WatsonStick,48179,"[True, False, False, False, False, False, False, False, False, False, True, True, False, False, False, False, False, False, False]",7
+Ball>BinghamStick>BinghamZeppelin,15394,"[True, False, False, False, False, False, False, False, False, False, False, False, False, True, True, False, False, False, False]",16
+NoddiB,203936,"[False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, True, False, False, False]",8
+NoddiW,126046,"[False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, True, False, False]",6
+SandiB,2801,"[False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, True, False]",10
+SandiW,8898,"[False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, True]",8

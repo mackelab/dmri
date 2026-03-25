@@ -1,0 +1,4 @@
+Sampling synthetic short dataset (50000)
+Sampling synthetic long dataset (50000)
+Evaluating synthetic KSDs (short)
+Evaluating 50000 samples (batch_size=10000)

@@ -1,0 +1,11 @@
+Model,Count,Mask,DOF
+Ball>WatsonStick,49184,"[True, False, False, False, False, False, False, False, False, False, False, True, False, False, False, False, False, False, False, True, False]",6
+Ball>BinghamStick,25608,"[True, False, False, False, False, False, False, False, False, False, False, False, False, True, False, False, False, False, False, True, False]",8
+Dti>WatsonStick,24207,"[False, False, False, False, False, False, False, True, False, False, False, True, False, False, False, False, False, False, False, True, False]",11
+Ball>NoddiW,17968,"[True, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, True, False, False, True, False]",8
+Ball>Dti>WatsonStick,9363,"[True, False, False, False, False, False, False, False, True, False, False, True, False, False, False, False, False, False, False, True, False]",13
+WatsonZeppelin,8577,"[False, False, False, False, False, False, False, False, False, False, False, False, True, False, False, False, False, False, False, True, False]",5
+Ball>Dot,8191,"[True, False, False, False, False, False, False, False, False, False, True, False, False, False, False, False, False, False, False, True, False]",2
+NoddiW,5964,"[False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, True, False, False, True, False]",6
+BinghamStick,5193,"[False, False, False, False, False, False, False, False, False, False, False, False, False, True, False, False, False, False, False, True, False]",6
+Ball>Dti>Dot,4920,"[True, False, False, False, False, False, False, False, False, True, True, False, False, False, False, False, False, False, False, True, False]",9

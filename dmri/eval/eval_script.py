@@ -30,9 +30,6 @@ from dmri.eval.selection import select_models
 from dmri.simulators import acquisition_scheme
 from dmri.train.utils import load_checkpoint
 
-# memory_fraction = 0.98  # Use 98% of available memory
-# os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = str(memory_fraction)
-
 # Compilation cache!
 jax.config.update("jax_compilation_cache_dir", ".jax_cache")
 jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)

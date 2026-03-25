@@ -155,3 +155,5 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+figures/all_fig/scene.bin
+figures/all_fig/scene.bin

@@ -1,0 +1,67 @@
+W0111 15:50:38.007593 2365137 platform_util.cc:218] unable to create StreamExecutor for CUDA:0: CUDA error: : CUDA_ERROR_UNKNOWN: unknown error
+Traceback (most recent call last):
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/jax/_src/xla_bridge.py", line 802, in backends
+    backend = _init_backend(platform)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/jax/_src/xla_bridge.py", line 886, in _init_backend
+    backend = registration.factory()
+              ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/jax/_src/xla_bridge.py", line 539, in make_pjrt_c_api_client
+    return xla_client.make_c_api_client(plugin_name, updated_options, None)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/jaxlib/xla_client.py", line 160, in make_c_api_client
+    return _xla.get_c_api_client(
+           ^^^^^^^^^^^^^^^^^^^^^^
+jax.errors.JaxRuntimeError: INTERNAL: no supported devices found for platform CUDA
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/weka/macke/mgloeckler90/dmri/figures/all_fig/./eval_fods.py", line 23, in <module>
+    from dmri.simulators.acquisition_scheme import acquisition_scheme
+  File "/weka/macke/mgloeckler90/dmri/dmri/simulators/__init__.py", line 15, in <module>
+    from dmri.simulators.acquisition_scheme import acquisition_scheme
+  File "/weka/macke/mgloeckler90/dmri/dmri/simulators/acquisition_scheme.py", line 18, in <module>
+    from probjax.utils.typing import Array, ArrayLike
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/probjax/utils/typing.py", line 65, in <module>
+    _KEY_BITS_SHAPE = jax.random.key_data(jax.random.key(0)).shape[-1]  # usually 2
+                                          ^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/jax/_src/random.py", line 220, in key
+    return _key('key', seed, impl)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/jax/_src/random.py", line 200, in _key
+    return prng.random_seed(seed, impl=impl)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/jax/_src/prng.py", line 554, in random_seed
+    seeds_arr = jnp.asarray(np.int64(seeds))
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/jax/_src/numpy/array_constructors.py", line 401, in asarray
+    return array(a, dtype=dtype, copy=bool(copy), order=order, device=device,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/jax/_src/numpy/array_constructors.py", line 286, in array
+    out_array: Array = lax._convert_element_type(
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/jax/_src/lax/lax.py", line 1727, in _convert_element_type
+    return convert_element_type_p.bind(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/jax/_src/core.py", line 632, in bind
+    return self._true_bind(*args, **params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/jax/_src/core.py", line 648, in _true_bind
+    return self.bind_with_trace(prev_trace, args, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/jax/_src/lax/lax.py", line 5035, in _convert_element_type_bind_with_trace
+    operand = core.Primitive.bind_with_trace(convert_element_type_p, trace, args, params)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/jax/_src/core.py", line 660, in bind_with_trace
+    return trace.process_primitive(self, args, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/jax/_src/core.py", line 1189, in process_primitive
+    return primitive.impl(*args, **params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/jax/_src/dispatch.py", line 92, in apply_primitive
+    outs = fun(*args)
+           ^^^^^^^^^^
+RuntimeError: Unable to initialize backend 'cuda': INTERNAL: no supported devices found for platform CUDA (you may need to uninstall the failing plugin package, or set JAX_PLATFORMS=cpu to skip this backend.)
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.

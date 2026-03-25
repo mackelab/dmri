@@ -1,0 +1,253 @@
+Traceback (most recent call last):
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/nibabel/loadsave.py", line 101, in load
+    stat_result = os.stat(filename)
+                  ^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '../data/new_data/data.nii.gz'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 570, in <module>
+    main()
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 324, in main
+    data_img, data_norm, brain_mask, bvals, bvecs = load_and_process_data(
+                                                    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py", line 11, in load_and_process_data
+    data, data_norm, brain_mask, bvals, bvecs = load_data(
+                                                ^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py", line 21, in load_data
+    data = nb.load(os.path.join(path, mri_data))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/nibabel/loadsave.py", line 103, in load
+    raise FileNotFoundError(f"No such file or no access: '{filename}'")
+FileNotFoundError: No such file or no access: '../data/new_data/data.nii.gz'
+Traceback (most recent call last):
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/nibabel/loadsave.py", line 101, in load
+    stat_result = os.stat(filename)
+                  ^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '../data/new_data/data.nii.gz'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 570, in <module>
+    main()
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 324, in main
+    data_img, data_norm, brain_mask, bvals, bvecs = load_and_process_data(
+                                                    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py", line 11, in load_and_process_data
+    data, data_norm, brain_mask, bvals, bvecs = load_data(
+                                                ^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py", line 21, in load_data
+    data = nb.load(os.path.join(path, mri_data))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/nibabel/loadsave.py", line 103, in load
+    raise FileNotFoundError(f"No such file or no access: '{filename}'")
+FileNotFoundError: No such file or no access: '../data/new_data/data.nii.gz'
+Traceback (most recent call last):
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/nibabel/loadsave.py", line 101, in load
+    stat_result = os.stat(filename)
+                  ^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '../data/new_data/data.nii.gz'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 570, in <module>
+    main()
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 324, in main
+    data_img, data_norm, brain_mask, bvals, bvecs = load_and_process_data(
+                                                    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py", line 11, in load_and_process_data
+    data, data_norm, brain_mask, bvals, bvecs = load_data(
+                                                ^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py", line 21, in load_data
+    data = nb.load(os.path.join(path, mri_data))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/nibabel/loadsave.py", line 103, in load
+    raise FileNotFoundError(f"No such file or no access: '{filename}'")
+FileNotFoundError: No such file or no access: '../data/new_data/data.nii.gz'
+Traceback (most recent call last):
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/nibabel/loadsave.py", line 101, in load
+    stat_result = os.stat(filename)
+                  ^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '../data/new_data/data.nii.gz'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 570, in <module>
+    main()
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 324, in main
+    data_img, data_norm, brain_mask, bvals, bvecs = load_and_process_data(
+                                                    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py", line 11, in load_and_process_data
+    data, data_norm, brain_mask, bvals, bvecs = load_data(
+                                                ^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py", line 21, in load_data
+    data = nb.load(os.path.join(path, mri_data))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/nibabel/loadsave.py", line 103, in load
+    raise FileNotFoundError(f"No such file or no access: '{filename}'")
+FileNotFoundError: No such file or no access: '../data/new_data/data.nii.gz'
+Traceback (most recent call last):
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/nibabel/loadsave.py", line 101, in load
+    stat_result = os.stat(filename)
+                  ^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '../data/new_data/data.nii.gz'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 570, in <module>
+    main()
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 324, in main
+    data_img, data_norm, brain_mask, bvals, bvecs = load_and_process_data(
+                                                    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py", line 11, in load_and_process_data
+    data, data_norm, brain_mask, bvals, bvecs = load_data(
+                                                ^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py", line 21, in load_data
+    data = nb.load(os.path.join(path, mri_data))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/nibabel/loadsave.py", line 103, in load
+    raise FileNotFoundError(f"No such file or no access: '{filename}'")
+FileNotFoundError: No such file or no access: '../data/new_data/data.nii.gz'
+Traceback (most recent call last):
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/nibabel/loadsave.py", line 101, in load
+    stat_result = os.stat(filename)
+                  ^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '../data/new_data/data.nii.gz'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 570, in <module>
+    main()
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 324, in main
+    data_img, data_norm, brain_mask, bvals, bvecs = load_and_process_data(
+                                                    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py", line 11, in load_and_process_data
+    data, data_norm, brain_mask, bvals, bvecs = load_data(
+                                                ^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py", line 21, in load_data
+    data = nb.load(os.path.join(path, mri_data))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/nibabel/loadsave.py", line 103, in load
+    raise FileNotFoundError(f"No such file or no access: '{filename}'")
+FileNotFoundError: No such file or no access: '../data/new_data/data.nii.gz'
+Traceback (most recent call last):
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/nibabel/loadsave.py", line 101, in load
+    stat_result = os.stat(filename)
+                  ^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '../data/new_data/data.nii.gz'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 570, in <module>
+    main()
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 324, in main
+    data_img, data_norm, brain_mask, bvals, bvecs = load_and_process_data(
+                                                    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py", line 11, in load_and_process_data
+    data, data_norm, brain_mask, bvals, bvecs = load_data(
+                                                ^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py", line 21, in load_data
+    data = nb.load(os.path.join(path, mri_data))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/nibabel/loadsave.py", line 103, in load
+    raise FileNotFoundError(f"No such file or no access: '{filename}'")
+FileNotFoundError: No such file or no access: '../data/new_data/data.nii.gz'
+Traceback (most recent call last):
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/nibabel/loadsave.py", line 101, in load
+    stat_result = os.stat(filename)
+                  ^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '../data/new_data/data.nii.gz'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 570, in <module>
+    main()
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 324, in main
+    data_img, data_norm, brain_mask, bvals, bvecs = load_and_process_data(
+                                                    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py", line 11, in load_and_process_data
+    data, data_norm, brain_mask, bvals, bvecs = load_data(
+                                                ^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py", line 21, in load_data
+    data = nb.load(os.path.join(path, mri_data))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/nibabel/loadsave.py", line 103, in load
+    raise FileNotFoundError(f"No such file or no access: '{filename}'")
+FileNotFoundError: No such file or no access: '../data/new_data/data.nii.gz'
+Traceback (most recent call last):
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/nibabel/loadsave.py", line 101, in load
+    stat_result = os.stat(filename)
+                  ^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '../data/new_data/data.nii.gz'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 570, in <module>
+    main()
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 324, in main
+    data_img, data_norm, brain_mask, bvals, bvecs = load_and_process_data(
+                                                    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py", line 11, in load_and_process_data
+    data, data_norm, brain_mask, bvals, bvecs = load_data(
+                                                ^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py", line 21, in load_data
+    data = nb.load(os.path.join(path, mri_data))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/nibabel/loadsave.py", line 103, in load
+    raise FileNotFoundError(f"No such file or no access: '{filename}'")
+FileNotFoundError: No such file or no access: '../data/new_data/data.nii.gz'
+Traceback (most recent call last):
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/nibabel/loadsave.py", line 101, in load
+    stat_result = os.stat(filename)
+                  ^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '../data/new_data/data.nii.gz'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 570, in <module>
+    main()
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 324, in main
+    data_img, data_norm, brain_mask, bvals, bvecs = load_and_process_data(
+                                                    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py", line 11, in load_and_process_data
+    data, data_norm, brain_mask, bvals, bvecs = load_data(
+                                                ^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py", line 21, in load_data
+    data = nb.load(os.path.join(path, mri_data))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/nibabel/loadsave.py", line 103, in load
+    raise FileNotFoundError(f"No such file or no access: '{filename}'")
+FileNotFoundError: No such file or no access: '../data/new_data/data.nii.gz'
+Traceback (most recent call last):
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/nibabel/loadsave.py", line 101, in load
+    stat_result = os.stat(filename)
+                  ^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '../data/new_data/data.nii.gz'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 570, in <module>
+    main()
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 324, in main
+    data_img, data_norm, brain_mask, bvals, bvecs = load_and_process_data(
+                                                    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py", line 11, in load_and_process_data
+    data, data_norm, brain_mask, bvals, bvecs = load_data(
+                                                ^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py", line 21, in load_data
+    data = nb.load(os.path.join(path, mri_data))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/nibabel/loadsave.py", line 103, in load
+    raise FileNotFoundError(f"No such file or no access: '{filename}'")
+FileNotFoundError: No such file or no access: '../data/new_data/data.nii.gz'

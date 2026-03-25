@@ -1,0 +1,29 @@
+Sampling synthetic short dataset (50000)
+Sampling synthetic long dataset (50000)
+Evaluating synthetic KSDs (short)
+Evaluating 50000 samples (batch_size=2000)
+Evaluating synthetic KSD priors (short)
+Evaluating 50000 samples (batch_size=2000)
+Saved synthetic short results.
+Evaluating synthetic KSDs (long)
+Evaluating 50000 samples (batch_size=2000)
+Evaluating synthetic KSD priors (long)
+Evaluating 50000 samples (batch_size=2000)
+Saved synthetic long results.
+Saved synthetic violin plot.
+Loading real short data from data
+Loading real long data from new_data
+Sampling random masks for real data (50000)
+Evaluating real KSDs (short, random masks)
+Evaluating 50000 samples (batch_size=2000)
+Evaluating real KSD priors (short, random masks)
+Evaluating 50000 samples (batch_size=2000)
+Saved real short random-mask results.
+Evaluating real KSDs (long, random masks)
+Evaluating 50000 samples (batch_size=2000)
+Evaluating real KSD priors (long, random masks)
+Evaluating 50000 samples (batch_size=2000)
+Saved real long random-mask results.
+Saved real random-mask violin plot.
+Sampling selected masks (short)
+Sampling selected masks (long)

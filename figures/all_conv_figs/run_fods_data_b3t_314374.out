@@ -1,0 +1,10 @@
+Starting coverage evaluation...
+Checkpoint: /home/macke/mgloeckler90/dmri/results/updated_all_3_6_8_128_model_prior_with_convs_2gpus
+Output dir: outputs/coverage_eval2
+INFO: Continuing from step 3380000
+Inference model types (19): Ball, Stick, Stick, Stick, Zeppelin, Zeppelin, Zeppelin, Dti, Dti, Dti, Dot, WatsonStick, WatsonZeppelin, BinghamStick, BinghamZeppelin, NoddiB, NoddiW, SandiB, SandiW
+INFO: Running inference with 19 model types: Ball, Stick, Stick, Stick, Zeppelin, Zeppelin, Zeppelin, Dti, Dti, Dti, Dot, WatsonStick, WatsonZeppelin, BinghamStick, BinghamZeppelin, NoddiB, NoddiW, SandiB, SandiW
+INFO: Running theta coverage for 1 dataset(s) (short).
+INFO: Dataset 1/1: p=0.5 (short)
+INFO: Sampling synthetic data for theta p=0.500 (short)
+INFO: Computing theta coverage for p=0.5 (short)

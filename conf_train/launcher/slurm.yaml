@@ -18,7 +18,7 @@ hydra:
     qos: null
     comment: null
     constraint: null
-    exclude: null
+    exclude: mlcbm005
     gres: gpu
     cpus_per_gpu: null
     gpus_per_task: null

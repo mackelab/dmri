@@ -1,0 +1,7 @@
+
+prior_mask_alpha: 1.
+prior_mask_beta: 1.
+with_posterior_score: false
+defaults:
+  - sim_type: all_b3s
+  - acquisition_scheme: hcp

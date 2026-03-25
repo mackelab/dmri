@@ -1,0 +1,55 @@
+/weka/macke/mgloeckler90/dmri/figures/all_fig/./eval_fods.py:1280: UserWarning: Pass ['bvecs'] as keyword args. From version 2.0.0 passing these as positional arguments will result in an error. 
+  gtab = gradient_table(bvals, bvecs)
+INFO:root:Continuing from step 2000000
+INFO:__main__:b3s batch 0:100
+INFO:__main__:b3s batch 100:200
+INFO:__main__:b3s batch 200:300
+INFO:__main__:b3s batch 300:400
+INFO:__main__:b3s batch 400:500
+INFO:__main__:b3s batch 500:600
+INFO:__main__:b3s batch 600:700
+INFO:__main__:b3s batch 700:800
+INFO:__main__:b3s batch 800:900
+INFO:__main__:b3s batch 900:1000
+INFO:__main__:b3s batch 1000:1100
+INFO:__main__:b3s batch 1100:1200
+INFO:__main__:b3s batch 1200:1300
+INFO:__main__:b3s batch 1300:1400
+INFO:__main__:b3s batch 1400:1500
+INFO:__main__:b3s batch 1500:1600
+INFO:__main__:b3s batch 1600:1700
+INFO:__main__:b3s batch 1700:1800
+INFO:__main__:b3s batch 1800:1900
+INFO:__main__:b3s batch 1900:2000
+INFO:__main__:b3s batch 2000:2100
+INFO:__main__:b3s batch 2100:2200
+INFO:__main__:b3s batch 2200:2300
+INFO:__main__:b3s batch 2300:2400
+INFO:__main__:b3s batch 2400:2500
+INFO:__main__:b3s batch 2500:2600
+INFO:__main__:b3s batch 2600:2700
+INFO:__main__:b3s batch 2700:2800
+INFO:__main__:b3s batch 2800:2900
+INFO:__main__:b3s batch 2900:3000
+INFO:__main__:b3s batch 3000:3100
+INFO:__main__:b3s batch 3100:3200
+INFO:__main__:b3s batch 3200:3300
+INFO:__main__:b3s batch 3300:3400
+INFO:__main__:b3s batch 3400:3500
+INFO:__main__:b3s batch 3500:3600
+INFO:__main__:b3s batch 3600:3700
+INFO:__main__:b3s batch 3700:3800
+INFO:__main__:b3s batch 3800:3900
+INFO:__main__:b3s batch 3900:4000
+INFO:__main__:b3s batch 4000:4100
+INFO:__main__:b3s batch 4100:4200
+INFO:__main__:b3s batch 4200:4300
+INFO:__main__:b3s batch 4300:4400
+INFO:__main__:b3s batch 4400:4500
+INFO:__main__:b3s batch 4500:4600
+INFO:__main__:b3s batch 4600:4700
+INFO:__main__:b3s batch 4700:4800
+INFO:__main__:b3s batch 4800:4900
+INFO:__main__:b3s batch 4900:5000
+INFO:__main__:b3s batch 5000:5092
+INFO:__main__:Finished. Outputs: {'b3s': Path('../../outputs/fods_data_slice5/fod_b3s.npy')}

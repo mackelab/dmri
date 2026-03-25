@@ -1,0 +1,18 @@
+W0112 10:08:28.849648 1044737 bfc_allocator.cc:501] Allocator (GPU_0_bfc) ran out of memory trying to allocate 24.79GiB (rounded to 26624000000)requested by op 
+If the cause is memory fragmentation maybe the environment variable 'TF_GPU_ALLOCATOR=cuda_malloc_async' will improve the situation. 
+Current allocation summary follows.
+Current allocation summary follows.
+W0112 10:08:28.850102 1044737 bfc_allocator.cc:512] *****************************************************************************_______________________
+W0112 10:08:28.850137 1044737 gemm_fusion_autotuner.cc:1369] Autotuning candidate failed with out of memory error. Consider disabling correctness checking (i.e. --xla_gpu_autotune_level=3) to reduce autotuning memory usage.
+Traceback (most recent call last):
+  File "/weka/macke/mgloeckler90/dmri/figures/all_fig/./cov_eval_all.py", line 943, in <module>
+    main()
+  File "/weka/macke/mgloeckler90/dmri/figures/all_fig/./cov_eval_all.py", line 909, in main
+    rng = run_coverage(
+          ^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/figures/all_fig/./cov_eval_all.py", line 690, in run_coverage
+    alpha, coverage, pits = expected_coverage(dataset, key)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+jax.errors.JaxRuntimeError: RESOURCE_EXHAUSTED: Out of memory while trying to allocate 24.79GiB.
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.

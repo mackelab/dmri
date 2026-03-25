@@ -38,14 +38,19 @@ from dmri.simulators.multi_compartment import (
     MultiCompartment,
     SharedDiffusivity,
     SharedMultiShellDiffusivity,
+    SharedMixedShellDiffusivity,
     SharedMultiShellDiffusivityGammaPrior,
     SharedSSFPDiffusivity,
 )
 from dmri.simulators.noise_compartments import (
     BoundedGaussianNoise,
     BoundedRicianNoise,
-    RicianNoiseSNR310,
-    RicianNoiseSNR1020,
+    RicianNoiseSNR0330,
+    RicianNoiseSNR3060,
+    RicianNoiseSNR6090,
+    GaussianNoiseSNR6090,
+    GaussianNoiseSNR3060,
+    GaussianNoiseSNR0330,
 )
 from dmri.utils.dmriutils import ssfp_signal_fn
 
@@ -158,6 +163,22 @@ class MultiShellBall3StickSharedDiffusivityGammaPrior(MultiCompartment):
     shared_parameter_type = SharedMultiShellDiffusivityGammaPrior
 
 
+class AllBall3StickSharedDiffusivity(MultiCompartment):
+    model_types = [
+        MultiShellStaticBall,
+        MultiShellStaticStick,
+        MultiShellStaticStick,
+        MultiShellStaticStick,
+        StaticBall,
+        StaticStick,
+        StaticStick,
+        StaticStick,
+    ]
+    noise_types = [GaussianNoiseSNR0330, GaussianNoiseSNR3060, GaussianNoiseSNR6090]
+    fraction_prior = jnp.array([3.5, 1.0, 0.3, 0.1, 3.5, 1.0, 0.3, 0.1])
+    shared_parameter_type = SharedMixedShellDiffusivity
+
+
 class BallStick(MultiCompartment):
     model_types = [Ball, Stick]
     noise_types = []
@@ -178,13 +199,13 @@ class Ball3Stick(MultiCompartment):
 
 class Ball3StickNoise(MultiCompartment):
     model_types = [Ball, Stick, Stick, Stick]
-    noise_types = [RicianNoiseSNR310, RicianNoiseSNR1020]
+    noise_types = [RicianNoiseSNR0330, RicianNoiseSNR3060]
     fraction_prior = jnp.ones(4)
 
 
 class BallStickZeppelinNoise(MultiCompartment):
     model_types = [Ball, Stick, Zeppelin]
-    noise_types = [RicianNoiseSNR310, RicianNoiseSNR1020]
+    noise_types = [RicianNoiseSNR0330, RicianNoiseSNR3060]
     fraction_prior = jnp.ones(3)
 
 
@@ -205,8 +226,8 @@ class Ball2Stick2Zeppelin2Dti(MultiCompartment):
 class Ball3Stick3ZeppelinNoise(MultiCompartment):
     model_types = [Ball] + 3 * [Stick] + 3 * [Zeppelin]
     noise_types = [
-        RicianNoiseSNR310,
-        RicianNoiseSNR1020,
+        RicianNoiseSNR0330,
+        RicianNoiseSNR3060,
     ]
     fraction_prior = jnp.ones(1 + 3 + 3)
 
@@ -229,6 +250,19 @@ class AllGaussianModelsParamCountPrior(MultiCompartment):
     fraction_prior = jnp.ones(1 + 3 + 3 + 3)
     mask_prior_cls = TotalParamPenalizedPrior
 
+class AllGaussianModelsParamCountPriorMoreNoise(MultiCompartment):
+    model_types = [Ball] + 3 * [Stick] + 3 * [Zeppelin] + 3 * [Dti]
+    noise_types = [
+        GaussianNoiseSNR0330,
+        GaussianNoiseSNR3060,
+        GaussianNoiseSNR6090,
+        RicianNoiseSNR0330,
+        RicianNoiseSNR3060,
+        RicianNoiseSNR6090,
+    ]
+    fraction_prior = jnp.ones(1 + 3 + 3 + 3)
+    mask_prior_cls = TotalParamPenalizedPrior
+    mask_prior_kwargs = {'penalty_max': 2.}
 
 class AllGaussianAndConvolvedModels(MultiCompartment):
     model_types = (

@@ -1,0 +1,42 @@
+/weka/macke/mgloeckler90/dmri/figures/all_fig/./eval_fods.py:934: UserWarning: Pass ['bvecs'] as keyword args. From version 2.0.0 passing these as positional arguments will result in an error. 
+  gtab = gradient_table(bvals, bvecs)
+INFO:root:Continuing from step 2000000
+INFO:__main__:Resuming all: 10271/227840 voxels already computed.
+INFO:__main__:all resume: starting at index 10000.
+INFO:__main__:all batch 10000:10500
+INFO:__main__:all batch 10500:11000
+INFO:__main__:all batch 11000:11500
+INFO:__main__:all batch 11500:12000
+INFO:__main__:all batch 12000:12500
+INFO:__main__:all batch 12500:13000
+INFO:__main__:all batch 13000:13500
+INFO:__main__:all batch 13500:14000
+INFO:__main__:all batch 14000:14500
+INFO:__main__:all batch 14500:15000
+INFO:__main__:all batch 15000:15500
+INFO:__main__:all batch 15500:16000
+INFO:__main__:all batch 16000:16500
+INFO:__main__:all batch 16500:17000
+INFO:__main__:all batch 17000:17500
+INFO:__main__:all batch 17500:18000
+INFO:__main__:all batch 18000:18500
+INFO:__main__:all batch 18500:19000
+INFO:__main__:all batch 19000:19500
+INFO:__main__:all batch 19500:20000
+INFO:__main__:all batch 20000:20500
+INFO:__main__:all batch 20500:21000
+INFO:__main__:all batch 21000:21500
+INFO:__main__:all batch 21500:22000
+INFO:__main__:all batch 22000:22500
+INFO:__main__:all batch 22500:23000
+INFO:__main__:all batch 23000:23500
+INFO:__main__:all batch 23500:24000
+INFO:__main__:all batch 24000:24500
+INFO:__main__:all batch 24500:25000
+INFO:__main__:all batch 25000:25500
+INFO:__main__:all batch 25500:26000
+INFO:__main__:all batch 26000:26500
+INFO:__main__:all batch 26500:27000
+INFO:__main__:all batch 27000:27500
+INFO:__main__:all batch 27500:28000
+slurmstepd: error: *** JOB 311868 ON mlcbm013 CANCELLED AT 2026-01-12T17:35:53 ***

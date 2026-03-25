@@ -1,0 +1,4 @@
+/weka/macke/mgloeckler90/dmri/figures/all_fig/./ksd_eval_all.py:145: RuntimeWarning: divide by zero encountered in divide
+  data_norm = data / s0[..., None]
+/weka/macke/mgloeckler90/dmri/figures/all_fig/./ksd_eval_all.py:145: RuntimeWarning: invalid value encountered in divide
+  data_norm = data / s0[..., None]

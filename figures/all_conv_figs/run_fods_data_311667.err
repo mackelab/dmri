@@ -1,0 +1,209 @@
+/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py:57: RuntimeWarning: divide by zero encountered in divide
+  data_norm = data_norm / S0
+/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py:57: RuntimeWarning: invalid value encountered in divide
+  data_norm = data_norm / S0
+Traceback (most recent call last):
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 570, in <module>
+    main()
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 471, in main
+    samples_in_brain = eval_in_batches(
+                       ^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 221, in eval_in_batches
+    batch_out = fn(batch_keys, batch_data)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 455, in sample_best_mask
+    model.sample_mask, acq=acq, x=x, mask_prior=jnp.array([args.p_prior], temperature=0.1)
+                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: array() got an unexpected keyword argument 'temperature'
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py:57: RuntimeWarning: divide by zero encountered in divide
+  data_norm = data_norm / S0
+/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py:57: RuntimeWarning: invalid value encountered in divide
+  data_norm = data_norm / S0
+Traceback (most recent call last):
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 570, in <module>
+    main()
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 471, in main
+    samples_in_brain = eval_in_batches(
+                       ^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 221, in eval_in_batches
+    batch_out = fn(batch_keys, batch_data)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 455, in sample_best_mask
+    model.sample_mask, acq=acq, x=x, mask_prior=jnp.array([args.p_prior], temperature=0.1)
+                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: array() got an unexpected keyword argument 'temperature'
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py:57: RuntimeWarning: divide by zero encountered in divide
+  data_norm = data_norm / S0
+/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py:57: RuntimeWarning: invalid value encountered in divide
+  data_norm = data_norm / S0
+Traceback (most recent call last):
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 570, in <module>
+    main()
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 471, in main
+    samples_in_brain = eval_in_batches(
+                       ^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 221, in eval_in_batches
+    batch_out = fn(batch_keys, batch_data)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 455, in sample_best_mask
+    model.sample_mask, acq=acq, x=x, mask_prior=jnp.array([args.p_prior], temperature=0.1)
+                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: array() got an unexpected keyword argument 'temperature'
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py:57: RuntimeWarning: divide by zero encountered in divide
+  data_norm = data_norm / S0
+/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py:57: RuntimeWarning: invalid value encountered in divide
+  data_norm = data_norm / S0
+Traceback (most recent call last):
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 570, in <module>
+    main()
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 471, in main
+    samples_in_brain = eval_in_batches(
+                       ^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 221, in eval_in_batches
+    batch_out = fn(batch_keys, batch_data)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 455, in sample_best_mask
+    model.sample_mask, acq=acq, x=x, mask_prior=jnp.array([args.p_prior], temperature=0.1)
+                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: array() got an unexpected keyword argument 'temperature'
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py:57: RuntimeWarning: divide by zero encountered in divide
+  data_norm = data_norm / S0
+/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py:57: RuntimeWarning: invalid value encountered in divide
+  data_norm = data_norm / S0
+Traceback (most recent call last):
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 570, in <module>
+    main()
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 471, in main
+    samples_in_brain = eval_in_batches(
+                       ^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 221, in eval_in_batches
+    batch_out = fn(batch_keys, batch_data)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 455, in sample_best_mask
+    model.sample_mask, acq=acq, x=x, mask_prior=jnp.array([args.p_prior], temperature=0.1)
+                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: array() got an unexpected keyword argument 'temperature'
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py:57: RuntimeWarning: divide by zero encountered in divide
+  data_norm = data_norm / S0
+/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py:57: RuntimeWarning: invalid value encountered in divide
+  data_norm = data_norm / S0
+Traceback (most recent call last):
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 570, in <module>
+    main()
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 471, in main
+    samples_in_brain = eval_in_batches(
+                       ^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 221, in eval_in_batches
+    batch_out = fn(batch_keys, batch_data)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 455, in sample_best_mask
+    model.sample_mask, acq=acq, x=x, mask_prior=jnp.array([args.p_prior], temperature=0.1)
+                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: array() got an unexpected keyword argument 'temperature'
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py:57: RuntimeWarning: divide by zero encountered in divide
+  data_norm = data_norm / S0
+/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py:57: RuntimeWarning: invalid value encountered in divide
+  data_norm = data_norm / S0
+Traceback (most recent call last):
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 570, in <module>
+    main()
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 471, in main
+    samples_in_brain = eval_in_batches(
+                       ^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 221, in eval_in_batches
+    batch_out = fn(batch_keys, batch_data)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 455, in sample_best_mask
+    model.sample_mask, acq=acq, x=x, mask_prior=jnp.array([args.p_prior], temperature=0.1)
+                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: array() got an unexpected keyword argument 'temperature'
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py:57: RuntimeWarning: divide by zero encountered in divide
+  data_norm = data_norm / S0
+/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py:57: RuntimeWarning: invalid value encountered in divide
+  data_norm = data_norm / S0
+Traceback (most recent call last):
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 570, in <module>
+    main()
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 471, in main
+    samples_in_brain = eval_in_batches(
+                       ^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 221, in eval_in_batches
+    batch_out = fn(batch_keys, batch_data)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 455, in sample_best_mask
+    model.sample_mask, acq=acq, x=x, mask_prior=jnp.array([args.p_prior], temperature=0.1)
+                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: array() got an unexpected keyword argument 'temperature'
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py:57: RuntimeWarning: divide by zero encountered in divide
+  data_norm = data_norm / S0
+/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py:57: RuntimeWarning: invalid value encountered in divide
+  data_norm = data_norm / S0
+Traceback (most recent call last):
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 570, in <module>
+    main()
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 471, in main
+    samples_in_brain = eval_in_batches(
+                       ^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 221, in eval_in_batches
+    batch_out = fn(batch_keys, batch_data)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 455, in sample_best_mask
+    model.sample_mask, acq=acq, x=x, mask_prior=jnp.array([args.p_prior], temperature=0.1)
+                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: array() got an unexpected keyword argument 'temperature'
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py:57: RuntimeWarning: divide by zero encountered in divide
+  data_norm = data_norm / S0
+/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py:57: RuntimeWarning: invalid value encountered in divide
+  data_norm = data_norm / S0
+Traceback (most recent call last):
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 570, in <module>
+    main()
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 471, in main
+    samples_in_brain = eval_in_batches(
+                       ^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 221, in eval_in_batches
+    batch_out = fn(batch_keys, batch_data)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 455, in sample_best_mask
+    model.sample_mask, acq=acq, x=x, mask_prior=jnp.array([args.p_prior], temperature=0.1)
+                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: array() got an unexpected keyword argument 'temperature'
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py:57: RuntimeWarning: divide by zero encountered in divide
+  data_norm = data_norm / S0
+/weka/macke/mgloeckler90/dmri/dmri/eval/load_data.py:57: RuntimeWarning: invalid value encountered in divide
+  data_norm = data_norm / S0
+Traceback (most recent call last):
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 570, in <module>
+    main()
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 471, in main
+    samples_in_brain = eval_in_batches(
+                       ^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 221, in eval_in_batches
+    batch_out = fn(batch_keys, batch_data)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/figures/all_conv_figs/./eval_all_conv.py", line 455, in sample_best_mask
+    model.sample_mask, acq=acq, x=x, mask_prior=jnp.array([args.p_prior], temperature=0.1)
+                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: array() got an unexpected keyword argument 'temperature'
+--------------------
+For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.

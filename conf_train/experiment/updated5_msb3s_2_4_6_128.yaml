@@ -12,6 +12,7 @@ hydra:
       model.inference_net.params.num_layers: 6
       model.model_selection_net.params.num_layers: 4
       train.ema_decay: 0.999
+      #train.eval_freq: 500_000
 
 defaults:
   - _self_

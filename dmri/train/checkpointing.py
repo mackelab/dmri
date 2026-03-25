@@ -1,4 +1,5 @@
 import logging
+import math
 import os
 import shutil
 from typing import Any, Optional
@@ -24,6 +25,8 @@ class CheckpointManager:
         recovery_threshold: float = float("inf"),
         continue_training: bool = False,
     ) -> None:
+        if recovery_threshold is None:
+            recovery_threshold = float("inf")
         self._max_to_keep = max_to_keep
         self.ckpt_dir = ckpt_dir
         self.best_ckpt_dir = os.path.join(ckpt_dir, "best")
@@ -222,8 +225,18 @@ class CheckpointManager:
             if recovery_threshold is None
             else recovery_threshold
         )
+        if (
+            recovery_threshold is None
+            or not math.isfinite(recovery_threshold)
+            or recovery_threshold <= 1.0
+        ):
+            self.prev_metric = current_metric
+            return False
 
-        if current_metric > self.prev_metric * recovery_threshold:
+        trigger_value = self.prev_metric + abs(self.prev_metric) * (
+            recovery_threshold - 1.0
+        )
+        if current_metric > trigger_value:
             return True
 
         self.prev_metric = current_metric

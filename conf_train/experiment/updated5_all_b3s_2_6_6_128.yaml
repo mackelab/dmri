@@ -1,0 +1,24 @@
+# @package _global_
+name: updated5_all_b3s_2_6_6_128
+use_wandb: true
+
+hydra:
+  sweeper:
+    params:
+      wandb.project: b3s_all
+      train.continue_training: true
+      train.restart_optimizer: true
+      model.model_dim: 128
+      model.embedding_net.params.num_layers: 2
+      model.inference_net.params.num_layers: 6
+      model.model_selection_net.params.num_layers: 6
+      train.ema_decay: 0.999
+
+defaults:
+  - _self_
+  - override /partition: h100_long
+  - override /simulator: all_b3s
+  - override /simulator/acquisition_scheme: multi
+  - override /model: dmri_pp
+  - override /train: new
+  - override /train/dataloader: datastream_large

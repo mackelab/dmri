@@ -1,0 +1,4 @@
+/weka/macke/mgloeckler90/dmri/figures/all_fig/./eval_fods.py:244: UserWarning: Pass ['name'] as keyword args. From version 2.0.0 passing these as positional arguments will result in an error. 
+  fimg, fbvals, fbvecs = get_fnames(dataset)
+/weka/macke/mgloeckler90/dmri/figures/all_fig/./eval_fods.py:669: UserWarning: Pass ['bvecs'] as keyword args. From version 2.0.0 passing these as positional arguments will result in an error. 
+  gtab = gradient_table(bvals, bvecs)

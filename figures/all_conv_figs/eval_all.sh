@@ -1,0 +1,11 @@
+python ./eval_all_conv.py --skip-coverage --p-prior 0.0 --output-dir data0_p00
+python ./eval_all_conv.py --skip-coverage --p-prior 0.1 --output-dir data0_p01
+python ./eval_all_conv.py --skip-coverage --p-prior 0.2 --output-dir data0_p02
+python ./eval_all_conv.py --skip-coverage --p-prior 0.3 --output-dir data0_p03
+python ./eval_all_conv.py --skip-coverage --p-prior 0.4 --output-dir data0_p04
+python ./eval_all_conv.py --skip-coverage --p-prior 0.5 --output-dir data0_p05
+python ./eval_all_conv.py --skip-coverage --p-prior 0.6 --output-dir data0_p06
+python ./eval_all_conv.py --skip-coverage --p-prior 0.7 --output-dir data0_p07
+python ./eval_all_conv.py --skip-coverage --p-prior 0.8 --output-dir data0_p08
+python ./eval_all_conv.py --skip-coverage --p-prior 0.9 --output-dir data0_p09
+python ./eval_all_conv.py --skip-coverage --p-prior 1.0 --output-dir data0_p10

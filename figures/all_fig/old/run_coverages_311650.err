@@ -1,0 +1,16 @@
+/weka/macke/mgloeckler90/dmri/figures/all_fig/./ksd_eval_all.py:501: UserWarning: Tight layout not applied. The bottom and top margins cannot be made large enough to accommodate all Axes decorations.
+  fig.tight_layout()
+/weka/macke/mgloeckler90/dmri/figures/all_fig/./ksd_eval_all.py:501: UserWarning: Tight layout not applied. The bottom and top margins cannot be made large enough to accommodate all Axes decorations.
+  fig.tight_layout()
+/weka/macke/mgloeckler90/dmri/figures/all_fig/./ksd_eval_all.py:147: RuntimeWarning: divide by zero encountered in divide
+  data_norm = data / s0[..., None]
+/weka/macke/mgloeckler90/dmri/figures/all_fig/./ksd_eval_all.py:147: RuntimeWarning: invalid value encountered in divide
+  data_norm = data / s0[..., None]
+/weka/macke/mgloeckler90/dmri/figures/all_fig/./ksd_eval_all.py:501: UserWarning: Tight layout not applied. The bottom and top margins cannot be made large enough to accommodate all Axes decorations.
+  fig.tight_layout()
+/weka/macke/mgloeckler90/dmri/figures/all_fig/./ksd_eval_all.py:501: UserWarning: Tight layout not applied. The bottom and top margins cannot be made large enough to accommodate all Axes decorations.
+  fig.tight_layout()
+/weka/macke/mgloeckler90/dmri/figures/all_fig/./ksd_eval_all.py:501: UserWarning: Tight layout not applied. The bottom and top margins cannot be made large enough to accommodate all Axes decorations.
+  fig.tight_layout()
+/weka/macke/mgloeckler90/dmri/figures/all_fig/./ksd_eval_all.py:501: UserWarning: Tight layout not applied. The bottom and top margins cannot be made large enough to accommodate all Axes decorations.
+  fig.tight_layout()

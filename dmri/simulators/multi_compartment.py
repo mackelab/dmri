@@ -532,6 +532,35 @@ class SharedMultiShellDiffusivity(SharedParameterState):
         us = jnp.array([u, u_std])
         return jax.scipy.stats.norm.ppf(us)
 
+class SharedMixedShellDiffusivity(SharedParameterState):
+    share_with_compartments = {
+        StaticBall: [0],
+        StaticStick: [0],
+        MultiShellStaticStick: [0, 1],
+        MultiShellStaticBall: [0, 1],
+    }
+    theta_dim = 2
+    lam_min: float = 0.0
+    lam_max: float = 0.01
+    lam_std_min: float = 0.0
+    lam_std_max: float = 0.005
+
+    @classmethod
+    def to_params(cls, theta: ArrayLike) -> tuple:
+        u = jax.scipy.stats.norm.cdf(theta)
+        lam = cls.lam_min + u[0] * (cls.lam_max - cls.lam_min)
+        lam_std = cls.lam_std_min + u[1] * (cls.lam_std_max - cls.lam_std_min)
+        shared_parameters = jnp.array([lam, lam_std])
+        return (shared_parameters,)
+
+    @classmethod
+    def to_theta(cls, shared_parameters: ArrayLike) -> ArrayLike:
+        u = (shared_parameters[0] - cls.lam_min) / (cls.lam_max - cls.lam_min)
+        u_std = (shared_parameters[1] - cls.lam_std_min) / (
+            cls.lam_std_max - cls.lam_std_min
+        )
+        us = jnp.array([u, u_std])
+        return jax.scipy.stats.norm.ppf(us)
 
 @cache
 def _build_submodel(
@@ -615,6 +644,7 @@ _MODEL_CLASS_NAMES = {
     "Ball3StickSharedDiffusivityUniformFraction",
     "BallStick",
     "BallStickSharedDiffusivity",
+    "AllBall3StickSharedDiffusivity",
     "BallStickSharedDiffusivity2",
     "BallStickZeppelinNoise",
     "MultiShellBall3StickSharedDiffusivity",
@@ -622,6 +652,7 @@ _MODEL_CLASS_NAMES = {
     "MultiShellBall3StickSharedDiffusivityUniformFraction",
     "SSFPBall3StickSharedDiffusivity",
     "SSFPBall3StickSharedDiffusivityBetterNorm",
+    "AllGaussianModelsParamCountPriorMoreNoise",
 }
 
 

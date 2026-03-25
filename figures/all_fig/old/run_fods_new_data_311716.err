@@ -1,0 +1,91 @@
+/weka/macke/mgloeckler90/dmri/figures/all_fig/./eval_fods.py:886: UserWarning: Pass ['bvecs'] as keyword args. From version 2.0.0 passing these as positional arguments will result in an error. 
+  gtab = gradient_table(bvals, bvecs)
+INFO:root:Continuing from step 2000000
+INFO:__main__:Estimating RUMBA response (roi_radii=10, fa_thr=0.70).
+INFO:__main__:RUMBA batch 0:500
+INFO:__main__:RUMBA batch 500:1000
+INFO:__main__:RUMBA batch 1000:1500
+INFO:__main__:RUMBA batch 1500:2000
+INFO:__main__:RUMBA batch 2000:2500
+INFO:__main__:RUMBA batch 2500:3000
+INFO:__main__:RUMBA batch 3000:3500
+INFO:__main__:RUMBA batch 3500:4000
+INFO:__main__:RUMBA batch 4000:4500
+INFO:__main__:RUMBA batch 4500:5000
+INFO:__main__:RUMBA batch 5000:5500
+INFO:__main__:RUMBA batch 5500:6000
+INFO:__main__:RUMBA batch 6000:6500
+INFO:__main__:RUMBA batch 6500:7000
+INFO:__main__:RUMBA batch 7000:7500
+INFO:__main__:RUMBA batch 7500:8000
+INFO:__main__:RUMBA batch 8000:8500
+INFO:__main__:RUMBA batch 8500:8593
+INFO:__main__:b3s batch 0:500
+INFO:__main__:b3s batch 500:1000
+INFO:__main__:b3s batch 1000:1500
+INFO:__main__:b3s batch 1500:2000
+INFO:__main__:b3s batch 2000:2500
+INFO:__main__:b3s batch 2500:3000
+INFO:__main__:b3s batch 3000:3500
+INFO:__main__:b3s batch 3500:4000
+INFO:__main__:b3s batch 4000:4500
+INFO:__main__:b3s batch 4500:5000
+INFO:__main__:b3s batch 5000:5500
+INFO:__main__:b3s batch 5500:6000
+INFO:__main__:b3s batch 6000:6500
+INFO:__main__:b3s batch 6500:7000
+INFO:__main__:b3s batch 7000:7500
+INFO:__main__:b3s batch 7500:8000
+INFO:__main__:b3s batch 8000:8500
+INFO:__main__:b3s batch 8500:8593
+INFO:__main__:b3t batch 0:500
+INFO:__main__:b3t batch 500:1000
+INFO:__main__:b3t batch 1000:1500
+INFO:__main__:b3t batch 1500:2000
+INFO:__main__:b3t batch 2000:2500
+INFO:__main__:b3t batch 2500:3000
+INFO:__main__:b3t batch 3000:3500
+INFO:__main__:b3t batch 3500:4000
+INFO:__main__:b3t batch 4000:4500
+INFO:__main__:b3t batch 4500:5000
+INFO:__main__:b3t batch 5000:5500
+INFO:__main__:b3t batch 5500:6000
+INFO:__main__:b3t batch 6000:6500
+INFO:__main__:b3t batch 6500:7000
+INFO:__main__:b3t batch 7000:7500
+INFO:__main__:b3t batch 7500:8000
+INFO:__main__:b3t batch 8000:8500
+INFO:__main__:b3t batch 8500:8593
+INFO:__main__:all batch 0:500
+INFO:__main__:all batch 500:1000
+INFO:__main__:all batch 1000:1500
+INFO:__main__:all batch 1500:2000
+INFO:__main__:all batch 2000:2500
+INFO:__main__:all batch 2500:3000
+INFO:__main__:all batch 3000:3500
+INFO:__main__:all batch 3500:4000
+INFO:__main__:all batch 4000:4500
+INFO:__main__:all batch 4500:5000
+INFO:__main__:all batch 5000:5500
+INFO:__main__:all batch 5500:6000
+Traceback (most recent call last):
+  File "/weka/macke/mgloeckler90/dmri/figures/all_fig/./eval_fods.py", line 1034, in <module>
+    main()
+  File "/weka/macke/mgloeckler90/dmri/figures/all_fig/./eval_fods.py", line 987, in main
+    method_key = evaluate_sampled_masks(
+                 ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/figures/all_fig/./eval_fods.py", line 617, in evaluate_sampled_masks
+    sf_kde = samples_to_sf(sample_set, sphere, sigma_deg)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/figures/all_fig/./eval_fods.py", line 278, in samples_to_sf
+    sigma_deg = choose_sigma_deg(samples_xyz, antipodal=True)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/weka/macke/mgloeckler90/dmri/figures/all_fig/sh_lib.py", line 64, in choose_sigma_deg
+    evals = np.linalg.eigvalsh(T)
+            ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/numpy/linalg/_linalg.py", line 1376, in eigvalsh
+    w = gufunc(a, signature=signature)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/macke/mgloeckler90/miniconda3/envs/new_dmri2/lib/python3.11/site-packages/numpy/linalg/_linalg.py", line 169, in _raise_linalgerror_eigenvalues_nonconvergence
+    raise LinAlgError("Eigenvalues did not converge")
+numpy.linalg.LinAlgError: Eigenvalues did not converge

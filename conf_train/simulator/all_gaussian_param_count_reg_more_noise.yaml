@@ -1,0 +1,5 @@
+
+with_posterior_score: false
+defaults:
+  - sim_type: all_gaussian_param_reg_more_noise
+  - acquisition_scheme: hcp
