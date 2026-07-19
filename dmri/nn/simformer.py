@@ -20,6 +20,15 @@ from probjax.utils.typing import Array, ArrayLike, DTypeLike, PrecisionLike, Rng
 from dmri.nn.tokenizer import Tokenizer
 
 
+def masked_standard_normal_log_prob(x: Array, sigma: Array, mask: Array) -> Array:
+    """Return a spherical Gaussian log density over active dimensions only."""
+    active_dimensions = jnp.sum(mask)
+    squared_norm = jnp.sum(x**2 * mask)
+    return -0.5 * squared_norm / sigma**2 - 0.5 * active_dimensions * jnp.log(
+        2 * np.pi * sigma**2
+    )
+
+
 @dataclass
 class DMRIThetaInferenceConfig:
     num_layers: int = 6
@@ -395,11 +404,14 @@ class EDMSimformer(EDM):
         t_max: float | None = None,
         num_steps: int = 64,
     ) -> Array:
-        if t_min is None:
-            t_min = 1e-3
-        if t_max is None:
-            t_max = self.train_cfg.t_max
+        t_min = t_min if t_min is not None else self.train_cfg.t_min
+        t_max = t_max if t_max is not None else self.train_cfg.t_max
         ts = self.solver_cfg.solve_schedule(t_min, t_max, num_steps)[::-1]
+        theta_mask = (
+            jnp.ones_like(x, dtype=jnp.bool_)
+            if model_mask is None
+            else tokenizer.simulator.theta_mask(model_mask)
+        )
 
         def dx_dt_fn(t, z):
             f_ = self.drift(t, z)
@@ -422,7 +434,8 @@ class EDMSimformer(EDM):
         def drift(t, state):
             data, _ = state
             dx_dt = dx_dt_fn(t, data)
-            div = jnp.trace(jax.jacrev(lambda z: dx_dt_fn(t, z))(data))
+            jacobian_diagonal = jnp.diagonal(jax.jacrev(lambda z: dx_dt_fn(t, z))(data))
+            div = jnp.sum(jacobian_diagonal * theta_mask)
             return (dx_dt, div)
 
         x_final = odeint(
@@ -435,8 +448,7 @@ class EDMSimformer(EDM):
         x_final, logp_final = x_final
 
         sigma = self.marginal_std(t_max)
-        base_logp = -0.5 * jnp.sum(x_final**2) / sigma**2
-        base_logp += -0.5 * x_final.shape[-1] * jnp.log(2 * np.pi * sigma**2)
+        base_logp = masked_standard_normal_log_prob(x_final, sigma, theta_mask)
         final = logp_final + base_logp
 
         return jnp.squeeze(final)

@@ -76,16 +76,17 @@ def build_simulator(cfg: DictConfig):
         ):
             mask_prior_dist = sim_type.create_mask_prior(**mask_overrides)
 
-            def simulator(rng, mask_prior_hyperparameter=None):
+            def simulator(rng, mask_prior_hyperparameter=None, model_mask=None):
                 rng0, rng1, rng2, rng3 = jax.random.split(rng, 4)
                 acq = acq_fn(rng0)
                 theta = jax.random.normal(rng1, shape=(sim_type.theta_dim,))
-                mask_prior_sample = mask_prior_dist.sample(rng2)
+                rng_prior, rng_mask = jax.random.split(rng2)
                 if mask_prior_hyperparameter is None:
-                    p_mask = mask_prior_sample.hyperparameters
+                    p_mask = mask_prior_dist.sample_hyperparameters(rng_prior)
                 else:
                     p_mask = mask_prior_hyperparameter
-                model_mask = mask_prior_sample.model_mask
+                if model_mask is None:
+                    model_mask = mask_prior_dist.sample_model_mask(rng_mask, p_mask)
 
                 output = {
                     "mask_prior": p_mask,

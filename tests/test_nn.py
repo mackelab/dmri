@@ -20,6 +20,7 @@ from dmri.nn.embedding_net import (
 )
 from dmri.nn.simformer import (
     DMRIThetaInferenceConfig,
+    masked_standard_normal_log_prob,
 )
 from dmri.nn.tokenizer import DMRITokenizer
 from dmri.simulators import Ball2Stick, Ball3Stick, BallStickZeppelinNoise
@@ -299,6 +300,33 @@ def test_bval_bvec_signal_embedding_net(use_flashattn, rng, data):
     summary_token, summarized_sequence = embedding_net_summary(acq, signals)
     assert summary_token.shape == (100, 64)
     assert summarized_sequence.shape == (100, 64, 64)
+
+
+def test_signal_soft_squash_can_be_disabled():
+    signals = jnp.array([0.0, 0.25, 1.0])
+    embedding = BvalBvecSignalEmbeddingNet(
+        model_dim=8,
+        num_heads=1,
+        num_layers=1,
+        soft_squash_signals=False,
+        rngs=nnx.Rngs(20),
+    )
+
+    assert jnp.allclose(embedding.transform_signals(signals), signals)
+
+
+def test_masked_standard_normal_log_prob_ignores_inactive_values():
+    mask = jnp.array([True, False, True])
+    first = masked_standard_normal_log_prob(
+        jnp.array([1.0, 100.0, -2.0]), jnp.array(1.0), mask
+    )
+    second = masked_standard_normal_log_prob(
+        jnp.array([1.0, -100.0, -2.0]), jnp.array(1.0), mask
+    )
+
+    expected = jax.scipy.stats.norm.logpdf(jnp.array([1.0, -2.0])).sum()
+    assert jnp.allclose(first, expected)
+    assert jnp.allclose(second, expected)
 
 
 @pytest.mark.parametrize("use_flashattn", [False])

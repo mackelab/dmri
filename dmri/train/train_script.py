@@ -376,13 +376,17 @@ def apply_checkpoint_to_state(
             "Checkpoint does not include model_state; continuing with existing state."
         )
 
-    if rebuild_optimizer:
+    if rebuild_optimizer or "optimizer_state" not in checkpoint:
         reference = (
             checkpoint.get("params_ema")
             if cfg.train.track_ema and "params_ema" in checkpoint
             else train_state.params
         )
         train_state.opt_state = optimizer.init(reference)  # type: ignore
+        if not rebuild_optimizer:
+            log.warning(
+                "Checkpoint missing optimizer_state; reinitialising optimizer state."
+            )
     else:
         train_state.opt_state = checkpoint["optimizer_state"]
 
@@ -461,17 +465,21 @@ def resume_from_checkpoint(
         return train_state
 
     log.info(f"Restoring checkpoint at step {latest_step}")
+    partial_restore = cfg.train.get("partial_restore", False)
     reference_ema = (
         get_ema_params(train_state.ema_state) if cfg.train.track_ema else None
     )
     checkpoint = checkpoint_manager.restore(
         step=latest_step,
         params=train_state.params,
-        optimizer_state=train_state.opt_state,
+        optimizer_state=None if partial_restore else train_state.opt_state,
         params_ema=reference_ema,
         model_state=train_state.model_state,
-        ema_state=train_state.ema_state if cfg.train.track_ema else None,
+        ema_state=None
+        if partial_restore
+        else (train_state.ema_state if cfg.train.track_ema else None),
         rng=train_state.rng,
+        partial_restore=partial_restore,
     )
     if checkpoint is None:
         log.warning("Failed to restore checkpoint. Starting from scratch.")
@@ -484,7 +492,7 @@ def resume_from_checkpoint(
         optimizer=optimizer,
         ema_transform=ema_transform,
         log=log,
-        rebuild_optimizer=cfg.train.restart_optimizer,
+        rebuild_optimizer=cfg.train.restart_optimizer or partial_restore,
     )
     log.info(f"Resumed training from step {train_state.step}")
     return train_state
@@ -593,14 +601,18 @@ def train_loop(
             if latest_step is None:
                 log.warning("No checkpoints available for recovery. Cannot reset.")
                 return False
+            partial_restore = cfg.train.get("partial_restore", False)
             checkpoint = checkpoint_manager.restore(
                 step=latest_step,
                 params=train_state.params,
-                optimizer_state=train_state.opt_state,
+                optimizer_state=None if partial_restore else train_state.opt_state,
                 params_ema=get_ema_params(train_state.ema_state) if track_ema else None,
                 model_state=train_state.model_state,
-                ema_state=train_state.ema_state if track_ema else None,
+                ema_state=None
+                if partial_restore
+                else (train_state.ema_state if track_ema else None),
                 rng=train_state.rng,
+                partial_restore=partial_restore,
             )
             if checkpoint is None:
                 log.warning("Failed to restore recovery checkpoint. Cannot reset.")
@@ -612,7 +624,7 @@ def train_loop(
                 optimizer=optimizer,
                 ema_transform=ema_transform,
                 log=log,
-                rebuild_optimizer=False,
+                rebuild_optimizer=partial_restore,
             )
             datastreams = [iter(loader) for loader in loaders]
             log.info(f"Recovered to step {train_state.step}")

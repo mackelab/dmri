@@ -59,7 +59,7 @@ def load_cfg(path):
     return cfg
 
 
-def load_checkpoint(path, which="latest"):
+def load_checkpoint(path, which="latest", partial_restore=False):
     cfg = load_cfg(path)
     sim_type, simulator = build_simulator(cfg)
     model = build_model(cfg, sim_type)
@@ -84,6 +84,9 @@ def load_checkpoint(path, which="latest"):
     )
     ema_state = initialize_ema_state(cfg.train.track_ema, ema_transform, params)
     ema_params = get_ema_params(ema_state) if ema_state is not None else None
+    if partial_restore:
+        opt_state = None
+        ema_state = None
 
     from_best = False
     if which == "latest":
@@ -107,6 +110,7 @@ def load_checkpoint(path, which="latest"):
         restore_kwargs["ema_state"] = ema_state
 
     restore_kwargs["from_best"] = from_best
+    restore_kwargs["partial_restore"] = partial_restore
 
     checkpoint = checkpoint_manager.restore(**restore_kwargs)
 

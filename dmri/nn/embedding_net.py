@@ -37,6 +37,7 @@ class DMRIEmbeddingConfig:
     max_bval: float = 4000.0
     min_signal: float = 0.0
     max_signal: float = 1.0
+    soft_squash_signals: bool = True
     log_transform_signals: bool = False
     embed_signals: str = "repeat"
     embed_bvals: str = "fourier"
@@ -75,6 +76,7 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
         max_bval: float = 4000.0,
         min_signal: float = 0.0,
         max_signal: float = 1.0,
+        soft_squash_signals: bool = True,
         log_transform_signals: bool = False,
         use_flash_attention: bool = False,
         embed_signals: str = "repeat",
@@ -99,6 +101,7 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
         self.max_bval = max_bval
         self.min_signal = min_signal
         self.max_signal = max_signal
+        self.soft_squash_signals = soft_squash_signals
         self.use_global_summary_token = use_global_summary_token
         self.global_summary_bins = global_summary_bins
         self.out_norm = out_norm
@@ -222,7 +225,8 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
             )
         signals = jnp.asarray(signals)
         normalized = (signals - self.min_signal) / (self.max_signal - self.min_signal)
-        normalized = soft_squash(normalized)
+        if self.soft_squash_signals:
+            normalized = soft_squash(normalized)
         transformed = self.min_signal + normalized * (self.max_signal - self.min_signal)
         if self.log_transform_signals:
             transformed = jnp.log(jnp.clip(transformed, a_min=1e-8))

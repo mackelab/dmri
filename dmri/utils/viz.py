@@ -30,9 +30,6 @@ def set_style(style="dark"):
     plt.style.use(style_path)
 
 
-set_style()
-
-
 def _ensure_axis(
     ax=None,
     *,
@@ -1918,6 +1915,80 @@ def _stereo_project(X):
     return np.c_[x / d, y / d]
 
 
+def _as_sample_sets(samples):
+    if isinstance(samples, (list, tuple)):
+        return [np.asarray(sample_set, dtype=float) for sample_set in samples]
+    samples = np.asarray(samples, dtype=float)
+    if samples.ndim == 3 and samples.shape[-1] == 3:
+        return list(samples)
+    return [samples]
+
+
+def _broadcast_plot_param(value, count, name):
+    if isinstance(value, (list, tuple)) and not isinstance(value, str):
+        if len(value) == count:
+            return list(value)
+        if len(value) == 1:
+            return [value[0]] * count
+        raise ValueError(f"{name} must have length {count} or be a scalar.")
+    return [value] * count
+
+
+def _draw_stereographic_guides(ax, ring_radii, angle_step, frame_color, draw_guides):
+    ax.add_artist(Circle((0, 0), 1.0, fill=False, lw=1.8, zorder=2, color=frame_color))
+    if not draw_guides:
+        return
+    for radius in ring_radii:
+        ax.add_artist(
+            Circle(
+                (0, 0),
+                radius,
+                fill=False,
+                lw=0.8,
+                ls="--",
+                alpha=0.6,
+                zorder=1,
+                color=frame_color,
+            )
+        )
+    for degrees in range(0, 360, angle_step):
+        angle = np.deg2rad(degrees)
+        ax.plot(
+            [0, np.cos(angle)],
+            [0, np.sin(angle)],
+            lw=0.6,
+            ls="--",
+            alpha=0.6,
+            zorder=1,
+            color=frame_color,
+        )
+
+
+def _prepare_stereographic_samples(samples, axial):
+    samples = _norm_rows(np.asarray(samples, dtype=float))
+    if axial:
+        samples = np.where(samples[:, 2:3] < 0, -samples, samples)
+    projected = _stereo_project(samples)
+    inside = np.sum(projected**2, axis=1) <= 1.0 + 1e-9
+    return samples[inside], projected[inside], inside
+
+
+def _finish_stereographic_axis(fig, ax, created_axis):
+    clip_circle = Circle((0, 0), 1.0, transform=ax.transData)
+    for collection in ax.collections:
+        collection.set_clip_path(clip_circle)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.set_frame_on(False)
+    ax.set_xlim(-1, 1)
+    ax.set_ylim(-1, 1)
+    ax.set_aspect("equal")
+    ax.set_xticks([])
+    ax.set_yticks([])
+    if created_axis:
+        fig.tight_layout()
+
+
 def plot_stereographic_scatter(
     V,
     axial=True,
@@ -1943,115 +2014,108 @@ def plot_stereographic_scatter(
     Returns:
         Tuple of (Figure, Axes)
     """
-    V = _norm_rows(np.asarray(V, float))
-    if axial:
-        V = np.where(V[:, 2:3] < 0, -V, V)
+    sample_sets = _as_sample_sets(V)
+    point_colors = _broadcast_plot_param(point_color, len(sample_sets), "point_color")
+    sizes = _broadcast_plot_param(s, len(sample_sets), "s")
+    alphas = _broadcast_plot_param(point_alpha, len(sample_sets), "point_alpha")
+    edges = _broadcast_plot_param(edge, len(sample_sets), "edge")
 
-    UV = _stereo_project(V)
-    inside = np.sum(UV**2, axis=1) <= 1.0 + 1e-9
-    UV = UV[inside]
-    C = None
-    if point_color == "orientation":
-        C = np.abs(V[inside])
-        C = C / (np.linalg.norm(C, axis=1, keepdims=True) + 1e-12)
-    else:
-        C = point_color
-
-    existing_ax = ax
+    created_axis = ax is None
     fig, ax = _ensure_axis(ax, figsize=figsize)
     if facecolor is not None:
         ax.set_facecolor(facecolor)
+    _draw_stereographic_guides(ax, ring_radii, angle_step, frame_color, draw_guides)
 
-    # circular frame
-    boundary = Circle((0, 0), 1.0, fill=False, lw=1.8, zorder=2, color=frame_color)
-    ax.add_artist(boundary)
-
-    # concentric rings
-    if draw_guides:
-        for r in ring_radii:
-            ax.add_artist(
-                Circle(
-                    (0, 0),
-                    r,
-                    fill=False,
-                    lw=0.8,
-                    ls="--",
-                    alpha=0.6,
-                    zorder=1,
-                    color=frame_color,
-                )
-            )
-            ax.text(
-                r / np.sqrt(2),
-                r / np.sqrt(2),
-                f"{r:.2f}",
-                ha="left",
-                va="bottom",
-                fontsize=9,
-                alpha=0.7,
-                zorder=3,
-                color=frame_color,
-            )
-
-    # spokes
-    if draw_guides:
-        for deg in range(0, 360, angle_step):
-            th = np.deg2rad(deg)
-            ax.plot(
-                [0, np.cos(th)],
-                [0, np.sin(th)],
-                lw=0.6,
-                ls="--",
-                alpha=0.6,
-                zorder=1,
-                color=frame_color,
-            )
-            rlab = 1.1
-            ax.text(
-                rlab * np.cos(th),
-                rlab * np.sin(th),
-                f"{deg}°",
-                ha="center",
-                va="center",
-                fontsize=9,
-                zorder=3,
-                color=frame_color,
-            )
-
-    # scatter on top
-    zord = 5
-    if edge:
+    for index, sample_set in enumerate(sample_sets):
+        if sample_set.size == 0:
+            continue
+        samples, projected, _ = _prepare_stereographic_samples(sample_set, axial)
+        if projected.size == 0:
+            continue
+        color = point_colors[index]
+        if isinstance(color, str) and color == "orientation":
+            color = np.abs(samples)
+            color /= np.linalg.norm(color, axis=1, keepdims=True) + 1e-12
         ax.scatter(
-            UV[:, 0],
-            UV[:, 1],
-            s=s,
-            c=C,
-            alpha=point_alpha,
-            linewidths=0.3,
-            edgecolors=frame_color,
-            zorder=zord,
+            projected[:, 0],
+            projected[:, 1],
+            s=sizes[index],
+            c=color,
+            alpha=alphas[index],
+            linewidths=0.3 if edges[index] else 0,
+            edgecolors=frame_color if edges[index] else None,
+            zorder=5,
         )
-    else:
-        ax.scatter(
-            UV[:, 0], UV[:, 1], s=s, c=C, alpha=point_alpha, linewidths=0, zorder=zord
+    _finish_stereographic_axis(fig, ax, created_axis)
+    return fig, ax
+
+
+def plot_stereographic_contour(
+    V,
+    axial=True,
+    angle_step=30,
+    ring_radii=(0.25, 0.5, 0.75, 1.0),
+    bins=128,
+    levels=6,
+    filled=True,
+    cmap="viridis",
+    weights=None,
+    alpha=0.85,
+    ax=None,
+    figsize: tuple[float, float] | None = (5, 5),
+    facecolor: str | None = "black",
+    frame_color: str = "white",
+    draw_guides: bool = True,
+    normalize: bool = True,
+):
+    """Plot stereographic density contours for one or more orientation samples."""
+    sample_sets = _as_sample_sets(V)
+    bins_per_set = _broadcast_plot_param(bins, len(sample_sets), "bins")
+    cmaps = _broadcast_plot_param(cmap, len(sample_sets), "cmap")
+    alphas = _broadcast_plot_param(alpha, len(sample_sets), "alpha")
+    weight_sets = _broadcast_plot_param(weights, len(sample_sets), "weights")
+
+    created_axis = ax is None
+    fig, ax = _ensure_axis(ax, figsize=figsize)
+    if facecolor is not None:
+        ax.set_facecolor(facecolor)
+    _draw_stereographic_guides(ax, ring_radii, angle_step, frame_color, draw_guides)
+
+    for index, sample_set in enumerate(sample_sets):
+        if sample_set.size == 0:
+            continue
+        _, projected, inside = _prepare_stereographic_samples(sample_set, axial)
+        if projected.size == 0:
+            continue
+        sample_weights = weight_sets[index]
+        if sample_weights is not None:
+            sample_weights = np.asarray(sample_weights).reshape(-1)
+            if sample_weights.shape[0] != sample_set.shape[0]:
+                raise ValueError("weights must match the number of samples.")
+            sample_weights = sample_weights[inside]
+        histogram, x_edges, y_edges = np.histogram2d(
+            projected[:, 0],
+            projected[:, 1],
+            bins=bins_per_set[index],
+            range=[[-1, 1], [-1, 1]],
+            weights=sample_weights,
+        )
+        x_centers = 0.5 * (x_edges[:-1] + x_edges[1:])
+        y_centers = 0.5 * (y_edges[:-1] + y_edges[1:])
+        X, Y = np.meshgrid(x_centers, y_centers, indexing="xy")
+        density = histogram.T
+        if normalize and np.max(density) > 0:
+            density = density / np.max(density)
+        density = np.where(X**2 + Y**2 <= 1.0 + 1e-9, density, np.nan)
+        contour = ax.contourf if filled else ax.contour
+        contour(
+            X,
+            Y,
+            density,
+            levels=levels,
+            cmap=cmaps[index],
+            alpha=alphas[index],
         )
 
-    # clip to circle
-    clip_circle = Circle((0, 0), 1.0, transform=ax.transData)
-    for col in ax.collections:
-        col.set_clip_path(clip_circle)
-
-    # clean look
-    for spine in ax.spines.values():
-        spine.set_visible(False)
-    ax.set_frame_on(False)
-    ax.set_xlim(-1, 1)
-    ax.set_ylim(-1, 1)
-    ax.set_aspect("equal")
-    ax.set_xticks([])
-    ax.set_yticks([])
-
-    if existing_ax is None:
-        fig.tight_layout()
-
+    _finish_stereographic_axis(fig, ax, created_axis)
     return fig, ax

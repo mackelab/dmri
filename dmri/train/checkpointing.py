@@ -1,4 +1,5 @@
 import logging
+import math
 import os
 from typing import Any, Optional
 
@@ -20,7 +21,7 @@ class CheckpointManager:
         ckpt_dir: str,
         max_to_keep: int = 10,
         keep_best: bool = True,
-        recovery_threshold: float = float("inf"),
+        recovery_threshold: float | None = float("inf"),
         continue_training: bool = False,
     ) -> None:
         self.ckpt_dir = ckpt_dir
@@ -42,7 +43,9 @@ class CheckpointManager:
 
         self.keep_best = keep_best
         self.best_val_loss = float("inf")
-        self.recovery_threshold = recovery_threshold
+        self.recovery_threshold = (
+            float("inf") if recovery_threshold is None else recovery_threshold
+        )
         self.prev_metric: Optional[float] = None
 
         if continue_training:
@@ -57,7 +60,7 @@ class CheckpointManager:
         *,
         step: int,
         params: Any,
-        optimizer_state: Any,
+        optimizer_state: Any | None,
         loss: float,
         val_loss: Optional[float] = None,
         params_ema: Any = None,
@@ -92,19 +95,31 @@ class CheckpointManager:
         model_state: Any = None,
         ema_state: Any = None,
         rng: Any = None,
+        partial_restore: bool = False,
     ) -> ocp.args.Composite:
+        def pytree_restore(item: Any) -> ocp.args.CheckpointArgs:
+            if not partial_restore:
+                return ocp.args.StandardRestore(item)  # type: ignore
+            restore_args = ocp.checkpoint_utils.construct_restore_args(item)
+            return ocp.args.PyTreeRestore(
+                item=item,
+                restore_args=restore_args,
+                partial_restore=True,
+            )
+
         items: dict[str, ocp.args.CheckpointArgs] = {
-            "params": ocp.args.StandardRestore(params),  # type: ignore
-            "optimizer_state": ocp.args.StandardRestore(optimizer_state),  # type: ignore
+            "params": pytree_restore(params),
             "step": ocp.args.JsonRestore(),
             "loss": ocp.args.JsonRestore(),
         }
+        if optimizer_state is not None:
+            items["optimizer_state"] = pytree_restore(optimizer_state)
         if params_ema is not None:
-            items["params_ema"] = ocp.args.StandardRestore(params_ema)  # type: ignore
+            items["params_ema"] = pytree_restore(params_ema)
         if model_state is not None:
-            items["model_state"] = ocp.args.StandardRestore(model_state)  # type: ignore
+            items["model_state"] = pytree_restore(model_state)
         if ema_state is not None:
-            items["ema_state"] = ocp.args.StandardRestore(ema_state)  # type: ignore
+            items["ema_state"] = pytree_restore(ema_state)
         if rng is not None:
             items["rng"] = ocp.args.ArrayRestore(rng)  # type: ignore
         return ocp.args.Composite(**items)
@@ -113,7 +128,7 @@ class CheckpointManager:
         self,
         step: int,
         params: Any,
-        optimizer_state: Any,
+        optimizer_state: Any | None,
         loss: float = float("inf"),
         val_loss: Optional[float] = None,
         write_standard: bool = True,
@@ -121,6 +136,7 @@ class CheckpointManager:
         model_state: Any = None,
         ema_state: Any = None,
         rng: Any = None,
+        partial_restore: bool = False,
     ) -> None:
         args = self._build_save_args(
             step=step,
@@ -132,6 +148,7 @@ class CheckpointManager:
             model_state=model_state,
             ema_state=ema_state,
             rng=rng,
+            partial_restore=partial_restore,
         )
         if write_standard:
             self.manager.save(step, args=args)
@@ -174,16 +191,25 @@ class CheckpointManager:
     ) -> bool:
         if current_metric is None:
             return False
-        if self.prev_metric is None:
-            self.prev_metric = current_metric
-            return False
         recovery_threshold = (
             self.recovery_threshold
             if recovery_threshold is None
             else recovery_threshold
         )
+        if not math.isfinite(recovery_threshold) or recovery_threshold <= 1.0:
+            if math.isfinite(current_metric):
+                self.prev_metric = current_metric
+            return False
+        if not math.isfinite(current_metric):
+            return True
+        if self.prev_metric is None:
+            self.prev_metric = current_metric
+            return False
 
-        if current_metric > self.prev_metric * recovery_threshold:
+        trigger_value = self.prev_metric + abs(self.prev_metric) * (
+            recovery_threshold - 1.0
+        )
+        if current_metric > trigger_value:
             return True
 
         self.prev_metric = current_metric
