@@ -50,7 +50,6 @@ class DMRIEmbeddingConfig:
     reduce_factor: int = 1
 
 
-
 class BvalBvecSignalEmbeddingNet(nnx.Module):
     model_dim: int = 64
     num_heads: int = 4

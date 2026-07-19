@@ -40,6 +40,7 @@ plugins:
             docstring_style: google
             show_root_heading: true
             show_root_full_path: false
+            show_if_no_docstring: true
             separate_signature: true
             merge_init_into_class: true
             signature_crossrefs: true
@@ -95,8 +96,8 @@ nav:
       - Evaluation: reference/eval.md
       - Utilities: reference/utils.md
 
-repo_name: dmri
-repo_url: https://github.com/your-username/dmri
+repo_name: mackelab/dmri
+repo_url: https://github.com/mackelab/dmri
 
 extra_css:
   - stylesheets/extra.css

@@ -19,8 +19,8 @@ source .venv/bin/activate
 # install editable package + dev tools; add --extra cuda for GPUs
 uv pip install -e '.[dev]'
 
-# run a first training job
-dmri +experiment=ball3stick
+# run a first training job (local machine, no SLURM/W&B needed)
+dmri +experiment=b3s_2_4_6_128 launcher=local partition=none use_wandb=false
 ```
 
 Prefer pip? Use `pip install -e .[dev]` (quote extras in zsh). CUDA users can opt into `.[cuda]`.
@@ -30,7 +30,7 @@ Prefer pip? Use `pip install -e .[dev]` (quote extras in zsh). CUDA users can op
 ### Training
 ```bash
 dmri --help                      # discover overrides
-dmri +experiment=ball3stick      # run a preset
+dmri +experiment=b3s_2_4_6_128 launcher=local partition=none use_wandb=false   # run a preset locally
 dmri train.optimizer.lr=1e-3     # inline override example
 ```
 
@@ -39,7 +39,7 @@ Runs write to `results/<name>/<timestamp>/` with checkpoints and the frozen `.hy
 ### Evaluation
 ```bash
 dmri_eval --help
-dmri_eval +experiment=eval_no_selection model_name=<run_folder>
+dmri_eval +experiment=eval_b3s_no_selection model_name=<run_folder>
 ```
 
 Outputs land next to the training run (e.g. `ball3stick_model_selection_results/`). Adapt data locations in `conf_eval/config.yaml`.
@@ -111,7 +111,7 @@ plt.plot(bvals, signal)
 plt.plot(bvals, signal_ball_stick)
 ```
 
-You can also have a look at the notebooks in the `notebooks/dmri_simulators.ipynb` for more examples.
+You can also have a look at the notebooks in `docs/examples/` (rendered under **Examples** on the docs site) for more examples.
 
 ## JAX and PyTorch notes
 

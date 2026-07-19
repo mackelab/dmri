@@ -16,7 +16,6 @@ from dmri.nn.dmri_reconstruction_model import (
 from dmri.nn.embedding_net import (
     BvalBvecSignalEmbeddingNet,
     DMRIEmbeddingConfig,
-    GroupedBvalBvecSignalEmbeddingNet,
     SSFPEmbeddingNet,
 )
 from dmri.nn.simformer import (
@@ -300,71 +299,6 @@ def test_bval_bvec_signal_embedding_net(use_flashattn, rng, data):
     summary_token, summarized_sequence = embedding_net_summary(acq, signals)
     assert summary_token.shape == (100, 64)
     assert summarized_sequence.shape == (100, 64, 64)
-
-
-@pytest.mark.parametrize("group_size", [2, 5])
-def test_grouped_bval_bvec_signal_embedding_net(group_size, rng, data):
-    """Grouped embedding should shorten the token sequence deterministically."""
-
-    embedding_net = GroupedBvalBvecSignalEmbeddingNet(
-        model_dim=64,
-        num_heads=4,
-        num_layers=6,
-        attn_size=16,
-        widening_factor=3,
-        rngs=rng,
-        group_size=group_size,
-    )
-
-    _, _, signals, bvals, bvecs, _ = data
-
-    from dmri.simulators.acquisition_scheme import acquisition_scheme
-
-    acq = acquisition_scheme(bvals=bvals, bvecs=bvecs)
-
-    global_summary, sequence_tokens = embedding_net(acq, signals)
-    assert global_summary is None
-    expected_seq_len = (signals.shape[1] + group_size - 1) // group_size
-    assert sequence_tokens.shape == (signals.shape[0], expected_seq_len, 64)
-
-    rng_summary = nnx.Rngs(3)
-    embedding_net_summary = GroupedBvalBvecSignalEmbeddingNet(
-        model_dim=64,
-        num_heads=4,
-        num_layers=6,
-        attn_size=16,
-        widening_factor=3,
-        rngs=rng_summary,
-        group_size=group_size,
-        use_global_summary_token=True,
-    )
-    summary_token, summarized_sequence = embedding_net_summary(acq, signals)
-    assert summary_token.shape == (signals.shape[0], 64)
-    assert summarized_sequence.shape == (signals.shape[0], expected_seq_len, 64)
-
-
-def test_grouped_embedding_sorts_measurements(rng):
-    """Grouping variant must sort measurements by b-value for canonical tokens."""
-
-    embedding_net = GroupedBvalBvecSignalEmbeddingNet(
-        model_dim=32, num_heads=2, num_layers=2, rngs=rng, group_size=3
-    )
-    bvals = jnp.array([[1500.0, 500.0, 1000.0]], dtype=jnp.float32)
-    signals = jnp.array([[0.3, 0.7, 0.5]], dtype=jnp.float32)
-    bvecs = jnp.array(
-        [[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]], dtype=jnp.float32
-    )
-
-    sorted_bvals, sorted_bvecs, sorted_signals = embedding_net._sort_measurements(
-        bvals, bvecs, signals
-    )
-    expected_order = jnp.array([1, 2, 0])
-    assert jnp.allclose(sorted_bvals, jnp.sort(bvals, axis=-1))
-    assert jnp.allclose(
-        sorted_signals,
-        signals[:, expected_order],  # type: ignore[index]
-    )
-    assert jnp.allclose(sorted_bvecs, bvecs[:, expected_order, :])  # type: ignore[index]
 
 
 @pytest.mark.parametrize("use_flashattn", [False])

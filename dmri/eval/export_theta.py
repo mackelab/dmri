@@ -1,9 +1,8 @@
+import logging
 import os
 
 import jax
 import numpy as np
-
-import logging
 
 from dmri.simulators.local_signal_models.ball import MultiShellStaticBall
 from dmri.utils.dmriutils import export_nifti, make_dyads, reorder_angles_3fib, sph2cart
@@ -97,7 +96,9 @@ def export_thetas_to_files_ball3stick(
         )
 
     fractions = np.array(jax.vmap(jax.vmap(to_fractions))(thetas), dtype=np.float32)
-    diffusitivity = np.array(jax.vmap(jax.vmap(to_diffusivities))(thetas), dtype=np.float32)
+    diffusitivity = np.array(
+        jax.vmap(jax.vmap(to_diffusivities))(thetas), dtype=np.float32
+    )
     mu1 = np.array(jax.vmap(jax.vmap(direction_s1))(thetas), dtype=np.float32)
     mu2 = np.array(jax.vmap(jax.vmap(direction_s2))(thetas), dtype=np.float32)
     mu3 = np.array(jax.vmap(jax.vmap(direction_s3))(thetas), dtype=np.float32)
@@ -109,7 +110,8 @@ def export_thetas_to_files_ball3stick(
 
         def to_diffusivities_std(theta):
             return (
-                sim_type.from_theta(theta, model_mask=model_mask)
+                sim_type
+                .from_theta(theta, model_mask=model_mask)
                 .model_compartments[0]
                 .lam_std
             )
@@ -351,8 +353,6 @@ def export_thetas_to_files_ball3stick(
     mu2_cart = np.stack(mu2_cart, dtype=np.float32, axis=-1)
     mu3_cart = np.stack(mu3_cart, dtype=np.float32, axis=-1)
     print("mu1_cart shape:", mu1_cart.shape)
-
-
 
     # Export cartesian samples
     full_mu1_cart = embed_in_full_brain_array(mu1_cart, brain_mask_flat, brain_shape)

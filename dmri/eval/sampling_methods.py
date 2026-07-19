@@ -117,9 +117,9 @@ def eval_in_batches(
 
                 # Reshape data for pmap (num_devices, device_batch_size, ...)
                 pmap_data = jax.tree_util.tree_map(
-                    lambda x,
-                    devices=num_devices,
-                    bs=device_batch_size_actual: x.reshape(devices, bs, *x.shape[1:]),
+                    lambda x, devices=num_devices, bs=device_batch_size_actual: (
+                        x.reshape(devices, bs, *x.shape[1:])
+                    ),
                     batch_data,
                 )
 

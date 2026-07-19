@@ -71,7 +71,7 @@ Docstrings power these references. Sections are grouped to keep the table of con
 
 Here a selection of voxel-wise dMRI signal simulation compartments are implemented.
 
-### Isotropic comparments
+### Isotropic compartments
 
 ::: dmri.simulators.local_signal_models.ball.Ball
     options:
@@ -83,7 +83,22 @@ Here a selection of voxel-wise dMRI signal simulation compartments are implement
         show_root_heading: true
         show_root_full_path: false
 
+::: dmri.simulators.local_signal_models.ball.MultiShellBall
+    options:
+        show_root_heading: true
+        show_root_full_path: false
+
 ::: dmri.simulators.local_signal_models.ball.MultiShellStaticBall
+    options:
+        show_root_heading: true
+        show_root_full_path: false
+
+::: dmri.simulators.local_signal_models.ball.SSFPBall
+    options:
+        show_root_heading: true
+        show_root_full_path: false
+
+::: dmri.simulators.local_signal_models.ball.SSFPStaticBall
     options:
         show_root_heading: true
         show_root_full_path: false
@@ -97,6 +112,11 @@ Here a selection of voxel-wise dMRI signal simulation compartments are implement
 ### Anisotropic compartments
 
 ::: dmri.simulators.local_signal_models.zeppelin.Zeppelin
+    options:
+        show_root_heading: true
+        show_root_full_path: false
+
+::: dmri.simulators.local_signal_models.zeppelin.StaticZeppelin
     options:
         show_root_heading: true
         show_root_full_path: false
@@ -127,6 +147,26 @@ Here a selection of voxel-wise dMRI signal simulation compartments are implement
         show_root_heading: true
         show_root_full_path: false
 
+::: dmri.simulators.local_signal_models.stick.MultiShellStick
+    options:
+        show_root_heading: true
+        show_root_full_path: false
+
+::: dmri.simulators.local_signal_models.stick.MultiShellStaticStick
+    options:
+        show_root_heading: true
+        show_root_full_path: false
+
+::: dmri.simulators.local_signal_models.stick.SSFPStick
+    options:
+        show_root_heading: true
+        show_root_full_path: false
+
+::: dmri.simulators.local_signal_models.stick.SSFPStaticStick
+    options:
+        show_root_heading: true
+        show_root_full_path: false
+
 ::: dmri.simulators.local_signal_models.convolved_stick.WatsonStick
     options:
         show_root_heading: true
@@ -148,6 +188,15 @@ Here a selection of voxel-wise dMRI signal simulation compartments are implement
         show_root_full_path: false
 
 ### Spherical convolution based simulators
+
+These compartments convolve a kernel with a fiber orientation distribution (FOD)
+on the sphere. The shared base classes live in `dmri.simulators.convolved_models`.
+
+::: dmri.simulators.convolved_models
+    options:
+        show_root_heading: true
+        show_root_full_path: false
+
 ::: dmri.simulators.local_signal_models.noddi.NoddiW
     options:
         show_root_heading: true
@@ -168,6 +217,25 @@ Here a selection of voxel-wise dMRI signal simulation compartments are implement
         show_root_heading: true
         show_root_full_path: false
 
+## Spherical distributions
+
+Orientation distributions (FODs, Watson, Bingham, ...) used by convolved
+compartments and as orientation priors.
+
+::: dmri.simulators.sphereical_distributions
+    options:
+        show_root_heading: true
+        show_root_full_path: false
+
+## Predefined model collections
+
+Ready-made `MultiCompartment` families mirroring common literature mixtures
+(Ball–Stick, Ball–3-Stick, multi-shell variants, ...).
+
+::: dmri.simulators.models
+    options:
+        show_root_heading: true
+        show_root_full_path: false
 
 ## Noise models
 

@@ -20,13 +20,14 @@ uv pip install -e '.[dev]'
 ## Run a training job
 
 1. Pick an experiment preset in `conf_train/experiment/` or compose your own by editing `conf_train/*`.
-2. Launch:
+2. Launch locally (no SLURM cluster or W&B login required):
 
    ```bash
-   dmri +experiment=ball3stick
+   dmri +experiment=b3s_2_4_6_128 launcher=local partition=none use_wandb=false
    ```
 
-3. Monitor `results/<run_name>/<timestamp>/` for checkpoints, Hydra configs (`.hydra/`), and logs. If you are logged into Weights & Biases, online logging starts automatically.
+   Drop `launcher=local partition=none` on a SLURM cluster, and drop `use_wandb=false` once you are logged into Weights & Biases.
+3. Monitor `results/<run_name>/<timestamp>/` for checkpoints, Hydra configs (`.hydra/`), and logs. If you are logged into Weights & Biases and left `use_wandb=true`, online logging starts automatically.
 
 ## Evaluate a trained model
 

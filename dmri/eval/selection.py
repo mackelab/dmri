@@ -62,9 +62,9 @@ def select_models(
         p_mask_arr = jnp.array([p_mask])
 
         def eval_feasible_log_probs(x):
-            model_logpmf = jax.vmap(
-                model.log_prob_mask, in_axes=(0, None, None, None)
-            )(feasible_models, acq, x, p_mask_arr)
+            model_logpmf = jax.vmap(model.log_prob_mask, in_axes=(0, None, None, None))(
+                feasible_models, acq, x, p_mask_arr
+            )
             return model_logpmf
 
         batched_logpmf = jax.jit(jax.vmap(eval_feasible_log_probs, in_axes=(0,)))

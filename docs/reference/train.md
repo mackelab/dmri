@@ -44,6 +44,13 @@ Core training helpers are exposed here directly from their docstrings. Use them 
       show_root_heading: true
       show_root_full_path: false
 
+## Evaluation loop
+
+::: dmri.train.evaluator
+    options:
+      show_root_heading: true
+      show_root_full_path: false
+
 ## Builders and utilities
 
 ::: dmri.train.build_simulator

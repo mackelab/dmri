@@ -25,6 +25,7 @@ class Tokenizer(nnx.Module):
     def decode(self, *args: Any, **kwargs: Any) -> Array:
         pass
 
+
 class DMRITokenizer(Tokenizer):
     """
     A tokenizer for dMRI multi-compartment model configurations. It handles embedding

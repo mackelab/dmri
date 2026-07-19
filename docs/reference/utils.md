@@ -45,6 +45,11 @@ Frequently used math and export helpers pulled from their docstrings.
       show_root_heading: true
       show_root_full_path: false
 
+::: dmri.utils.shm
+    options:
+      show_root_heading: true
+      show_root_full_path: false
+
 ::: dmri.utils.viz
     options:
       show_root_heading: true

@@ -22,7 +22,9 @@ dependencies = [
     "orbax-checkpoint",
     "plotly",
     "optax",
-    "absl-py"
+    "absl-py",
+    # probjax and dmri.utils.shm use APIs removed in jax 0.9
+    "jax>=0.8,<0.9"
 ]
 
 [project.optional-dependencies]
@@ -39,6 +41,7 @@ cuda = [
 docs = [
     "mkdocs>=1.6.0",
     "mkdocs-material>=9.5.0",
+    "mkdocs-jupyter>=0.25.0",
     "mkdocstrings>=0.25.0",
     "mkdocstrings-python>=1.10.0"
 ]

@@ -682,7 +682,12 @@ def _run_eval_pipeline(
         export_feasible_probs = bool(
             _cfg_get(export_cfg, "export_feasible_model_probabilities", False)
         )
-        if False and  sample_mask and export_feasible_probs and export_type == "ball3stick":
+        if (
+            False
+            and sample_mask
+            and export_feasible_probs
+            and export_type == "ball3stick"
+        ):
             # TODO: Fix this
             if getattr(export_cfg, "feasible_models", None) is None:
                 log.warning(
@@ -691,10 +696,14 @@ def _run_eval_pipeline(
             else:
                 log.info("Evaluating feasible model probabilities for export.")
                 with _device_scope(heavy_device):
-                    feasible_model_probabilities = _compute_feasible_model_probabilities(
-                        cfg, export_cfg, model, acq, full_data_flat_in_brain
+                    feasible_model_probabilities = (
+                        _compute_feasible_model_probabilities(
+                            cfg, export_cfg, model, acq, full_data_flat_in_brain
+                        )
                     )
-                feasible_model_probabilities = _to_cpu_array(feasible_model_probabilities)
+                feasible_model_probabilities = _to_cpu_array(
+                    feasible_model_probabilities
+                )
 
         def _export_masks(masks, target_name, label):
             if masks is None:

@@ -27,9 +27,7 @@ from .embedding_net import (
 from .simformer import DMRIThetaInferenceConfig, EDMSimformer
 from .tokenizer import DMRITokenizer, DMRITokenizerPP
 
-EmbeddingModule = (
-    BvalBvecSignalEmbeddingNet | SSFPEmbeddingNet
-)
+EmbeddingModule = BvalBvecSignalEmbeddingNet | SSFPEmbeddingNet
 TokenizerType = type[DMRITokenizer]
 AcquisitionSchemeLike = acquisition_scheme | ssfp_acquisition_scheme
 

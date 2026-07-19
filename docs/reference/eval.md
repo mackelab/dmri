@@ -17,6 +17,16 @@ Evaluation helpers surface here from their docstrings, including the configurabl
 
 ## Evaluation helpers
 
+::: dmri.eval.eval_script
+    options:
+      show_root_heading: true
+      show_root_full_path: false
+
+::: dmri.eval.data_sources
+    options:
+      show_root_heading: true
+      show_root_full_path: false
+
 ::: dmri.eval.load_data
     options:
       show_root_heading: true

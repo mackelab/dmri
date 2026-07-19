@@ -5,7 +5,11 @@ Training is orchestrated via Hydra. Every run captures its config alongside chec
 ## Launch a run
 
 ```bash
-dmri +experiment=ball3stick
+# local machine
+dmri +experiment=b3s_2_4_6_128 launcher=local partition=none use_wandb=false
+
+# SLURM cluster (defaults)
+dmri +experiment=b3s_2_4_6_128
 ```
 
 Key output folders under `results/<run_name>/<timestamp>/`:

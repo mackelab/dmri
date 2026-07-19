@@ -13,8 +13,8 @@
   <div class="hero__card">
     <p class="hero__label">CLI quickstart</p>
     <pre><code class="language-bash">pip install -e '.[dev]'
-dmri +experiment=ball3stick
-dmri_eval +experiment=eval_b3s_best_model_selection</code></pre>
+dmri +experiment=b3s_2_4_6_128 launcher=local partition=none use_wandb=false
+dmri_eval +experiment=eval_b3s_best_model_selection model_name=&lt;run_folder&gt;</code></pre>
   </div>
 </div>
 
