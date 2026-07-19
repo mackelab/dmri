@@ -121,6 +121,27 @@ def test_binary_decoder_fills_missing_additional_context(simulator):
     assert logits.shape == model_mask.shape
 
 
+def test_binary_decoder_prediction_matches_training_logits(simulator):
+    """Prediction and teacher-forced training must use the same output head path."""
+    decoder = BinaryAutoregressiveDecoder(
+        rngs=nnx.Rngs(21),
+        model_dim=32,
+        num_heads=2,
+        num_layers=2,
+        prior_params_embed_dim=0,
+    )
+    tokenizer = DMRITokenizer(simulator=simulator, token_dim=32, rngs=nnx.Rngs(22))
+    num_components = tokenizer.num_models + tokenizer.num_noises
+    model_mask = jnp.array([True] * num_components)
+
+    input_tokens = tokenizer.encode(model_mask=model_mask)
+    output_tokens = decoder._forward_tokens(input_tokens, y=None)
+    training_logits = decoder.output(output_tokens)[..., :-1, 0]
+
+    prediction_logits = decoder(model_mask, tokenizer)
+    assert jnp.allclose(prediction_logits, training_logits)
+
+
 def test_dmri_inference_model_requires_mask_prior(simulator, data):
     """High-level model should surface mask-prior requirement errors."""
     cfg = DMRIInferenceModelConfigMaskPriorAmortized(

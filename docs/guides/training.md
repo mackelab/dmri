@@ -57,6 +57,47 @@ conf_train/
 - Best checkpoint (if tracked): `results/<run>/checkpoints/best`
 - Use `dmri.train.utils.load_checkpoint(path, which="best")` to restore models inside notebooks.
 
+### Publish pretrained checkpoints
+
+Closely related variants can share one Hugging Face model repository. Each upload
+is stored in its own subfolder with a portable `config.yaml` and the selected
+Orbax checkpoint:
+
+```python
+from dmri.train.utils import upload_checkpoint_to_hub
+
+upload_checkpoint_to_hub(
+    "results/b3s_2_4_6_64",
+    "manugloeck/dmri-pretrained",
+    model_name="b3s_2_4_6_64",
+    which="best",
+    private=False,
+)
+```
+
+Authenticate once before uploading with `uv run hf auth login`. Repeat the call
+with another `model_name` to add variants to the same repository. `which` accepts
+`"best"` (recommended), `"latest"`, a training-step integer, or `"all"`.
+
+Load only the requested model subfolder from the Hub cache:
+
+```python
+from flax import nnx
+from dmri.train.utils import load_checkpoint
+
+checkpoint, model, simulators = load_checkpoint(
+    repo_id="manugloeck/dmri-pretrained",
+    model_name="b3s_2_4_6_64",
+    which="best",
+)
+params = checkpoint.get("params_ema", checkpoint["params"])
+nnx.update(model, params)
+model.eval()
+```
+
+Use `revision="<commit-or-tag>"` for reproducible downloads, `token=...` for a
+private repository, or `local_files_only=True` after the snapshot is cached.
+
 ## Debugging slow starts
 
 - JAX JIT warmup can make the first epoch slower—let it complete before judging throughput.

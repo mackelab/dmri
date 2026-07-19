@@ -166,6 +166,7 @@ class CheckpointManager:
         model_state: Any = None,
         ema_state: Any = None,
         rng: Any = None,
+        partial_restore: bool = False,
     ):
         manager = self.best_manager if from_best else self.manager
         target_step = manager.latest_step() if step is None else step
@@ -180,6 +181,7 @@ class CheckpointManager:
             model_state=model_state,
             ema_state=ema_state,
             rng=rng,
+            partial_restore=partial_restore,
         )
         return manager.restore(target_step, args=args)
 

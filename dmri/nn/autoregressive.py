@@ -171,7 +171,6 @@ class BinaryAutoregressiveDecoder(nnx.Module):
             decode=decode,
             deterministic=deterministic,
         )
-        output_tokens = self.out_norm(output_tokens)
         # Reduce to logits
         logits = self.output(output_tokens)
         # Remove the first "padding" token output

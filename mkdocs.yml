@@ -85,7 +85,8 @@ nav:
   - Examples:
       - Simulator components: examples/01_dmri_simulator_components.ipynb
       - Multi-compartment model: examples/02_dmri_multicompartment_model.ipynb
-      - Loading models: examples/03_Loading_models.ipynb
+      - Using pretrained models: examples/03_pretrained_models.ipynb
+      - Train a small model: examples/04_train_standalone.ipynb
   - CLI Reference:
       - Training CLI (`@conf_train`): reference/cli_train.md
       - Evaluation CLI (`@conf_eval`): reference/cli_eval.md

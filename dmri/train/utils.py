@@ -1,8 +1,12 @@
 import os
+import shutil
 from datetime import datetime
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import optax
 from flax import nnx
+from huggingface_hub import HfApi, snapshot_download
 from omegaconf import OmegaConf
 
 from dmri.train.build_model import build_model
@@ -16,6 +20,15 @@ from dmri.train.train_script import (
 
 
 def load_cfg(path):
+    path = os.path.abspath(os.fspath(path))
+
+    for config_path in (
+        os.path.join(path, "config.yaml"),
+        os.path.join(path, ".hydra", "config.yaml"),
+    ):
+        if os.path.exists(config_path):
+            return OmegaConf.load(config_path)
+
     # Find most recent run directory (format: YYYY-MM-DD_HH-MM-SS)
     dirs = [
         d
@@ -59,7 +72,164 @@ def load_cfg(path):
     return cfg
 
 
-def load_checkpoint(path, which="latest", partial_restore=False):
+def _checkpoint_source(path: Path, which: str | int) -> tuple[Path, Path]:
+    checkpoints = path / "checkpoints"
+    if which == "all":
+        return checkpoints, Path("checkpoints")
+    if which == "best":
+        return checkpoints / "best", Path("checkpoints/best")
+
+    if which == "latest":
+        steps = [entry for entry in checkpoints.iterdir() if entry.name.isdigit()]
+        if not steps:
+            raise FileNotFoundError(f"No regular checkpoints found in {checkpoints}")
+        source = max(steps, key=lambda entry: int(entry.name))
+    elif isinstance(which, int):
+        source = checkpoints / str(which)
+    else:
+        raise ValueError("which must be 'best', 'latest', 'all', or an integer step")
+    return source, Path("checkpoints") / source.name
+
+
+def bundle_checkpoint(path, output_dir, model_name=None, which="best") -> Path:
+    """Create a portable checkpoint bundle for a model repository.
+
+    The bundle contains a root ``config.yaml`` and an Orbax checkpoint tree, so
+    it can be restored without the original timestamped Hydra run directory.
+
+    Args:
+        path: Local training-result directory.
+        output_dir: Directory in which to create the model subfolder.
+        model_name: Subfolder name. Defaults to ``cfg.name``.
+        which: ``"best"``, ``"latest"``, ``"all"``, or an integer step.
+
+    Returns:
+        Path to the created model subfolder.
+    """
+    path = Path(path).expanduser().resolve()
+    cfg = load_cfg(path)
+    model_name = model_name or cfg.name
+    if not model_name or Path(model_name).name != model_name:
+        raise ValueError("model_name must be a single directory name")
+
+    source, relative_destination = _checkpoint_source(path, which)
+    if not source.exists():
+        raise FileNotFoundError(f"Checkpoint not found: {source}")
+
+    model_dir = Path(output_dir).expanduser().resolve() / model_name
+    if model_dir.exists():
+        shutil.rmtree(model_dir)
+    model_dir.mkdir(parents=True)
+    OmegaConf.save(cfg, model_dir / "config.yaml")
+    shutil.copytree(source, model_dir / relative_destination)
+    return model_dir
+
+
+def upload_checkpoint_to_hub(
+    path,
+    repo_id,
+    *,
+    model_name=None,
+    which="best",
+    private=False,
+    token=None,
+    commit_message=None,
+):
+    """Upload a local run into a model subfolder in one Hugging Face repo.
+
+    Authentication uses the cached Hugging Face token by default. Pass
+    ``token`` explicitly for non-interactive or private-repository workflows.
+
+    Returns:
+        The Hugging Face commit information returned by ``upload_folder``.
+    """
+    api = HfApi(token=token)
+    api.create_repo(repo_id, repo_type="model", private=private, exist_ok=True)
+
+    with TemporaryDirectory() as temporary_dir:
+        model_dir = bundle_checkpoint(path, temporary_dir, model_name, which)
+        return api.upload_folder(
+            repo_id=repo_id,
+            repo_type="model",
+            folder_path=model_dir,
+            path_in_repo=model_dir.name,
+            commit_message=commit_message
+            or f"Upload {model_dir.name} checkpoint ({which})",
+            ignore_patterns=[".DS_Store"],
+        )
+
+
+def download_checkpoint_from_hub(
+    repo_id,
+    model_name,
+    *,
+    revision=None,
+    cache_dir=None,
+    token=None,
+    local_files_only=False,
+) -> Path:
+    """Download one model subfolder from a Hugging Face checkpoint repo.
+
+    Only ``<model_name>/**`` is downloaded, allowing several variants to share
+    one repository without downloading every checkpoint.
+    """
+    if not model_name or Path(model_name).name != model_name:
+        raise ValueError("model_name must be a single directory name")
+
+    snapshot_dir = Path(
+        snapshot_download(
+            repo_id=repo_id,
+            repo_type="model",
+            revision=revision,
+            cache_dir=cache_dir,
+            token=token,
+            local_files_only=local_files_only,
+            allow_patterns=[f"{model_name}/**"],
+        )
+    )
+    model_dir = snapshot_dir / model_name
+    if not (model_dir / "config.yaml").exists():
+        raise FileNotFoundError(
+            f"Model {model_name!r} was not found in Hugging Face repo {repo_id!r}"
+        )
+    return model_dir.resolve()
+
+
+def load_checkpoint(
+    path=None,
+    which="latest",
+    partial_restore=False,
+    *,
+    repo_id=None,
+    model_name=None,
+    revision=None,
+    cache_dir=None,
+    token=None,
+    local_files_only=False,
+):
+    """Restore a checkpoint from a local result directory or Hugging Face.
+
+    Provide ``path`` for a local checkpoint. For a remote bundle, provide both
+    ``repo_id`` and ``model_name``; the selected subfolder is downloaded into
+    the Hugging Face cache before the normal Orbax restore path is used.
+    """
+    if repo_id is not None:
+        if path is not None:
+            raise ValueError("Provide either path or repo_id, not both")
+        if model_name is None:
+            raise ValueError("model_name is required when loading from Hugging Face")
+        path = download_checkpoint_from_hub(
+            repo_id,
+            model_name,
+            revision=revision,
+            cache_dir=cache_dir,
+            token=token,
+            local_files_only=local_files_only,
+        )
+    if path is None:
+        raise ValueError("A local path or Hugging Face repo_id is required")
+
+    path = os.path.abspath(os.fspath(path))
     cfg = load_cfg(path)
     sim_type, simulator = build_simulator(cfg)
     model = build_model(cfg, sim_type)

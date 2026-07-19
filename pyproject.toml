@@ -23,6 +23,7 @@ dependencies = [
     "plotly",
     "optax",
     "absl-py",
+    "huggingface-hub>=0.34",
     # probjax and dmri.utils.shm use APIs removed in jax 0.9
     "jax>=0.8,<0.9"
 ]

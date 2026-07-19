@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 
 import jax
 import jax.numpy as jnp
@@ -8,6 +9,11 @@ from omegaconf import OmegaConf
 from dmri.train.build_simulator import build_simulator
 from dmri.train.checkpointing import CheckpointManager
 from dmri.train.train_script import TrainState, apply_checkpoint_to_state
+from dmri.train.utils import (
+    bundle_checkpoint,
+    download_checkpoint_from_hub,
+    upload_checkpoint_to_hub,
+)
 
 
 def make_checkpoint_manager(threshold):
@@ -97,3 +103,76 @@ def test_simulator_accepts_explicit_mask_and_prior():
 
     assert jnp.array_equal(result["model_mask"], model_mask)
     assert jnp.array_equal(result["mask_prior"], prior)
+
+
+def make_checkpoint_tree(tmp_path):
+    run_dir = tmp_path / "run"
+    checkpoint = run_dir / "checkpoints" / "best" / "12"
+    checkpoint.mkdir(parents=True)
+    (checkpoint / "_CHECKPOINT_METADATA").write_text("{}")
+    (checkpoint / ".zarray").write_text("{}")
+    OmegaConf.save({"name": "example-model"}, run_dir / "config.yaml")
+    return run_dir
+
+
+def test_bundle_checkpoint_creates_portable_layout(tmp_path):
+    run_dir = make_checkpoint_tree(tmp_path)
+
+    model_dir = bundle_checkpoint(run_dir, tmp_path / "bundle", which="best")
+
+    assert model_dir.name == "example-model"
+    assert (model_dir / "config.yaml").exists()
+    assert (model_dir / "checkpoints" / "best" / "12" / "_CHECKPOINT_METADATA").exists()
+    assert (model_dir / "checkpoints" / "best" / "12" / ".zarray").exists()
+
+
+def test_upload_checkpoint_uses_model_subfolder(tmp_path, monkeypatch):
+    run_dir = make_checkpoint_tree(tmp_path)
+    calls = {}
+
+    class FakeApi:
+        def __init__(self, token):
+            calls["token"] = token
+
+        def create_repo(self, *args, **kwargs):
+            calls["create"] = (args, kwargs)
+
+        def upload_folder(self, **kwargs):
+            calls["upload"] = kwargs
+            assert (Path(kwargs["folder_path"]) / "config.yaml").exists()
+            return "commit"
+
+    monkeypatch.setattr("dmri.train.utils.HfApi", FakeApi)
+
+    result = upload_checkpoint_to_hub(
+        run_dir,
+        "owner/dmri-pretrained",
+        token="secret",
+        private=True,
+    )
+
+    assert result == "commit"
+    assert calls["create"][0] == ("owner/dmri-pretrained",)
+    assert calls["create"][1]["private"] is True
+    assert calls["upload"]["path_in_repo"] == "example-model"
+
+
+def test_download_checkpoint_selects_model_subfolder(tmp_path, monkeypatch):
+    model_dir = tmp_path / "snapshot" / "example-model"
+    model_dir.mkdir(parents=True)
+    (model_dir / "config.yaml").write_text("name: example-model\n")
+    calls = {}
+
+    def fake_snapshot_download(**kwargs):
+        calls.update(kwargs)
+        return model_dir.parent
+
+    monkeypatch.setattr("dmri.train.utils.snapshot_download", fake_snapshot_download)
+
+    result = download_checkpoint_from_hub(
+        "owner/dmri-pretrained", "example-model", revision="v1"
+    )
+
+    assert result == model_dir.resolve()
+    assert calls["allow_patterns"] == ["example-model/**"]
+    assert calls["revision"] == "v1"
