@@ -6,7 +6,12 @@ from dipy.io import read_bvals_bvecs
 
 
 def load_and_process_data(
-    path, brain_mask, mri_data, bvals_data, bvecs_data, round_bvals
+    path,
+    brain_mask="nodif_brain_mask.nii.gz",
+    mri_data="data.nii.gz",
+    bvals_data="bvals",
+    bvecs_data="bvecs",
+    round_bvals=True,
 ):
     data, data_norm, brain_mask, bvals, bvecs = load_data(
         path, brain_mask, mri_data, bvals_data, bvecs_data
@@ -23,7 +28,7 @@ def load_data(path, brain_mask, mri_data, bvals_data, bvecs_data):
     data_norm = data_norm.astype(np.float32)
 
     brain_mask = nb.load(os.path.join(path, brain_mask))
-    brain_mask = brain_mask.get_fdata().astype(np.bool)
+    brain_mask = brain_mask.get_fdata().astype(np.bool_)
 
     bvals, bvecs = read_bvals_bvecs(
         os.path.join(path, bvals_data), os.path.join(path, bvecs_data)

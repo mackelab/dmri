@@ -234,13 +234,19 @@ def build_theta_sample_fn(
 ):
     num_steps = params.get("num_steps", 25)
     t_max = params.get("t_max", 80)
+    t_min = params.get("t_min")
 
     def base_sample_fn(key, x, model_mask):
         if num_steps > 0:
             K = num_samples
             in_axes_model_mask = 0 if model_mask.ndim == 2 else None
             sample_fn = jax.vmap(
-                partial(model.sample_theta, num_steps=num_steps, t_max=t_max),
+                partial(
+                    model.sample_theta,
+                    num_steps=num_steps,
+                    t_min=t_min,
+                    t_max=t_max,
+                ),
                 in_axes=(0, None, None, in_axes_model_mask),
             )
             keys = jax.random.split(key, K)

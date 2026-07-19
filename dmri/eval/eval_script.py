@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import hydra
 import jax
 import jax.numpy as jnp
+import nibabel as nb
 import numpy as np
 from flax import nnx
 from omegaconf import DictConfig, ListConfig, OmegaConf
@@ -73,6 +74,18 @@ def _to_cpu_array(value):
     if isinstance(value, jax.Array):
         return np.asarray(value, dtype=value.dtype)
     return value
+
+
+def _put_tree_on_device(value, device):
+    if device is None:
+        return value
+
+    def maybe_put(item):
+        if isinstance(item, (jax.Array, np.ndarray)):
+            return jax.device_put(item, device)
+        return item
+
+    return jax.tree_util.tree_map(maybe_put, value)
 
 
 def _to_int(value):
@@ -209,6 +222,55 @@ def _apply_slice_to_brain(slice_cfg, brain_mask, data_norm, logger):
 def _cfg_get(cfg, key, default=None):
     value = OmegaConf.select(cfg, key)
     return default if value is None else value
+
+
+def _find_theta_samples_file(export_dir, filename="thetas.nii.gz"):
+    if not os.path.isdir(export_dir):
+        return None
+    matches = []
+    for root, _, files in os.walk(export_dir):
+        if filename in files:
+            matches.append(os.path.join(root, filename))
+    if len(matches) > 1:
+        raise ValueError(
+            f"Found multiple {filename} files under export directory {export_dir}: {matches}"
+        )
+    return matches[0] if matches else None
+
+
+def _load_theta_samples(
+    path,
+    brain_mask_flat,
+    brain_shape,
+    expected_num_samples,
+    expected_theta_dim,
+):
+    theta = np.asarray(nb.load(path).dataobj, dtype=np.float32)
+    spatial_dims = len(brain_shape)
+    num_voxels = int(np.count_nonzero(brain_mask_flat))
+    if theta.shape[:spatial_dims] == tuple(brain_shape):
+        theta = theta.reshape(-1, *theta.shape[spatial_dims:])[brain_mask_flat]
+    elif theta.shape[0] != num_voxels:
+        raise ValueError(
+            f"Theta samples shape {theta.shape} does not match brain shape {brain_shape} "
+            f"or its {num_voxels} in-mask voxels."
+        )
+    if theta.ndim == 2:
+        theta = theta[:, None, :]
+    if theta.ndim != 3:
+        raise ValueError(
+            "Theta samples must have shape (voxels, samples, theta_dim) or "
+            f"(voxels, theta_dim), got {theta.shape}."
+        )
+    if theta.shape[-1] != expected_theta_dim:
+        raise ValueError(
+            f"Expected theta dimension {expected_theta_dim}, got {theta.shape[-1]}."
+        )
+    if expected_num_samples is not None and theta.shape[1] != expected_num_samples:
+        raise ValueError(
+            f"Expected {expected_num_samples} theta samples, got {theta.shape[1]}."
+        )
+    return theta
 
 
 def _default_ksd_metric(seed):
@@ -517,6 +579,9 @@ def _run_eval_pipeline(
     checkpoint, model, _ = load_checkpoint(path_checkpoint)
     graphdef, params, static, state = nnx.split(model, nnx.Param, nnx.Intermediate, ...)
     params = checkpoint[cfg.params_name]
+    params = _put_tree_on_device(params, heavy_device)
+    static = _put_tree_on_device(static, heavy_device)
+    state = _put_tree_on_device(state, heavy_device)
     model = nnx.merge(graphdef, params, static, state, copy=True)
     model.eval()
     sim_type = model.tokenizer.simulator
@@ -636,19 +701,31 @@ def _run_eval_pipeline(
     # Sample theta
     key, key_theta = jax.random.split(key)
     if cfg.sample_theta:
-        log.info("Sampling thetas")
-        with _device_scope(heavy_device):
-            model_parameters_brain = sample_theta(
-                cfg,
-                key_theta,
-                model,
-                acq,
-                full_data_flat_in_brain,
-                log,
-                model_mask=models_selected_brain,
-                devices=eval_devices,
-                default_mask=default_mask,
+        export_dir = os.path.join(checkpoint_root, cfg.model_name, cfg.export.name)
+        theta_path = _find_theta_samples_file(export_dir)
+        if theta_path is not None:
+            log.info("Loading existing theta samples from %s", theta_path)
+            model_parameters_brain = _load_theta_samples(
+                theta_path,
+                brain_mask_flat,
+                brain_mask.shape,
+                _cfg_get(cfg, "theta_sample.num_samples", None),
+                sim_type.theta_dim,
             )
+        else:
+            log.info("Sampling thetas")
+            with _device_scope(heavy_device):
+                model_parameters_brain = sample_theta(
+                    cfg,
+                    key_theta,
+                    model,
+                    acq,
+                    full_data_flat_in_brain,
+                    log,
+                    model_mask=models_selected_brain,
+                    devices=eval_devices,
+                    default_mask=default_mask,
+                )
         model_parameters_brain = _to_cpu_array(model_parameters_brain)
     else:
         model_parameters_brain = None
@@ -775,7 +852,9 @@ def _run_eval_pipeline(
             if isinstance(export_cfg, DictConfig)
             else getattr(export_cfg, "type", "ball3stick")
         )
-        if export_type == "raw":
+        if export_type == "none":
+            log.info("Skipping inferred parameter export (export.type=none).")
+        elif export_type == "raw":
             export_thetas_raw(
                 cfg,
                 model_parameters_brain,

@@ -251,6 +251,12 @@ def _compute_swd_metric(
             f" theta samples {theta.shape}."
         )
 
+    num_voxels_full = theta.shape[0]
+    subset_indices = _select_voxel_subset(spec, num_voxels_full)
+    if subset_indices is not None:
+        theta = theta[subset_indices]
+        reference = reference[subset_indices]
+
     num_voxels = theta.shape[0]
     num_samples = theta.shape[1]
     feature_dim = int(np.prod(theta.shape[2:]))
@@ -282,7 +288,10 @@ def _compute_swd_metric(
         distances += np.sqrt(np.maximum(w2, 0.0))
 
     distances /= num_directions
-    return distances.astype(np.float32)
+    distances = distances.astype(np.float32)
+    if subset_indices is not None:
+        distances = _scatter_metric_values(distances, subset_indices, num_voxels_full)
+    return distances
 
 
 def _compute_ksd_metric(
@@ -318,12 +327,21 @@ def _compute_ksd_metric(
     theta = np.moveaxis(theta, sample_axis, 1)
     if max_samples is not None:
         theta = theta[:, : int(max_samples)]
+    num_voxels_full = theta.shape[0]
+    subset_indices = _select_voxel_subset(spec, num_voxels_full)
+    if subset_indices is not None:
+        theta = theta[subset_indices]
     if theta.shape[1] < 2:
-        return np.full(theta.shape[0], np.nan, dtype=np.float32)
+        values = np.full(theta.shape[0], np.nan, dtype=np.float32)
+        if subset_indices is not None:
+            values = _scatter_metric_values(values, subset_indices, num_voxels_full)
+        return values
     theta = np.nan_to_num(theta, nan=0.0, posinf=0.0, neginf=0.0)
     theta = theta.reshape(theta.shape[0], theta.shape[1], -1)
 
     data = np.asarray(context.full_data_flat_in_brain)
+    if subset_indices is not None:
+        data = data[subset_indices]
     data = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
 
     sim_type = context.sim_type
@@ -333,8 +351,12 @@ def _compute_ksd_metric(
         mask_arr = np.asarray(model_mask)
         if mask_arr.ndim == 1:
             mask_arr = np.broadcast_to(mask_arr, (num_voxels, mask_arr.shape[-1]))
-        elif mask_arr.shape[0] != num_voxels:
-            mask_arr = np.broadcast_to(mask_arr, (num_voxels,) + mask_arr.shape[1:])
+        elif mask_arr.shape[0] != num_voxels_full:
+            mask_arr = np.broadcast_to(
+                mask_arr, (num_voxels_full,) + mask_arr.shape[1:]
+            )
+        if subset_indices is not None and mask_arr.shape[0] == num_voxels_full:
+            mask_arr = mask_arr[subset_indices]
         model_mask = mask_arr.astype(np.bool_)
 
     bandwidths_jnp = jnp.asarray(bandwidths)
@@ -382,6 +404,10 @@ def _compute_ksd_metric(
     values = np.asarray(values, dtype=np.float32)
     ksd_values = values[..., 0]
     p_values = values[..., 1]
+
+    if subset_indices is not None:
+        ksd_values = _scatter_metric_values(ksd_values, subset_indices, num_voxels_full)
+        p_values = _scatter_metric_values(p_values, subset_indices, num_voxels_full)
 
     if export_pvalue and context.out_path:
         full_map = embed_in_full_brain_array(
@@ -741,6 +767,50 @@ _METRIC_REGISTRY: Mapping[
 
 # ---------------------------------------------------------------------------
 # Helpers
+
+
+def _select_voxel_subset(spec: MetricSpec, num_voxels: int) -> np.ndarray | None:
+    options = dict(spec.options or {})
+    subset_size = options.get("voxel_subset_size")
+    subset_fraction = options.get("voxel_subset_fraction")
+    if subset_size is None and subset_fraction is None:
+        return None
+
+    target_size = num_voxels
+    if subset_fraction is not None:
+        fraction = float(subset_fraction)
+        if not 0.0 < fraction <= 1.0:
+            raise ValueError(
+                f"Metric '{spec.key}' expects voxel_subset_fraction in (0, 1], "
+                f"got {fraction}."
+            )
+        target_size = max(1, round(num_voxels * fraction))
+    if subset_size is not None:
+        size = int(subset_size)
+        if size <= 0:
+            raise ValueError(
+                f"Metric '{spec.key}' expects voxel_subset_size > 0, got {size}."
+            )
+        target_size = min(target_size, size)
+    if target_size >= num_voxels:
+        return None
+
+    seed = int(options.get("voxel_subset_seed", options.get("random_seed", 0)))
+    rng = np.random.default_rng(seed)
+    return np.sort(rng.choice(num_voxels, size=target_size, replace=False))
+
+
+def _scatter_metric_values(
+    values: np.ndarray, indices: np.ndarray, num_voxels: int
+) -> np.ndarray:
+    if values.shape[0] != indices.shape[0]:
+        raise ValueError(
+            f"Subset values and indices differ: {values.shape[0]} vs {indices.shape[0]}."
+        )
+    dtype = values.dtype if np.issubdtype(values.dtype, np.floating) else np.float32
+    full = np.full((num_voxels,) + values.shape[1:], np.nan, dtype=dtype)
+    full[indices] = values
+    return full
 
 
 def _evaluate_metric_function(
