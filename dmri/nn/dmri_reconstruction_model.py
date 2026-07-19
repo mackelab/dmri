@@ -21,7 +21,6 @@ from .autoregressive import (
 from .embedding_net import (
     BvalBvecSignalEmbeddingNet,
     DMRIEmbeddingConfig,
-    GroupedBvalBvecSignalEmbeddingNet,
     SSFPEmbeddingNet,
     SSFPEmbeddingNetConfig,
 )
@@ -29,7 +28,7 @@ from .simformer import DMRIThetaInferenceConfig, EDMSimformer
 from .tokenizer import DMRITokenizer, DMRITokenizerPP
 
 EmbeddingModule = (
-    BvalBvecSignalEmbeddingNet | GroupedBvalBvecSignalEmbeddingNet | SSFPEmbeddingNet
+    BvalBvecSignalEmbeddingNet | SSFPEmbeddingNet
 )
 TokenizerType = type[DMRITokenizer]
 AcquisitionSchemeLike = acquisition_scheme | ssfp_acquisition_scheme
@@ -290,7 +289,7 @@ class DMRIInferenceModel(nnx.Module):
     ) -> tuple[Array | None, Array]:
         if isinstance(
             self.encoder,
-            (BvalBvecSignalEmbeddingNet, GroupedBvalBvecSignalEmbeddingNet),
+            (BvalBvecSignalEmbeddingNet),
         ):
             if not isinstance(acq, acquisition_scheme):
                 raise TypeError(
@@ -475,8 +474,11 @@ class DMRIInferenceModel(nnx.Module):
         last_euler_step: bool = True,
         t_min: float | None = None,
         t_max: float | None = None,
+        y_ctx: Array | None = None,
+        y: Array | None = None,
     ) -> Array:
-        y_ctx, y = self._encode_observations(acq, x)
+        if y_ctx is None or y is None:
+            y_ctx, y = self._encode_observations(acq, x)
         tokens_cfg = self.tokenizer.embed_cfgs(model_mask)
 
         attention_mask = self.marginalization_mask(model_mask)

@@ -16,7 +16,7 @@ Docstrings power these references. Sections are grouped to keep the table of con
       show_root_full_path: false
       separate_signature: true
 
-## Compartments and mixing
+## Abstract simulator classes
 
 ::: dmri.simulators.base.Compartment
     options:
@@ -49,6 +49,13 @@ Docstrings power these references. Sections are grouped to keep the table of con
         - noise
         - log_likelihood
 
+
+::: dmri.simulators.local_signal_models.signal_response_kernels
+    options:
+        show_root_heading: true
+        show_root_full_path: false
+
+
 ::: dmri.simulators.multi_compartment.MultiCompartment
     options:
       show_root_heading: true
@@ -62,108 +69,105 @@ Docstrings power these references. Sections are grouped to keep the table of con
 
 ## Local signal models
 
-???+ info "Isotropic and anisotropic"
+Here a selection of voxel-wise dMRI signal simulation compartments are implemented.
 
-    ::: dmri.simulators.local_signal_models.ball.Ball
-        options:
-          show_root_heading: true
-          show_root_full_path: false
+### Isotropic comparments
 
-    ::: dmri.simulators.local_signal_models.ball.StaticBall
-        options:
-          show_root_heading: true
-          show_root_full_path: false
+::: dmri.simulators.local_signal_models.ball.Ball
+    options:
+        show_root_heading: true
+        show_root_full_path: false
 
-    ::: dmri.simulators.local_signal_models.ball.MultiShellStaticBall
-        options:
-          show_root_heading: true
-          show_root_full_path: false
+::: dmri.simulators.local_signal_models.ball.StaticBall
+    options:
+        show_root_heading: true
+        show_root_full_path: false
 
-    ::: dmri.simulators.local_signal_models.zeppelin.Zeppelin
-        options:
-          show_root_heading: true
-          show_root_full_path: false
+::: dmri.simulators.local_signal_models.ball.MultiShellStaticBall
+    options:
+        show_root_heading: true
+        show_root_full_path: false
 
-    ::: dmri.simulators.local_signal_models.convolved_zeppelin.WatsonZeppelin
-        options:
-          show_root_heading: true
-          show_root_full_path: false
 
-    ::: dmri.simulators.local_signal_models.convolved_zeppelin.BinghamZeppelin
-        options:
-          show_root_heading: true
-          show_root_full_path: false
+::: dmri.simulators.local_signal_models.sphere.Sphere
+    options:
+        show_root_heading: true
+        show_root_full_path: false
 
-    ::: dmri.simulators.local_signal_models.cylinder.Cylinder
-        options:
-          show_root_heading: true
-          show_root_full_path: false
+### Anisotropic compartments
 
-    ::: dmri.simulators.local_signal_models.sphere.Sphere
-        options:
-          show_root_heading: true
-          show_root_full_path: false
+::: dmri.simulators.local_signal_models.zeppelin.Zeppelin
+    options:
+        show_root_heading: true
+        show_root_full_path: false
 
-???+ info "Stick-based"
 
-    ::: dmri.simulators.local_signal_models.stick.Stick
-        options:
-          show_root_heading: true
-          show_root_full_path: false
+::: dmri.simulators.local_signal_models.cylinder.Cylinder
+    options:
+        show_root_heading: true
+        show_root_full_path: false
 
-    ::: dmri.simulators.local_signal_models.stick.StaticStick
-        options:
-          show_root_heading: true
-          show_root_full_path: false
+::: dmri.simulators.local_signal_models.convolved_zeppelin.WatsonZeppelin
+    options:
+        show_root_heading: true
+        show_root_full_path: false
 
-    ::: dmri.simulators.local_signal_models.convolved_stick.WatsonStick
-        options:
-          show_root_heading: true
-          show_root_full_path: false
+::: dmri.simulators.local_signal_models.convolved_zeppelin.BinghamZeppelin
+    options:
+        show_root_heading: true
+        show_root_full_path: false
 
-    ::: dmri.simulators.local_signal_models.convolved_stick.BinghamStick
-        options:
-          show_root_heading: true
-          show_root_full_path: false
+::: dmri.simulators.local_signal_models.stick.Stick
+    options:
+        show_root_heading: true
+        show_root_full_path: false
 
-???+ info "Microstructure & tensor models"
+::: dmri.simulators.local_signal_models.stick.StaticStick
+    options:
+        show_root_heading: true
+        show_root_full_path: false
 
-    ::: dmri.simulators.local_signal_models.dot.Dot
-        options:
-          show_root_heading: true
-          show_root_full_path: false
+::: dmri.simulators.local_signal_models.convolved_stick.WatsonStick
+    options:
+        show_root_heading: true
+        show_root_full_path: false
 
-    ::: dmri.simulators.local_signal_models.dti.Dti
-        options:
-          show_root_heading: true
-          show_root_full_path: false
+::: dmri.simulators.local_signal_models.convolved_stick.BinghamStick
+    options:
+        show_root_heading: true
+        show_root_full_path: false
 
-    ::: dmri.simulators.local_signal_models.noddi.NoddiW
-        options:
-          show_root_heading: true
-          show_root_full_path: false
+::: dmri.simulators.local_signal_models.dot.Dot
+    options:
+        show_root_heading: true
+        show_root_full_path: false
 
-    ::: dmri.simulators.local_signal_models.noddi.NoddiB
-        options:
-          show_root_heading: true
-          show_root_full_path: false
+::: dmri.simulators.local_signal_models.dti.Dti
+    options:
+        show_root_heading: true
+        show_root_full_path: false
 
-    ::: dmri.simulators.local_signal_models.sandi.SandiW
-        options:
-          show_root_heading: true
-          show_root_full_path: false
+### Spherical convolution based simulators
+::: dmri.simulators.local_signal_models.noddi.NoddiW
+    options:
+        show_root_heading: true
+        show_root_full_path: false
 
-    ::: dmri.simulators.local_signal_models.sandi.SandiB
-        options:
-          show_root_heading: true
-          show_root_full_path: false
+::: dmri.simulators.local_signal_models.noddi.NoddiB
+    options:
+        show_root_heading: true
+        show_root_full_path: false
 
-???+ info "Kernels and helpers"
+::: dmri.simulators.local_signal_models.sandi.SandiW
+    options:
+        show_root_heading: true
+        show_root_full_path: false
 
-    ::: dmri.simulators.local_signal_models.signal_response_kernels
-        options:
-          show_root_heading: true
-          show_root_full_path: false
+::: dmri.simulators.local_signal_models.sandi.SandiB
+    options:
+        show_root_heading: true
+        show_root_full_path: false
+
 
 ## Noise models
 

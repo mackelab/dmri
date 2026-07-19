@@ -29,6 +29,9 @@ theme:
 
 plugins:
   - search
+  - mkdocs-jupyter:
+      execute: false
+      include_source: true
   - mkdocstrings:
       handlers:
         python:
@@ -76,10 +79,15 @@ nav:
   - Getting Started: getting-started.md
   - Guides:
       - Simulators & Priors: guides/simulators.md
-      - Simulator Tutorial (Notebook): guides/simulators_notebook.md
-      - Model Gallery (Notebook): guides/model_gallery.md
       - Training Runs: guides/training.md
       - Evaluation & Export: guides/evaluation.md
+  - Examples:
+      - Simulator components: examples/01_dmri_simulator_components.ipynb
+      - Multi-compartment model: examples/02_dmri_multicompartment_model.ipynb
+      - Loading models: examples/03_Loading_models.ipynb
+  - CLI Reference:
+      - Training CLI (`@conf_train`): reference/cli_train.md
+      - Evaluation CLI (`@conf_eval`): reference/cli_eval.md
   - API Reference:
       - Simulators: reference/simulators.md
       - Neural Nets: reference/nn.md

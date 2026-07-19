@@ -5,15 +5,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Made with JAX](https://img.shields.io/badge/Made%20with-JAX-007acc.svg)](https://github.com/google/jax)
 
-Fast, reproducible diffusion MRI model selection powered by JAX, Hydra, and a library of simulators and neural architectures.
+This package provides a simulation-based inference and model selection approach for fiber reconstruction models in diffusion MRI. It implements various components often used in literature to implement a microstructural *multicompartment* model. It then allows to both infer the composition as well as parameters within this combinatorial space.
 
 **Docs:** https://www.mackelab.org/dmri/
-
-## Why use this repo?
-- Hydra-driven experiments and sweeps with sensible defaults
-- JAX-first training and evaluation pipelines with checkpointing and EMA support
-- Rich simulator library for synthetic data and calibration
-- API docs and notebooks for quick prototyping
 
 ## Quickstart
 

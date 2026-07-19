@@ -1,6 +1,6 @@
 # Getting Started
 
-Use this guide to bootstrap a working environment and run your first diffusion MRI model-selection job.
+Bootstrap an environment, launch a first training run, and learn where to look when you want to change configurations.
 
 ## Install
 
@@ -13,42 +13,45 @@ source .venv/bin/activate
 uv pip install -e '.[dev]'
 ```
 
-GPU users can opt into CUDA-enabled JAX:
+- CUDA-enabled JAX: `uv pip install -e '.[cuda]'`.
+- pip without uv: `pip install -e '.[dev]'` (quote extras in zsh).
+- conda: create an env, then install the same extras.
 
-```bash
-uv pip install -e '.[cuda]'
-```
+## Run a training job
 
-If you prefer pip directly, quote extras in zsh: `pip install -e '.[dev]'`.
-If you prefer conda, create a conda env and install the same dependencies.
-
-## First training run
-
-1. Pick or edit a configuration under `conf_train/` (e.g. `conf_train/experiment/` presets).
-2. Launch training:
+1. Pick an experiment preset in `conf_train/experiment/` or compose your own by editing `conf_train/*`.
+2. Launch:
 
    ```bash
    dmri +experiment=ball3stick
    ```
 
-3. Inspect outputs in `results/<name>/<timestamp>/` (checkpoints, configs, logs).
+3. Monitor `results/<run_name>/<timestamp>/` for checkpoints, Hydra configs (`.hydra/`), and logs. If you are logged into Weights & Biases, online logging starts automatically.
 
 ## Evaluate a trained model
 
 ```bash
-dmri_eval +experiment=eval_b3s_best_model_selection model_name=<run_folder>
+dmri_eval +experiment=eval_b3s_best_model_selection \
+  model_name=<run_folder> \
+  data.data_folder=<data_folder>
 ```
 
-Results land next to the training run (e.g. `ball3stick_model_selection_results/`).
+- `model_name` points at a training run under `results/`.
+- Data defaults to `data/`; override with `data.data_folder`.
+- Exports land next to the run (e.g. `results/<run_folder>/ball3stick_model_selection_results/`).
 
-## Editing configurations
+## Know your configs
 
-- Hydra drives configuration. Use `dmri --help` or `dmri +experiment=<...> --help` to discover overrides.
-- Common knobs: `train.optimizer`, `model.*` (embedding, selection, inference networks), and simulator definitions under `conf_train/simulator/`.
+Hydra powers both CLIs. Use `--help` to see overrides for a specific experiment, and refer to the CLI reference pages for curated config maps:
+
+- Training CLI reference: `reference/cli_train.md`
+- Evaluation CLI reference: `reference/cli_eval.md`
+
+Common tweaks live in `train.optimizer`, `model.*`, and simulator definitions under `conf_train/simulator/`.
 
 ## Documentation feedback loop
 
-Docstrings from the codebase render automatically in the API Reference. Add or improve docstrings in `dmri/*` modules and re-build the site to keep this page authoritative:
+Docstrings render automatically in the API Reference. Improve docstrings in `dmri/*` and rebuild the site with:
 
 ```bash
 mkdocs serve
