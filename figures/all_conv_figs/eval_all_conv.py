@@ -452,7 +452,7 @@ def main() -> None:
 
     def sample_best_mask(key, x):
         sample_fn = partial(
-            model.sample_mask, acq=acq, x=x, mask_prior=jnp.array([args.p_prior]), temperature=0.1
+            model.sample_mask, acq=acq, x=x, mask_prior=jnp.array([args.p_prior]), temperature=0.5
         )
         masks = jax.vmap(sample_fn)(jax.random.split(key, args.mask_sample_count))
         log_probs = jax.vmap(

@@ -1,0 +1,105 @@
+{
+  "best_eval_loss": -5.142119526863098,
+  "checkpoint": "/weka/macke/mgloeckler90/dmri/figures/b3s_baseline/runs/main_b3s/checkpoints/best.pt",
+  "device": "cuda",
+  "ksd_config": "/weka/macke/mgloeckler90/dmri/conf_eval/export/metrics/ksd.yaml",
+  "long_acquisition": {
+    "ess_mean": 0.09154404646717011,
+    "ess_median": 0.07638624906539918,
+    "ess_q10": 0.026506744146347044,
+    "ess_q90": 0.17668118286132814,
+    "ksd": {
+      "mean": 5.449112094953307,
+      "median": 1.79341322183609,
+      "p5.0": 0.0,
+      "p95.0": 22.71804103851318
+    },
+    "ksd_pvalue_mean": 0.1586287043955963,
+    "ksd_pvalue_median": 0.05058365687727928,
+    "rmse_mean": 0.06012771605703165,
+    "rmse_median": 0.03624110110104084,
+    "rmse_q10": 0.01991015151143074,
+    "rmse_q90": 0.12814544439315811
+  },
+  "parameter_counts": {
+    "embedding_net": 1588608,
+    "total": 7186076,
+    "transform": 5597468
+  },
+  "real_data_root": "/weka/macke/mgloeckler90/dmri/data",
+  "real_long_acquisition": {
+    "ess_mean": 0.04109006922226399,
+    "ess_median": 0.028088333606719973,
+    "ess_q10": 0.02000714874267578,
+    "ess_q90": 0.07904142808914184,
+    "ksd": {
+      "mean": 14.165328856601263,
+      "median": 6.328047037124634,
+      "p5.0": 0.0,
+      "p95.0": 55.37965717315674
+    },
+    "ksd_pvalue_mean": 0.12053136844406254,
+    "ksd_pvalue_median": 0.04280155524611473,
+    "rmse_mean": 0.048273914016754134,
+    "rmse_median": 0.043963683769106865,
+    "rmse_q10": 0.02923308275640011,
+    "rmse_q90": 0.07004285827279091
+  },
+  "real_long_folder": "new_data",
+  "real_samples": 512,
+  "real_short_acquisition": {
+    "ess_mean": 0.06523120973724872,
+    "ess_median": 0.04621643781661987,
+    "ess_q10": 0.02139645290374756,
+    "ess_q90": 0.13849844551086427,
+    "ksd": {
+      "mean": 5.491241120413179,
+      "median": 3.257203221321106,
+      "p5.0": 0.0,
+      "p95.0": 18.499718666076657
+    },
+    "ksd_pvalue_mean": 0.13946984070526014,
+    "ksd_pvalue_median": 0.05836575850844383,
+    "rmse_mean": 0.04265987828752259,
+    "rmse_median": 0.03843617998063564,
+    "rmse_q10": 0.024443531408905983,
+    "rmse_q90": 0.06424813866615296
+  },
+  "real_short_folder": "data",
+  "real_subset_seed": 0,
+  "short_acquisition": {
+    "ess_mean": 0.08581850316375494,
+    "ess_median": 0.066206533908844,
+    "ess_q10": 0.027195808172225954,
+    "ess_q90": 0.17232855606079106,
+    "ksd": {
+      "mean": 2.6876218048855662,
+      "median": 1.0898593068122864,
+      "p5.0": 0.0,
+      "p95.0": 10.791587638854981
+    },
+    "ksd_pvalue_mean": 0.18131383291711245,
+    "ksd_pvalue_median": 0.08560311049222946,
+    "rmse_mean": 0.06070739438979217,
+    "rmse_median": 0.036424754187464714,
+    "rmse_q10": 0.02009451426565647,
+    "rmse_q90": 0.13068708330392861
+  },
+  "sim_type": "Ball3StickSharedDiffusivity",
+  "single_example": {
+    "ksd": 0.0,
+    "ksd_pvalue": 0.5564202070236206,
+    "log_probs_shape": [
+      4,
+      8
+    ],
+    "loss": 1.0162829160690308,
+    "param_rmse": 0.78507399559021,
+    "samples_shape": [
+      4,
+      8,
+      11
+    ]
+  },
+  "step": 334750
+}

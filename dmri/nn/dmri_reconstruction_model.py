@@ -559,6 +559,34 @@ class DMRIInferenceModel(nnx.Module):
         )
         return model_mask
 
+    def map_model_mask(
+        self,
+        rng: RngKey,
+        acq: AcquisitionSchemeLike,
+        x: Array,
+        mask_prior: Array | None = None,
+        method: str = "best_of_n",
+        num_samples: int = 128,
+        beam_width: int = 8,
+        temperature: float = 1.0,
+    ) -> Array:
+        mask_prior_arr = jnp.asarray(mask_prior) if mask_prior is not None else None
+        y_ctx, y = self._encode_observations(acq, x)
+        dim = self.tokenizer.num_models + self.tokenizer.num_noises
+
+        return self.model_decoder.map(
+            rng,
+            tokenizer=self.tokenizer,
+            y=y,
+            dim=dim,
+            mask_prior=mask_prior_arr,
+            additional_context=y_ctx,
+            method=method,
+            num_samples=num_samples,
+            beam_width=beam_width,
+            temperature=temperature,
+        )
+
     def log_prob_mask(
         self,
         model_mask: Array,
@@ -606,7 +634,7 @@ class DMRIInferenceModel(nnx.Module):
         model_mask: Array,
         sample_method: str = "ode",
         num_steps: int = 64,
-        last_euler_step: bool = True,
+        last_euler_step: bool = False,
         t_min: float | None = None,
         t_max: float | None = None,
         temperature: float = 1.0,

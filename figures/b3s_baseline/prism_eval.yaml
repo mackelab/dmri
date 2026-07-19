@@ -1,0 +1,96 @@
+{
+  "checkpoint": "/weka/macke/mgloeckler90/dmri/results/updated5_b3s_2_4_6_128",
+  "ksd_config": "/weka/macke/mgloeckler90/dmri/conf_eval/export/metrics/ksd.yaml",
+  "long_acquisition": {
+    "ess_mean": 0.09767707276114379,
+    "ess_median": 0.08064865320920944,
+    "ess_q10": 0.02793182022869587,
+    "ess_q90": 0.19121337831020357,
+    "ksd": {
+      "mean": 2.7108080014950247,
+      "median": 0.4716378301382065,
+      "p5.0": 0.0,
+      "p95.0": 11.656581830978393
+    },
+    "ksd_pvalue_mean": 0.33201604239775406,
+    "ksd_pvalue_median": 0.2684824764728546,
+    "rmse_mean": 0.059960719328882986,
+    "rmse_median": 0.03587848134338856,
+    "rmse_q10": 0.01981105897575617,
+    "rmse_q90": 0.12818145751953128
+  },
+  "parameter_counts": {
+    "encoder": 340894,
+    "inference_decoder": 4547648,
+    "model_decoder": 1913921,
+    "tokenizer": 13898,
+    "total": 6816361
+  },
+  "real_data_root": "/weka/macke/mgloeckler90/dmri/data",
+  "real_long_acquisition": {
+    "ess_mean": 0.08222619154548738,
+    "ess_median": 0.06425126641988754,
+    "ess_q10": 0.02361620347946882,
+    "ess_q90": 0.17286717891693118,
+    "ksd": {
+      "mean": 5.728135510085849,
+      "median": 3.670272946357727,
+      "p5.0": 0.0,
+      "p95.0": 19.207253742218015
+    },
+    "ksd_pvalue_mean": 0.15191816277501857,
+    "ksd_pvalue_median": 0.031128404662013054,
+    "rmse_mean": 0.04517632616178162,
+    "rmse_median": 0.041034162044525146,
+    "rmse_q10": 0.027996966429054738,
+    "rmse_q90": 0.06382018923759461
+  },
+  "real_long_folder": "new_data",
+  "real_samples": 512,
+  "real_short_acquisition": {
+    "ess_mean": 0.10536544805654557,
+    "ess_median": 0.08378558978438377,
+    "ess_q10": 0.027571992203593253,
+    "ess_q90": 0.20828105658292775,
+    "ksd": {
+      "mean": 2.613135023842915,
+      "median": 1.1367137432098389,
+      "p5.0": 0.0,
+      "p95.0": 9.64829077720642
+    },
+    "ksd_pvalue_mean": 0.263535074743686,
+    "ksd_pvalue_median": 0.1342412382364273,
+    "rmse_mean": 0.03897578216918191,
+    "rmse_median": 0.03485162556171417,
+    "rmse_q10": 0.022324281744658947,
+    "rmse_q90": 0.059396228566765796
+  },
+  "real_short_folder": "data",
+  "real_subset_seed": 0,
+  "short_acquisition": {
+    "ess_mean": 0.09518981744258781,
+    "ess_median": 0.08112895116209984,
+    "ess_q10": 0.02741949539631605,
+    "ess_q90": 0.17896013855934148,
+    "ksd": {
+      "mean": 2.255963652383798,
+      "median": 0.3018849194049835,
+      "p5.0": 0.0,
+      "p95.0": 7.640635824203488
+    },
+    "ksd_pvalue_mean": 0.33690265513132545,
+    "ksd_pvalue_median": 0.2723735272884369,
+    "rmse_mean": 0.06042587202595314,
+    "rmse_median": 0.03603108786046505,
+    "rmse_q10": 0.02002068180590868,
+    "rmse_q90": 0.13155392259359364
+  },
+  "single_example": {
+    "ess": 5.3068437576293945,
+    "ksd": 0.42382779717445374,
+    "ksd_pvalue": 0.023346303030848503,
+    "num_samples": 50,
+    "param_rmse": 0.5498562455177307
+  },
+  "which": "latest"
+}

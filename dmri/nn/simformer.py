@@ -520,3 +520,22 @@ class EDMSimformer(EDM):
         final = logp_final + base_logp
 
         return jnp.squeeze(final)
+
+    def map(self,
+            x: Array,
+            tokenizer: Tokenizer,
+            y: Array,
+            tokens_cfg: Optional[Array] = None,
+            context: Optional[ArrayLike] = None,
+            attention_mask: Optional[ArrayLike] = None,
+            model_mask: Optional[ArrayLike] = None,
+            t_min: float | None = None,
+            t_max: float | None = None,
+            num_steps: int = 64
+    ) -> Array:
+        t_min = t_min if t_min is not None else self.train_cfg.t_min
+        t_max = t_max if t_max is not None else self.train_cfg.t_max
+        ts = self.solver_cfg.solve_schedule(t_min, t_max, num_steps)[::-1]
+        theta_mask = tokenizer.simulator.theta_mask(model_mask)
+
+        # TODO: This can be optimized by not integrating the logp and using a root-finding method instead of ODE integration.

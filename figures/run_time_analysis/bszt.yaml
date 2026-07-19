@@ -1,0 +1,1156 @@
+{
+  "kind": "model_summary",
+  "checkpoint": "/weka/macke/mgloeckler90/dmri/results/updated_all_3_6_8_128_model_prior",
+  "checkpoint_which": "latest",
+  "backend": "gpu",
+  "devices": [
+    "gpu"
+  ],
+  "acquisition": "random_hcp_acq",
+  "seed": 0,
+  "mask_prior": 1.0,
+  "temperature": 1.0,
+  "theta_num_steps": 64,
+  "loss_batch_size": 2048,
+  "num_acquisitions": 105,
+  "theta_dim": 51,
+  "num_models": 10,
+  "num_noises": 2,
+  "model_type": "DMRIInferenceModel",
+  "encoder_type": "BvalBvecSignalEmbeddingNet",
+  "inference_decoder_type": "EDMSimformer",
+  "model_decoder_type": "BinaryAutoregressiveDecoder",
+  "tokenizer_type": "DMRITokenizerPPP",
+  "parameter_counts": {
+    "total": 9432650,
+    "encoder": 506206,
+    "inference_decoder": 6063424,
+    "model_decoder": 2837569,
+    "tokenizer": 25451
+  },
+  "operations": {
+    "sample_mask": {
+      "name": "sample_mask",
+      "backend": "gpu",
+      "devices": [
+        "gpu"
+      ],
+      "input_nbytes": 8,
+      "jit": true,
+      "static_argnums": null,
+      "static_argnames": null,
+      "compile_s": 4.8131710439920425,
+      "compiler_memory_estimate": {
+        "generated_code_size_in_bytes": 13803560,
+        "argument_size_in_bytes": 8,
+        "output_size_in_bytes": 12,
+        "alias_size_in_bytes": 0,
+        "temp_size_in_bytes": 714560,
+        "host_generated_code_size_in_bytes": 0,
+        "host_argument_size_in_bytes": 0,
+        "host_output_size_in_bytes": 0,
+        "host_alias_size_in_bytes": 0,
+        "host_temp_size_in_bytes": 0
+      },
+      "first_exec_s": 0.011736590415239334,
+      "compile_plus_first_exec_s": 4.824907634407282,
+      "output_nbytes": 12,
+      "device_memory_before_first": {
+        "num_allocs": 19362,
+        "bytes_in_use": 42562048,
+        "peak_bytes_in_use": 342795264,
+        "largest_alloc_size": 33641472,
+        "bytes_limit": 63763218432,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 63763218432,
+        "peak_pool_bytes": 63763218432
+      },
+      "device_memory_after_first": {
+        "num_allocs": 19364,
+        "bytes_in_use": 42562304,
+        "peak_bytes_in_use": 342795264,
+        "largest_alloc_size": 33641472,
+        "bytes_limit": 63763218432,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 63763218432,
+        "peak_pool_bytes": 63763218432
+      },
+      "device_memory_first_delta": {
+        "peak_pool_bytes": 0,
+        "bytes_limit": 0,
+        "num_allocs": 2,
+        "pool_bytes": 0,
+        "peak_bytes_in_use": 0,
+        "peak_bytes_reserved": 0,
+        "largest_alloc_size": 0,
+        "bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "bytes_in_use": 256
+      },
+      "steady_state": {
+        "runs": 10,
+        "mean_s": 0.0035314016044139863,
+        "median_s": 0.0035258792340755463,
+        "min_s": 0.003515409305691719,
+        "max_s": 0.0035610515624284744,
+        "std_s": 1.5012476022816313e-05,
+        "all_runs_s": [
+          0.0035232100635766983,
+          0.0035316012799739838,
+          0.0035285484045743942,
+          0.0035204999148845673,
+          0.003515409305691719,
+          0.00351865217089653,
+          0.0035185106098651886,
+          0.003544580191373825,
+          0.0035610515624284744,
+          0.003551952540874481
+        ]
+      },
+      "live_arrays_before_nbytes": 118075458,
+      "live_arrays_after_nbytes": 118075458,
+      "live_arrays_delta_nbytes": 0,
+      "device_memory_before_steady": {
+        "num_allocs": 19366,
+        "bytes_in_use": 42562304,
+        "peak_bytes_in_use": 342795264,
+        "largest_alloc_size": 33641472,
+        "bytes_limit": 63763218432,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 63763218432,
+        "peak_pool_bytes": 63763218432
+      },
+      "device_memory_after_steady": {
+        "num_allocs": 19386,
+        "bytes_in_use": 42562304,
+        "peak_bytes_in_use": 342795264,
+        "largest_alloc_size": 33641472,
+        "bytes_limit": 63763218432,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 63763218432,
+        "peak_pool_bytes": 63763218432
+      },
+      "device_memory_steady_delta": {
+        "peak_pool_bytes": 0,
+        "bytes_limit": 0,
+        "num_allocs": 20,
+        "pool_bytes": 0,
+        "peak_bytes_in_use": 0,
+        "peak_bytes_reserved": 0,
+        "largest_alloc_size": 0,
+        "bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "bytes_in_use": 0
+      },
+      "device_memory_steady_run_summary": {
+        "peak_pool_bytes": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "bytes_reserved": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "bytes_limit": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "largest_alloc_size": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "num_allocs": {
+          "mean": 2,
+          "std": 0.0,
+          "min": 2,
+          "max": 2
+        },
+        "pool_bytes": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "largest_free_block_bytes": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "peak_bytes_in_use": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "peak_bytes_reserved": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "bytes_in_use": {
+          "mean": 25.6,
+          "std": 76.8,
+          "min": 0,
+          "max": 256
+        }
+      },
+      "artifacts": {},
+      "operation": "sample_mask",
+      "batch_size": 1
+    },
+    "log_prob_mask": {
+      "name": "log_prob_mask",
+      "backend": "gpu",
+      "devices": [
+        "gpu"
+      ],
+      "input_nbytes": 0,
+      "jit": true,
+      "static_argnums": null,
+      "static_argnames": null,
+      "compile_s": 4.202790109440684,
+      "compiler_memory_estimate": {
+        "generated_code_size_in_bytes": 13845116,
+        "argument_size_in_bytes": 0,
+        "output_size_in_bytes": 4,
+        "alias_size_in_bytes": 0,
+        "temp_size_in_bytes": 658752,
+        "host_generated_code_size_in_bytes": 0,
+        "host_argument_size_in_bytes": 0,
+        "host_output_size_in_bytes": 0,
+        "host_alias_size_in_bytes": 0,
+        "host_temp_size_in_bytes": 0
+      },
+      "first_exec_s": 0.0048961397260427475,
+      "compile_plus_first_exec_s": 4.207686249166727,
+      "output_nbytes": 4,
+      "device_memory_before_first": {
+        "num_allocs": 19475,
+        "bytes_in_use": 42562048,
+        "peak_bytes_in_use": 342795264,
+        "largest_alloc_size": 33641472,
+        "bytes_limit": 63763218432,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 63763218432,
+        "peak_pool_bytes": 63763218432
+      },
+      "device_memory_after_first": {
+        "num_allocs": 19477,
+        "bytes_in_use": 42562304,
+        "peak_bytes_in_use": 342795264,
+        "largest_alloc_size": 33641472,
+        "bytes_limit": 63763218432,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 63763218432,
+        "peak_pool_bytes": 63763218432
+      },
+      "device_memory_first_delta": {
+        "peak_pool_bytes": 0,
+        "bytes_limit": 0,
+        "num_allocs": 2,
+        "pool_bytes": 0,
+        "peak_bytes_in_use": 0,
+        "peak_bytes_reserved": 0,
+        "largest_alloc_size": 0,
+        "bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "bytes_in_use": 256
+      },
+      "steady_state": {
+        "runs": 10,
+        "mean_s": 0.0004676124081015587,
+        "median_s": 0.0004610540345311165,
+        "min_s": 0.00045336782932281494,
+        "max_s": 0.0004983097314834595,
+        "std_s": 1.5608926458113253e-05,
+        "all_runs_s": [
+          0.0004983097314834595,
+          0.0004968475550413132,
+          0.00047016143798828125,
+          0.00046196766197681427,
+          0.0004601404070854187,
+          0.0004569198936223984,
+          0.000459449365735054,
+          0.0004556700587272644,
+          0.00046329014003276825,
+          0.00045336782932281494
+        ]
+      },
+      "live_arrays_before_nbytes": 118075450,
+      "live_arrays_after_nbytes": 118075450,
+      "live_arrays_delta_nbytes": 0,
+      "device_memory_before_steady": {
+        "num_allocs": 19479,
+        "bytes_in_use": 42562304,
+        "peak_bytes_in_use": 342795264,
+        "largest_alloc_size": 33641472,
+        "bytes_limit": 63763218432,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 63763218432,
+        "peak_pool_bytes": 63763218432
+      },
+      "device_memory_after_steady": {
+        "num_allocs": 19499,
+        "bytes_in_use": 42562304,
+        "peak_bytes_in_use": 342795264,
+        "largest_alloc_size": 33641472,
+        "bytes_limit": 63763218432,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 63763218432,
+        "peak_pool_bytes": 63763218432
+      },
+      "device_memory_steady_delta": {
+        "peak_pool_bytes": 0,
+        "bytes_limit": 0,
+        "num_allocs": 20,
+        "pool_bytes": 0,
+        "peak_bytes_in_use": 0,
+        "peak_bytes_reserved": 0,
+        "largest_alloc_size": 0,
+        "bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "bytes_in_use": 0
+      },
+      "device_memory_steady_run_summary": {
+        "peak_pool_bytes": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "bytes_reserved": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "bytes_limit": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "largest_alloc_size": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "num_allocs": {
+          "mean": 2,
+          "std": 0.0,
+          "min": 2,
+          "max": 2
+        },
+        "pool_bytes": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "largest_free_block_bytes": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "peak_bytes_in_use": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "peak_bytes_reserved": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "bytes_in_use": {
+          "mean": 25.6,
+          "std": 76.8,
+          "min": 0,
+          "max": 256
+        }
+      },
+      "artifacts": {},
+      "operation": "log_prob_mask",
+      "batch_size": 1
+    },
+    "sample_theta": {
+      "name": "sample_theta",
+      "backend": "gpu",
+      "devices": [
+        "gpu"
+      ],
+      "input_nbytes": 8,
+      "jit": true,
+      "static_argnums": null,
+      "static_argnames": null,
+      "compile_s": 7.983241083100438,
+      "compiler_memory_estimate": {
+        "generated_code_size_in_bytes": 51295096,
+        "argument_size_in_bytes": 8,
+        "output_size_in_bytes": 204,
+        "alias_size_in_bytes": 0,
+        "temp_size_in_bytes": 1440608,
+        "host_generated_code_size_in_bytes": 0,
+        "host_argument_size_in_bytes": 0,
+        "host_output_size_in_bytes": 0,
+        "host_alias_size_in_bytes": 0,
+        "host_temp_size_in_bytes": 0
+      },
+      "first_exec_s": 0.042578309774398804,
+      "compile_plus_first_exec_s": 8.025819392874837,
+      "output_nbytes": 204,
+      "device_memory_before_first": {
+        "num_allocs": 19783,
+        "bytes_in_use": 42563328,
+        "peak_bytes_in_use": 342795264,
+        "largest_alloc_size": 33641472,
+        "bytes_limit": 63763218432,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 63763218432,
+        "peak_pool_bytes": 63763218432
+      },
+      "device_memory_after_first": {
+        "num_allocs": 19785,
+        "bytes_in_use": 42563584,
+        "peak_bytes_in_use": 342795264,
+        "largest_alloc_size": 33641472,
+        "bytes_limit": 63763218432,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 63763218432,
+        "peak_pool_bytes": 63763218432
+      },
+      "device_memory_first_delta": {
+        "peak_pool_bytes": 0,
+        "bytes_limit": 0,
+        "num_allocs": 2,
+        "pool_bytes": 0,
+        "peak_bytes_in_use": 0,
+        "peak_bytes_reserved": 0,
+        "largest_alloc_size": 0,
+        "bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "bytes_in_use": 256
+      },
+      "steady_state": {
+        "runs": 10,
+        "mean_s": 0.03086203634738922,
+        "median_s": 0.03084417525678873,
+        "min_s": 0.030579619109630585,
+        "max_s": 0.0311968382447958,
+        "std_s": 0.0001849080730153621,
+        "all_runs_s": [
+          0.0311968382447958,
+          0.031040627509355545,
+          0.030996419489383698,
+          0.03100307658314705,
+          0.030896959826350212,
+          0.030713152140378952,
+          0.030706612393260002,
+          0.030579619109630585,
+          0.03069566749036312,
+          0.03079139068722725
+        ]
+      },
+      "live_arrays_before_nbytes": 118076736,
+      "live_arrays_after_nbytes": 118076736,
+      "live_arrays_delta_nbytes": 0,
+      "device_memory_before_steady": {
+        "num_allocs": 19787,
+        "bytes_in_use": 42563584,
+        "peak_bytes_in_use": 342795264,
+        "largest_alloc_size": 33641472,
+        "bytes_limit": 63763218432,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 63763218432,
+        "peak_pool_bytes": 63763218432
+      },
+      "device_memory_after_steady": {
+        "num_allocs": 19807,
+        "bytes_in_use": 42563584,
+        "peak_bytes_in_use": 342795264,
+        "largest_alloc_size": 33641472,
+        "bytes_limit": 63763218432,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 63763218432,
+        "peak_pool_bytes": 63763218432
+      },
+      "device_memory_steady_delta": {
+        "peak_pool_bytes": 0,
+        "bytes_limit": 0,
+        "num_allocs": 20,
+        "pool_bytes": 0,
+        "peak_bytes_in_use": 0,
+        "peak_bytes_reserved": 0,
+        "largest_alloc_size": 0,
+        "bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "bytes_in_use": 0
+      },
+      "device_memory_steady_run_summary": {
+        "peak_pool_bytes": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "bytes_reserved": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "bytes_limit": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "largest_alloc_size": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "num_allocs": {
+          "mean": 2,
+          "std": 0.0,
+          "min": 2,
+          "max": 2
+        },
+        "pool_bytes": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "largest_free_block_bytes": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "peak_bytes_in_use": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "peak_bytes_reserved": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "bytes_in_use": {
+          "mean": 25.6,
+          "std": 76.8,
+          "min": 0,
+          "max": 256
+        }
+      },
+      "artifacts": {},
+      "operation": "sample_theta",
+      "batch_size": 1
+    },
+    "log_prob_theta": {
+      "name": "log_prob_theta",
+      "backend": "gpu",
+      "devices": [
+        "gpu"
+      ],
+      "input_nbytes": 0,
+      "jit": true,
+      "static_argnums": null,
+      "static_argnames": null,
+      "compile_s": 23.736857702955604,
+      "compiler_memory_estimate": {
+        "generated_code_size_in_bytes": 54912532,
+        "argument_size_in_bytes": 0,
+        "output_size_in_bytes": 4,
+        "alias_size_in_bytes": 0,
+        "temp_size_in_bytes": 9376368,
+        "host_generated_code_size_in_bytes": 0,
+        "host_argument_size_in_bytes": 0,
+        "host_output_size_in_bytes": 0,
+        "host_alias_size_in_bytes": 0,
+        "host_temp_size_in_bytes": 0
+      },
+      "first_exec_s": 0.26915108785033226,
+      "compile_plus_first_exec_s": 24.006008790805936,
+      "output_nbytes": 4,
+      "device_memory_before_first": {
+        "num_allocs": 21602,
+        "bytes_in_use": 42565632,
+        "peak_bytes_in_use": 342795264,
+        "largest_alloc_size": 36009984,
+        "bytes_limit": 63763218432,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 63763218432,
+        "peak_pool_bytes": 63763218432
+      },
+      "device_memory_after_first": {
+        "num_allocs": 21604,
+        "bytes_in_use": 42565888,
+        "peak_bytes_in_use": 342795264,
+        "largest_alloc_size": 36009984,
+        "bytes_limit": 63763218432,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 63763218432,
+        "peak_pool_bytes": 63763218432
+      },
+      "device_memory_first_delta": {
+        "peak_pool_bytes": 0,
+        "bytes_limit": 0,
+        "num_allocs": 2,
+        "pool_bytes": 0,
+        "peak_bytes_in_use": 0,
+        "peak_bytes_reserved": 0,
+        "largest_alloc_size": 0,
+        "bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "bytes_in_use": 256
+      },
+      "steady_state": {
+        "runs": 10,
+        "mean_s": 0.2476271152496338,
+        "median_s": 0.24762640707194805,
+        "min_s": 0.2475381139665842,
+        "max_s": 0.24768497422337532,
+        "std_s": 4.319391008783736e-05,
+        "all_runs_s": [
+          0.2475381139665842,
+          0.24763007275760174,
+          0.24767462350428104,
+          0.24759378470480442,
+          0.24767891131341457,
+          0.24762274138629436,
+          0.24768497422337532,
+          0.2476178426295519,
+          0.24763663299381733,
+          0.247593455016613
+        ]
+      },
+      "live_arrays_before_nbytes": 118078285,
+      "live_arrays_after_nbytes": 118078285,
+      "live_arrays_delta_nbytes": 0,
+      "device_memory_before_steady": {
+        "num_allocs": 21606,
+        "bytes_in_use": 42565888,
+        "peak_bytes_in_use": 342795264,
+        "largest_alloc_size": 36009984,
+        "bytes_limit": 63763218432,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 63763218432,
+        "peak_pool_bytes": 63763218432
+      },
+      "device_memory_after_steady": {
+        "num_allocs": 21626,
+        "bytes_in_use": 42565888,
+        "peak_bytes_in_use": 342795264,
+        "largest_alloc_size": 36009984,
+        "bytes_limit": 63763218432,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 63763218432,
+        "peak_pool_bytes": 63763218432
+      },
+      "device_memory_steady_delta": {
+        "peak_pool_bytes": 0,
+        "bytes_limit": 0,
+        "num_allocs": 20,
+        "pool_bytes": 0,
+        "peak_bytes_in_use": 0,
+        "peak_bytes_reserved": 0,
+        "largest_alloc_size": 0,
+        "bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "bytes_in_use": 0
+      },
+      "device_memory_steady_run_summary": {
+        "peak_pool_bytes": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "bytes_reserved": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "bytes_limit": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "largest_alloc_size": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "num_allocs": {
+          "mean": 2,
+          "std": 0.0,
+          "min": 2,
+          "max": 2
+        },
+        "pool_bytes": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "largest_free_block_bytes": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "peak_bytes_in_use": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "peak_bytes_reserved": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "bytes_in_use": {
+          "mean": 25.6,
+          "std": 76.8,
+          "min": 0,
+          "max": 256
+        }
+      },
+      "artifacts": {},
+      "operation": "log_prob_theta",
+      "batch_size": 1
+    },
+    "loss_forward": {
+      "name": "loss_forward",
+      "backend": "gpu",
+      "devices": [
+        "gpu"
+      ],
+      "input_nbytes": 42481968,
+      "jit": true,
+      "static_argnums": null,
+      "static_argnames": null,
+      "compile_s": 12.719292977824807,
+      "compiler_memory_estimate": {
+        "generated_code_size_in_bytes": 819329,
+        "argument_size_in_bytes": 42481968,
+        "output_size_in_bytes": 8,
+        "alias_size_in_bytes": 0,
+        "temp_size_in_bytes": 700496264,
+        "host_generated_code_size_in_bytes": 0,
+        "host_argument_size_in_bytes": 0,
+        "host_output_size_in_bytes": 0,
+        "host_alias_size_in_bytes": 0,
+        "host_temp_size_in_bytes": 0
+      },
+      "first_exec_s": 0.03699670173227787,
+      "compile_plus_first_exec_s": 12.756289679557085,
+      "output_nbytes": 8,
+      "device_memory_before_first": {
+        "num_allocs": 23111,
+        "bytes_in_use": 42566656,
+        "peak_bytes_in_use": 1093502464,
+        "largest_alloc_size": 461373440,
+        "bytes_limit": 63763218432,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 63763218432,
+        "peak_pool_bytes": 63763218432
+      },
+      "device_memory_after_first": {
+        "num_allocs": 23113,
+        "bytes_in_use": 42566912,
+        "peak_bytes_in_use": 1093502464,
+        "largest_alloc_size": 700496384,
+        "bytes_limit": 63763218432,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 63763218432,
+        "peak_pool_bytes": 63763218432
+      },
+      "device_memory_first_delta": {
+        "peak_pool_bytes": 0,
+        "bytes_limit": 0,
+        "num_allocs": 2,
+        "pool_bytes": 0,
+        "peak_bytes_in_use": 0,
+        "peak_bytes_reserved": 0,
+        "largest_alloc_size": 239122944,
+        "bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "bytes_in_use": 256
+      },
+      "steady_state": {
+        "runs": 10,
+        "mean_s": 0.020313196070492267,
+        "median_s": 0.020314977504312992,
+        "min_s": 0.0201717559248209,
+        "max_s": 0.020404066890478134,
+        "std_s": 6.456753839414965e-05,
+        "all_runs_s": [
+          0.0201717559248209,
+          0.020404066890478134,
+          0.020279929041862488,
+          0.020312927663326263,
+          0.020381536334753036,
+          0.02031702734529972,
+          0.020282678306102753,
+          0.020263677462935448,
+          0.020355835556983948,
+          0.020362526178359985
+        ]
+      },
+      "live_arrays_before_nbytes": 118079267,
+      "live_arrays_after_nbytes": 118079267,
+      "live_arrays_delta_nbytes": 0,
+      "device_memory_before_steady": {
+        "num_allocs": 23115,
+        "bytes_in_use": 42566912,
+        "peak_bytes_in_use": 1093502464,
+        "largest_alloc_size": 700496384,
+        "bytes_limit": 63763218432,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 63763218432,
+        "peak_pool_bytes": 63763218432
+      },
+      "device_memory_after_steady": {
+        "num_allocs": 23135,
+        "bytes_in_use": 42566912,
+        "peak_bytes_in_use": 1093502464,
+        "largest_alloc_size": 700496384,
+        "bytes_limit": 63763218432,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 63763218432,
+        "peak_pool_bytes": 63763218432
+      },
+      "device_memory_steady_delta": {
+        "peak_pool_bytes": 0,
+        "bytes_limit": 0,
+        "num_allocs": 20,
+        "pool_bytes": 0,
+        "peak_bytes_in_use": 0,
+        "peak_bytes_reserved": 0,
+        "largest_alloc_size": 0,
+        "bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "bytes_in_use": 0
+      },
+      "device_memory_steady_run_summary": {
+        "peak_pool_bytes": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "bytes_reserved": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "bytes_limit": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "largest_alloc_size": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "num_allocs": {
+          "mean": 2,
+          "std": 0.0,
+          "min": 2,
+          "max": 2
+        },
+        "pool_bytes": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "largest_free_block_bytes": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "peak_bytes_in_use": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "peak_bytes_reserved": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "bytes_in_use": {
+          "mean": 25.6,
+          "std": 76.8,
+          "min": 0,
+          "max": 256
+        }
+      },
+      "artifacts": {},
+      "operation": "loss_forward",
+      "batch_size": 2048
+    },
+    "loss_backward": {
+      "name": "loss_backward",
+      "backend": "gpu",
+      "devices": [
+        "gpu"
+      ],
+      "input_nbytes": 42481968,
+      "jit": true,
+      "static_argnums": null,
+      "static_argnames": null,
+      "compile_s": 46.73287446796894,
+      "compiler_memory_estimate": {
+        "generated_code_size_in_bytes": 2489401,
+        "argument_size_in_bytes": 42481968,
+        "output_size_in_bytes": 24,
+        "alias_size_in_bytes": 0,
+        "temp_size_in_bytes": 16585357248,
+        "host_generated_code_size_in_bytes": 0,
+        "host_argument_size_in_bytes": 0,
+        "host_output_size_in_bytes": 0,
+        "host_alias_size_in_bytes": 0,
+        "host_temp_size_in_bytes": 0
+      },
+      "first_exec_s": 0.10647737234830856,
+      "compile_plus_first_exec_s": 46.83935184031725,
+      "output_nbytes": 8,
+      "device_memory_before_first": {
+        "num_allocs": 28731,
+        "bytes_in_use": 42567680,
+        "peak_bytes_in_use": 1617671680,
+        "largest_alloc_size": 700496384,
+        "bytes_limit": 63763218432,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 63763218432,
+        "peak_pool_bytes": 63763218432
+      },
+      "device_memory_after_first": {
+        "num_allocs": 28735,
+        "bytes_in_use": 42568192,
+        "peak_bytes_in_use": 16627925760,
+        "largest_alloc_size": 16585357312,
+        "bytes_limit": 63763218432,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 63763218432,
+        "peak_pool_bytes": 63763218432
+      },
+      "device_memory_first_delta": {
+        "peak_pool_bytes": 0,
+        "bytes_limit": 0,
+        "num_allocs": 4,
+        "pool_bytes": 0,
+        "peak_bytes_in_use": 15010254080,
+        "peak_bytes_reserved": 0,
+        "largest_alloc_size": 15884860928,
+        "bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "bytes_in_use": 512
+      },
+      "steady_state": {
+        "runs": 10,
+        "mean_s": 0.06974908746778966,
+        "median_s": 0.06983378622680902,
+        "min_s": 0.06874050758779049,
+        "max_s": 0.07034637406468391,
+        "std_s": 0.0004097566137309946,
+        "all_runs_s": [
+          0.06874050758779049,
+          0.07012930326163769,
+          0.06972044333815575,
+          0.06987571716308594,
+          0.06987206637859344,
+          0.06952215544879436,
+          0.0697955060750246,
+          0.06993776559829712,
+          0.06955103576183319,
+          0.07034637406468391
+        ]
+      },
+      "live_arrays_before_nbytes": 118080245,
+      "live_arrays_after_nbytes": 118080245,
+      "live_arrays_delta_nbytes": 0,
+      "device_memory_before_steady": {
+        "num_allocs": 28739,
+        "bytes_in_use": 42568192,
+        "peak_bytes_in_use": 16627926272,
+        "largest_alloc_size": 16585357312,
+        "bytes_limit": 63763218432,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 63763218432,
+        "peak_pool_bytes": 63763218432
+      },
+      "device_memory_after_steady": {
+        "num_allocs": 28779,
+        "bytes_in_use": 42568192,
+        "peak_bytes_in_use": 16627926784,
+        "largest_alloc_size": 16585357312,
+        "bytes_limit": 63763218432,
+        "bytes_reserved": 0,
+        "peak_bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "pool_bytes": 63763218432,
+        "peak_pool_bytes": 63763218432
+      },
+      "device_memory_steady_delta": {
+        "peak_pool_bytes": 0,
+        "bytes_limit": 0,
+        "num_allocs": 40,
+        "pool_bytes": 0,
+        "peak_bytes_in_use": 512,
+        "peak_bytes_reserved": 0,
+        "largest_alloc_size": 0,
+        "bytes_reserved": 0,
+        "largest_free_block_bytes": 0,
+        "bytes_in_use": 0
+      },
+      "device_memory_steady_run_summary": {
+        "peak_pool_bytes": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "bytes_reserved": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "bytes_limit": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "largest_alloc_size": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "num_allocs": {
+          "mean": 4,
+          "std": 0.0,
+          "min": 4,
+          "max": 4
+        },
+        "pool_bytes": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "largest_free_block_bytes": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "peak_bytes_in_use": {
+          "mean": 51.2,
+          "std": 153.6,
+          "min": 0,
+          "max": 512
+        },
+        "peak_bytes_reserved": {
+          "mean": 0,
+          "std": 0.0,
+          "min": 0,
+          "max": 0
+        },
+        "bytes_in_use": {
+          "mean": 51.2,
+          "std": 153.6,
+          "min": 0,
+          "max": 512
+        }
+      },
+      "artifacts": {},
+      "operation": "loss_backward",
+      "batch_size": 2048
+    }
+  },
+  "result_json": "/weka/macke/mgloeckler90/dmri/figures/run_time_analysis/bszt.yaml"
+}

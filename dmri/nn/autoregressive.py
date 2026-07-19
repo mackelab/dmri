@@ -453,6 +453,73 @@ class BinaryAutoregressiveDecoder(nnx.Module):
             temperature=temperature,
         )
 
+    def map(
+        self,
+        key,
+        tokenizer,
+        y,
+        dim,
+        mask_prior: Optional[Array] = None,
+        additional_context: Optional[Array] = None,
+        method: str = "best_of_n",
+        num_samples: int = 128,
+        beam_width: int = 8,
+        temperature: float = 1.0,
+    ) -> Array:
+        if method == "best_of_n":
+            if num_samples < 1:
+                raise ValueError("num_samples must be at least 1.")
+            return best_of_n_autoregressive_map(
+                self,
+                key,
+                tokenizer,
+                y,
+                dim,
+                num_samples,
+                mask_prior=mask_prior,
+                additional_context=additional_context,
+                temperature=temperature,
+            )
+        if method == "beam_search":
+            return beam_search(
+                self,
+                tokenizer,
+                y,
+                dim,
+                mask_prior=mask_prior,
+                additional_context=additional_context,
+                beam_width=beam_width,
+                temperature=temperature,
+            )
+        if method == "stochastic_beam_search":
+            return stochastic_beam_search(
+                self,
+                key,
+                tokenizer,
+                y,
+                dim,
+                mask_prior=mask_prior,
+                additional_context=additional_context,
+                beam_width=beam_width,
+                temperature=temperature,
+            )
+        if method == "best_of_n_stochastic_beam_search":
+            if num_samples < 1:
+                raise ValueError("num_samples must be at least 1.")
+            return best_of_n_stochastic_beam_search(
+                self,
+                key,
+                tokenizer,
+                y,
+                dim,
+                num_samples,
+                mask_prior=mask_prior,
+                additional_context=additional_context,
+                beam_width=beam_width,
+                temperature=temperature,
+            )
+        raise ValueError(f"Unknown autoregressive MAP method '{method}'.")
+
     def log_prob(
         self,
         model_mask: Array,
@@ -511,6 +578,301 @@ def naive_autoregressive_decoding(
     x, _ = jax.lax.scan(scan_fn, (x, 0), keys)
 
     return x[0]
+
+
+@partial(jax.jit, static_argnums=(0, 2, 4, 5))
+def best_of_n_autoregressive_map(
+    model: BinaryAutoregressiveDecoder,
+    key: RngKey,
+    tokenizer: Tokenizer,
+    y: Array,
+    dim: int,
+    num_samples: int,
+    mask_prior: Optional[Array] = None,
+    additional_context: Optional[Array] = None,
+    temperature: float = 1.0,
+) -> Array:
+    keys = jax.random.split(key, num_samples)
+
+    def sample_once(sample_key: RngKey) -> Array:
+        return naive_autoregressive_decoding(
+            model,
+            sample_key,
+            tokenizer,
+            y,
+            dim,
+            mask_prior=mask_prior,
+            additional_context=additional_context,
+            temperature=temperature,
+        )
+
+    samples = jax.vmap(sample_once)(keys)
+
+    def score_once(model_mask: Array) -> Array:
+        return model.log_prob(
+            model_mask,
+            tokenizer,
+            y,
+            mask_prior=mask_prior,
+            additional_context=additional_context,
+        )
+
+    log_probs = jax.vmap(score_once)(samples)
+    best_idx = jnp.argmax(log_probs)
+    return samples[best_idx]
+
+
+def _sample_gumbel(
+    key: RngKey,
+    shape: tuple[int, ...],
+    dtype: DTypeLike,
+    eps: float = 1e-8,
+) -> Array:
+    u = jax.random.uniform(key, shape=shape, minval=eps, maxval=1.0 - eps, dtype=dtype)
+    return -jnp.log(-jnp.log(u))
+
+
+def _conditioned_child_scores(
+    key: RngKey,
+    parent_score: Array,
+    child_log_probs: Array,
+) -> Array:
+    """Sample conditioned perturbed child scores for stochastic beam search."""
+    g = child_log_probs + _sample_gumbel(key, child_log_probs.shape, child_log_probs.dtype)
+    z = jnp.max(g)
+    x = jnp.exp(-parent_score) - jnp.exp(-z) + jnp.exp(-g)
+    x = jnp.clip(x, a_min=jnp.finfo(child_log_probs.dtype).tiny)
+    return -jnp.log(x)
+
+
+@partial(jax.jit, static_argnums=(0, 1, 3, 6))
+def beam_search(
+    model: BinaryAutoregressiveDecoder,
+    tokenizer: Tokenizer,
+    y: Array,
+    dim: int,
+    mask_prior: Optional[Array] = None,
+    additional_context: Optional[Array] = None,
+    beam_width: int = 8,
+    temperature: float = 1.0,
+) -> Array:
+    if beam_width < 1:
+        raise ValueError("beam_width must be at least 1.")
+
+    temperature = jnp.asarray(temperature, dtype=y.dtype)
+    beam_masks = jnp.zeros((beam_width, dim), dtype=jnp.bool_)
+    true_scores = jnp.full((beam_width,), -jnp.inf, dtype=jnp.float32)
+    search_scores = jnp.full((beam_width,), -jnp.inf, dtype=jnp.float32)
+    true_scores = true_scores.at[0].set(0.0)
+    search_scores = search_scores.at[0].set(0.0)
+
+    def step(
+        carry: tuple[Array, Array, Array], i: Array
+    ) -> tuple[tuple[Array, Array, Array], None]:
+        beam_masks, true_scores, search_scores = carry
+
+        def logits_for_mask(model_mask: Array) -> Array:
+            return model(
+                model_mask.astype(jnp.int32),
+                tokenizer,
+                y=y,
+                mask_prior=mask_prior,
+                additional_context=additional_context,
+            )
+
+        logits = jax.vmap(logits_for_mask)(beam_masks)
+        logit_i = logits[:, i]
+        tempered_logit_i = logit_i / temperature
+
+        true_scores_zero = true_scores + jax.nn.log_sigmoid(-logit_i)
+        true_scores_one = true_scores + jax.nn.log_sigmoid(logit_i)
+        search_scores_zero = search_scores + jax.nn.log_sigmoid(-tempered_logit_i)
+        search_scores_one = search_scores + jax.nn.log_sigmoid(tempered_logit_i)
+
+        candidate_search_scores = jnp.concatenate(
+            [search_scores_zero, search_scores_one], axis=0
+        )
+        candidate_true_scores = jnp.concatenate(
+            [true_scores_zero, true_scores_one], axis=0
+        )
+
+        top_search_scores, top_indices = jax.lax.top_k(
+            candidate_search_scores, beam_width
+        )
+        parent_indices = jnp.mod(top_indices, beam_width)
+        token_values = top_indices >= beam_width
+
+        next_beam_masks = beam_masks[parent_indices]
+        next_beam_masks = next_beam_masks.at[:, i].set(token_values)
+        next_true_scores = candidate_true_scores[top_indices]
+
+        return (next_beam_masks, next_true_scores, top_search_scores), None
+
+    (beam_masks, true_scores, _), _ = jax.lax.scan(
+        step, (beam_masks, true_scores, search_scores), jnp.arange(dim)
+    )
+    best_idx = jnp.argmax(true_scores)
+    return beam_masks[best_idx]
+
+
+@partial(jax.jit, static_argnums=(0, 2, 4, 7))
+def stochastic_beam_search(
+    model: BinaryAutoregressiveDecoder,
+    key: RngKey,
+    tokenizer: Tokenizer,
+    y: Array,
+    dim: int,
+    mask_prior: Optional[Array] = None,
+    additional_context: Optional[Array] = None,
+    beam_width: int = 8,
+    temperature: float = 1.0,
+) -> Array:
+    if beam_width < 1:
+        raise ValueError("beam_width must be at least 1.")
+
+    score_dtype = y.dtype
+    temperature = jnp.asarray(temperature, dtype=score_dtype)
+    beam_masks = jnp.zeros((beam_width, dim), dtype=jnp.bool_)
+    true_scores = jnp.full((beam_width,), -jnp.inf, dtype=score_dtype)
+    proposal_scores = jnp.full((beam_width,), -jnp.inf, dtype=score_dtype)
+    perturbed_scores = jnp.full((beam_width,), -jnp.inf, dtype=score_dtype)
+    true_scores = true_scores.at[0].set(0.0)
+    proposal_scores = proposal_scores.at[0].set(0.0)
+    perturbed_scores = perturbed_scores.at[0].set(0.0)
+
+    def logits_for_mask(model_mask: Array) -> Array:
+        return model(
+            model_mask.astype(jnp.int32),
+            tokenizer,
+            y=y,
+            mask_prior=mask_prior,
+            additional_context=additional_context,
+        )
+
+    def row_child_scores(
+        parent_is_active: Array,
+        parent_score: Array,
+        child_log_probs: Array,
+        row_key: RngKey,
+    ) -> Array:
+        return jax.lax.cond(
+            parent_is_active,
+            lambda _: _conditioned_child_scores(row_key, parent_score, child_log_probs),
+            lambda _: jnp.full_like(child_log_probs, -jnp.inf),
+            operand=None,
+        )
+
+    def step(
+        carry: tuple[Array, Array, Array, Array], step_key: RngKey, i: Array
+    ) -> tuple[tuple[Array, Array, Array, Array], None]:
+        beam_masks, true_scores, proposal_scores, perturbed_scores = carry
+
+        logits = jax.vmap(logits_for_mask)(beam_masks)
+        logit_i = logits[:, i]
+        tempered_logit_i = logit_i / temperature
+
+        child_true_scores = jnp.stack(
+            [
+                true_scores + jax.nn.log_sigmoid(-logit_i),
+                true_scores + jax.nn.log_sigmoid(logit_i),
+            ],
+            axis=1,
+        )
+        child_proposal_scores = jnp.stack(
+            [
+                proposal_scores + jax.nn.log_sigmoid(-tempered_logit_i),
+                proposal_scores + jax.nn.log_sigmoid(tempered_logit_i),
+            ],
+            axis=1,
+        )
+
+        active = jnp.isfinite(proposal_scores) & jnp.isfinite(perturbed_scores)
+        row_keys = jax.random.split(step_key, beam_width)
+        child_perturbed_scores = jax.vmap(row_child_scores)(
+            active,
+            perturbed_scores,
+            child_proposal_scores,
+            row_keys,
+        )
+
+        flat_perturbed_scores = child_perturbed_scores.reshape(-1)
+        flat_true_scores = child_true_scores.reshape(-1)
+        flat_proposal_scores = child_proposal_scores.reshape(-1)
+
+        top_perturbed_scores, top_indices = jax.lax.top_k(
+            flat_perturbed_scores, beam_width
+        )
+        parent_indices = top_indices // 2
+        token_values = (top_indices % 2).astype(jnp.bool_)
+
+        next_beam_masks = beam_masks[parent_indices]
+        next_beam_masks = next_beam_masks.at[:, i].set(token_values)
+        next_true_scores = flat_true_scores[top_indices]
+        next_proposal_scores = flat_proposal_scores[top_indices]
+
+        return (
+            next_beam_masks,
+            next_true_scores,
+            next_proposal_scores,
+            top_perturbed_scores,
+        ), None
+
+    step_keys = jax.random.split(key, dim)
+    indices = jnp.arange(dim)
+    (beam_masks, true_scores, _, _), _ = jax.lax.scan(
+        lambda carry, xs: step(carry, xs[0], xs[1]),
+        (beam_masks, true_scores, proposal_scores, perturbed_scores),
+        (step_keys, indices),
+    )
+    best_idx = jnp.argmax(true_scores)
+    return beam_masks[best_idx]
+
+
+@partial(jax.jit, static_argnums=(0, 2, 4, 5, 8))
+def best_of_n_stochastic_beam_search(
+    model: BinaryAutoregressiveDecoder,
+    key: RngKey,
+    tokenizer: Tokenizer,
+    y: Array,
+    dim: int,
+    num_samples: int,
+    mask_prior: Optional[Array] = None,
+    additional_context: Optional[Array] = None,
+    beam_width: int = 8,
+    temperature: float = 1.0,
+) -> Array:
+    if num_samples < 1:
+        raise ValueError("num_samples must be at least 1.")
+
+    keys = jax.random.split(key, num_samples)
+
+    def search_once(search_key: RngKey) -> Array:
+        return stochastic_beam_search(
+            model,
+            search_key,
+            tokenizer,
+            y,
+            dim,
+            mask_prior=mask_prior,
+            additional_context=additional_context,
+            beam_width=beam_width,
+            temperature=temperature,
+        )
+
+    samples = jax.vmap(search_once)(keys)
+
+    def score_once(model_mask: Array) -> Array:
+        return model.log_prob(
+            model_mask,
+            tokenizer,
+            y,
+            mask_prior=mask_prior,
+            additional_context=additional_context,
+        )
+
+    log_probs = jax.vmap(score_once)(samples)
+    best_idx = jnp.argmax(log_probs)
+    return samples[best_idx]
 
 
 @partial(jax.jit, static_argnums=(2, 4))
