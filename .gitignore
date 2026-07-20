@@ -95,6 +95,8 @@ ipython_config.py
 
 # Generated docs artifacts
 docs/assets/*.svg
+docs/examples/[0-9][0-9]_*.md
+docs/examples/[0-9][0-9]_*_files/
 site/
 .uv-cache/
 

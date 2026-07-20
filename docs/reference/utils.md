@@ -1,6 +1,6 @@
 # Utilities API
 
-Frequently used math and export helpers pulled from their docstrings.
+Frequently used math, visualization, and export helpers pulled from their docstrings. Diffusion summaries and NIfTI exporters live in `dmriutils`; coordinate transforms and posterior diagnostics are grouped below.
 
 ## Diffusion helpers
 

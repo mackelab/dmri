@@ -47,13 +47,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[docs]"
 
-      - name: Generate doc figures
+      - name: Render notebooks
         run: |
-          python docs/generate_figures.py
+          python scripts/render_docs_notebooks.py
 
-      - name: Build MkDocs site
+      - name: Build Zensical site
         run: |
-          mkdocs build
+          zensical build --clean --strict
 
       - name: Upload site artifact
         uses: actions/upload-pages-artifact@v3

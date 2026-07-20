@@ -5,11 +5,11 @@ Training is orchestrated via Hydra. Every run captures its config alongside chec
 ## Launch a run
 
 ```bash
-# local machine
+# local machine with one GPU
 dmri +experiment=b3s_2_4_6_128 launcher=local partition=none use_wandb=false
 
-# SLURM cluster (defaults)
-dmri +experiment=b3s_2_4_6_128
+# SLURM cluster; choose profiles for your site
+dmri +experiment=b3s_2_4_6_128 launcher=slurm partition=<profile>
 ```
 
 Key output folders under `results/<run_name>/<timestamp>/`:
@@ -19,7 +19,7 @@ Key output folders under `results/<run_name>/<timestamp>/`:
 
 ## Tuning experiments
 
-- Override inline: `dmri train.batch_size=128 train.optimizer.lr=1e-3`
+- Override inline: `dmri train.dataloader.train_loader.batch_size=128 train.optimizer.learning_rate=1e-3`
 - Switch simulator presets: `dmri +experiment=msb3s_2_4_6_128`
 - Target specific hardware profiles via `conf_train/partition/*.yaml` (e.g. GPU vs CPU).
 
@@ -53,8 +53,8 @@ conf_train/
 
 ## Checkpoint handling
 
-- Latest checkpoint: `results/<run>/checkpoints/latest`
-- Best checkpoint (if tracked): `results/<run>/checkpoints/best`
+- Latest checkpoint: the highest numeric step directory under `results/<run>/<timestamp>/checkpoints/`
+- Best checkpoint (if tracked): `results/<run>/<timestamp>/checkpoints/best/`
 - Use `dmri.train.utils.load_checkpoint(path, which="best")` to restore models inside notebooks.
 
 ### Publish pretrained checkpoints
@@ -67,7 +67,7 @@ Orbax checkpoint:
 from dmri.train.utils import upload_checkpoint_to_hub
 
 upload_checkpoint_to_hub(
-    "results/b3s_2_4_6_64",
+    "results/b3s_2_4_6_64/<timestamp>",
     "manugloeck/dmri-pretrained",
     model_name="b3s_2_4_6_64",
     which="best",

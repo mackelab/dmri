@@ -5,10 +5,13 @@ Use the evaluation CLI to run posterior inference, model selection, and export d
 ## Typical workflow
 
 ```bash
-dmri_eval +experiment=eval_b3s_best_model_selection model_name=<run_folder>
+dmri_eval +experiment=eval_b3s_best_model_selection \
+  model_name=<run_name>/<timestamp> \
+  data.data_folder=<data_folder>
 ```
 
-- `model_name` points at the training run folder in `results/`.
+- `model_name` points at the timestamped training directory below `results/`.
+- File-based presets require either `data.data_folder` or `data.path`.
 - Exports (NIfTI volumes plus JSON summaries) are written next to the run under folders like `ball3stick_model_selection_results/`.
 
 ## Switching evaluation presets
@@ -22,7 +25,7 @@ Prebaked experiments live in `conf_eval/experiment/`:
 Override any Hydra parameter inline:
 
 ```bash
-dmri_eval +experiment=eval_ground_truth_b3s theta_sample.corrector=smc
+dmri_eval +experiment=eval_ground_truth_b3s theta_sample/corrector=smc
 ```
 
 ## Metric exports
@@ -36,9 +39,11 @@ Each metric writes a NIfTI volume plus a JSON summary of configured aggregations
 from pathlib import Path
 import json
 
-export_dir = Path("results/my_run/ball3stick_model_selection_results")
-with open(export_dir / "summary.json") as f:
+export_dir = Path("results/my_run/2026-07-19_12-00-00/ball3stick_model_selection_results")
+with open(export_dir / "reconstruction_mse_summary.json") as f:
     summary = json.load(f)
 ```
 
-If you need to regenerate figures, the notebooks in `experimental_notebooks/` (e.g. `eval_model_selection.ipynb`, `eval_parameter_inference.ipynb`) provide examples for visualizing selection probabilities and parameter posteriors.
+Summary files are emitted per configured metric. Their names follow `<metric>_summary.json` unless a metric overrides the filename.
+
+For exploratory plots that are not part of the supported documentation, see the `experimental_notebooks/` directory in the repository. Those notebooks may change without notice.

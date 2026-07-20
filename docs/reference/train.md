@@ -1,6 +1,8 @@
 # Training API
 
-Core training helpers are exposed here directly from their docstrings. Use them inside notebooks or when wiring custom CLIs.
+Core training helpers are exposed here directly from their docstrings. Start with `build_model`, `build_simulator`, and `load_checkpoint` when composing a workflow outside the CLI.
+
+See the [training guide](../guides/training.md) for experiment configuration and checkpoint layout.
 
 ## Dataset utilities
 

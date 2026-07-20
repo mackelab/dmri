@@ -1,24 +1,24 @@
-# CLI Reference: Evaluation (`dmri_eval`, `@conf_eval`)
+# Evaluation CLI
 
-The `dmri_eval` CLI mirrors the training interface and pulls defaults from the `@conf_eval` package. Use these configs to run posterior inference, model selection, and exports for trained runs.
+The `dmri_eval` command mirrors the training interface and pulls defaults from the packaged `conf_eval` configuration module. Use these configs to run posterior inference, model selection, and exports for trained runs.
 
 ## Essential commands
 
 - List overrides for a preset: `dmri_eval +experiment=eval_b3s_best_model_selection --help`
 - Dry-run the resolved config: `dmri_eval +experiment=eval_b3s_best_model_selection --cfg job`
-- Override inline: `dmri_eval +experiment=eval_ground_truth_b3s theta_sample.corrector=smc`
+- Override inline: `dmri_eval +experiment=eval_ground_truth_b3s theta_sample/corrector=smc`
 
 ## Configuration map (`conf_eval/`)
 
 - `experiment/`: evaluation workflows (with/without model selection, mask tests, ground-truth recovery).
-- `export/metrics/`: metric bundles (FA, MD, SNR, selection probabilities) referenced by exporter configs.
+- `export/metrics/`: reconstruction MSE, NLL, KSD, SWD, SBC, calibration, and model-selection metrics.
 - `export/*.yaml`: export recipes that pair metric bundles with output formatting.
 
 ## Common overrides
 
-- Target run: `model_name=<results_subdir>` (points to a training run under `results/`).
+- Target run: `model_name=<run_name>/<timestamp>` (relative to `results/`).
 - Data location: `data.data_folder=<path_to_data>`.
-- Correctors/samplers: `theta_sample.corrector`, `theta_sample.num_samples`.
+- Corrector group / sample count: `theta_sample/corrector`, `theta_sample.num_samples`.
 - Export set: `export=ball3stick` (swap to any `conf_eval/export/*.yaml` recipe).
 
 ## Outputs

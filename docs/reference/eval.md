@@ -1,6 +1,6 @@
 # Evaluation API
 
-Evaluation helpers surface here from their docstrings, including the configurable metric registry used by `dmri_eval`.
+Evaluation helpers surface here from their docstrings, including the configurable metric registry used by `dmri_eval`. Most users should begin with the [evaluation guide](../guides/evaluation.md); this page documents extension points and exact signatures.
 
 ## Metric exports
 

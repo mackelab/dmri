@@ -2,10 +2,10 @@
 
 [![CI](https://github.com/mackelab/dmri/actions/workflows/ci.yml/badge.svg)](https://github.com/mackelab/dmri/actions/workflows/ci.yml)
 [![Docs](https://github.com/mackelab/dmri/actions/workflows/docs.yml/badge.svg)](https://github.com/mackelab/dmri/actions/workflows/docs.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENCE)
 [![Made with JAX](https://img.shields.io/badge/Made%20with-JAX-007acc.svg)](https://github.com/google/jax)
 
-This package provides a simulation-based inference and model selection approach for fiber reconstruction models in diffusion MRI. It implements various components often used in literature to implement a microstructural *multicompartment* model. It then allows to both infer the composition as well as parameters within this combinatorial space.
+This package provides simulation-based inference and model selection for fibre reconstruction models in diffusion MRI. It combines common microstructural components into configurable multicompartment models and infers both model composition and continuous parameters.
 
 **Docs:** https://www.mackelab.org/dmri/
 
@@ -19,11 +19,11 @@ source .venv/bin/activate
 # install editable package + dev tools; add --extra cuda for GPUs
 uv pip install -e '.[dev]'
 
-# run a first training job (local machine, no SLURM/W&B needed)
+# run a first training job (one local GPU, no SLURM/W&B needed)
 dmri +experiment=b3s_2_4_6_128 launcher=local partition=none use_wandb=false
 ```
 
-Prefer pip? Use `pip install -e .[dev]` (quote extras in zsh). CUDA users can opt into `.[cuda]`.
+Prefer pip? Use `pip install -e '.[dev]'`. CUDA users can opt into `.[cuda]`.
 
 ## CLI in one glance
 
@@ -31,7 +31,7 @@ Prefer pip? Use `pip install -e .[dev]` (quote extras in zsh). CUDA users can op
 ```bash
 dmri --help                      # discover overrides
 dmri +experiment=b3s_2_4_6_128 launcher=local partition=none use_wandb=false   # run a preset locally
-dmri train.optimizer.lr=1e-3     # inline override example
+dmri train.optimizer.learning_rate=1e-3  # inline override example
 ```
 
 Runs write to `results/<name>/<timestamp>/` with checkpoints and the frozen `.hydra/` config. Use `dmri.train.utils.load_checkpoint(...)` to restore in notebooks.
@@ -39,7 +39,9 @@ Runs write to `results/<name>/<timestamp>/` with checkpoints and the frozen `.hy
 ### Evaluation
 ```bash
 dmri_eval --help
-dmri_eval +experiment=eval_b3s_no_selection model_name=<run_folder>
+dmri_eval +experiment=eval_b3s_no_selection \
+  model_name=<run_name>/<timestamp> \
+  data.data_folder=<data_folder>
 ```
 
 Outputs land next to the training run (e.g. `ball3stick_model_selection_results/`). Adapt data locations in `conf_eval/config.yaml`.
@@ -87,7 +89,7 @@ acq = acquisition_scheme(bvals, bvecs)
 
 # Example simulator for a single ball
 theta = np.random.randn(Ball.theta_dim) # Theta will always be normal
-ball = Ball.from_theta(theta) # Maps theta to random feasible parameters (diffusivity)
+ball = Ball.from_theta(theta) # Deterministically maps theta to physical parameters
 signal = ball.signal(acq) # Simulate signal
 
 plt.plot(bvals, signal) # Plot signal
@@ -124,14 +126,14 @@ You can also have a look at the notebooks in `docs/examples/` (rendered under **
 
 - Tests: `pytest`
 - Lint/format: `ruff check --fix` and `ruff format`
-- Docs preview: `uv pip install -e '.[docs]' && uv run mkdocs serve`
+- Docs preview: `uv pip install -e '.[docs]' && uv run python scripts/render_docs_notebooks.py && uv run zensical serve`
 
 ## CI / docs deploy
 
-- GitHub Actions runs lint + tests across Python 3.10–3.12.
-- MkDocs deploys cleanly with `mkdocs gh-deploy --force` (see `mkdocs.yml`).
+- GitHub Actions runs the test suite on Python 3.11.
+- Zensical deploys through the GitHub Pages workflow (see `zensical.toml`).
 
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License; see `LICENCE` for details.

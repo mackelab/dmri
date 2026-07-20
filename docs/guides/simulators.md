@@ -14,7 +14,7 @@ We follow the Stejskal–Tanner convention, writing the diffusion-weighted signa
 - **Ball (isotropic Gaussian):** \(S(b) = \exp(-b D)\).
 - **Stick (zero-radius cylinder):** \(S(b, \mathbf{g}) = \exp\big(-b\,D_{\parallel}(\mathbf{g}\cdot\boldsymbol{\mu})^2\big)\).
 - **Zeppelin (axially symmetric Gaussian):** \(S(b, \mathbf{g}) = \exp\big(-b[ D_{\perp} + (D_{\parallel}-D_{\perp})(\mathbf{g}\cdot\boldsymbol{\mu})^2 ]\big)\).
-- **Sphere (restricted, narrow-pulse limit):** uses the Balinov et al. (1993) series for attenuation in a sphere of radius \(R\).
+- **Sphere (restricted, narrow-pulse limit):** uses a closed-form spherical form factor for radius \(R\), with radius expressed consistently with q-values in inverse millimetres.
 
 A mixture with fractions \(f_k\) produces \(S(b, \mathbf{g}) = \sum_k f_k\, S_k(b, \mathbf{g})\) with \(\sum_k f_k = 1\); noise compartments (bounded Rician/Gaussian) are applied after the base signal.
 
@@ -25,7 +25,7 @@ A mixture with fractions \(f_k\) produces \(S(b, \mathbf{g}) = \sum_k f_k\, S_k(
 - **MultiCompartment mixer:** `dmri.simulators.MultiCompartment` mixes `model_types` with Dirichlet fractions (`fraction_prior`), optional shared parameters (`shared_parameter_type`), a Beta–Bernoulli mask prior (`create_mask_prior`), and convenience `theta_mask` helpers for gating parameters.
 - **Noise:** `dmri.simulators.noise_compartments` provides Rician/Gaussian likelihoods plus bounded SNR presets; they operate on the already-mixed signal and require `rng` for sampling.
 
-## Quick start: Ball+Stick+Zeppelin mixture
+## Example: Ball+Stick+Zeppelin mixture
 
 ```python
 import jax
@@ -57,7 +57,7 @@ signal = model.signal(acq, rng=jax.random.key(7))  # full mixture + noise
 params = model.get_all_params()  # inspect fractions, per-compartment params, mask
 ```
 
-- Toggle components at call time: `model.signal(acq, model_mask=jnp.array([True, True, False]))`.
+- To change active components, reconstruct the model with the desired mask before calling `signal`.
 - For shared diffusivity across compartments, set `shared_parameter_type` on the subclass (see `SharedDiffusivity` in `dmri.simulators.multi_compartment`).
 
 ## Work in theta space and priors
@@ -85,10 +85,16 @@ theta_roundtrip = BallStickZeppelin.to_theta(
 active_theta = BallStickZeppelin.theta_mask(mask)
 ```
 
+```python
+new_mask = jnp.array([True, True, False, True])
+masked_model = BallStickZeppelin.from_theta(theta, model_mask=new_mask)
+masked_signal = masked_model.signal(acq, rng=jax.random.key(8))
+```
+
 ## Noise and likelihoods
 
 - Choose bounded presets such as `RicianNoiseSNR310` or `GaussianNoiseSNR2030`, or use `BoundedRicianNoise`/`BoundedGaussianNoise` for custom ranges.
-- Likelihoods are available via `model.log_likelihood(acq, observed_signal)`; when `rng` is passed to `signal`, noise is sampled before likelihood evaluation.
+- Passing `rng` to `signal` returns a noisy observation. Evaluate an explicitly supplied observation separately with `model.log_likelihood(acq, observed_signal)`.
 
 ## SSFP acquisitions
 
@@ -125,4 +131,6 @@ signal = ssfp_signal_fn(
 - Reuse spherical distributions in `dmri.simulators.sphereical_distributions` for orientation priors or `SharedParameterState` for tied diffusivities.
 - Add rich docstrings to new components—the API Reference will surface them automatically.
 
-Key references: Stejskal & Tanner (1965) for pulsed-gradient signals; Callaghan (1991) for restricted diffusion; Behrens et al. (2003) for Ball–Stick mixtures; Balinov et al. (1993) for the spherical attenuation series; Gudbjartsson & Patz (1995) for magnitude-noise models.
+Key references: Stejskal & Tanner (1965) for pulsed-gradient signals; Callaghan (1991) for restricted diffusion; Behrens et al. (2003) for Ball–Stick mixtures; and Gudbjartsson & Patz (1995) for magnitude-noise models.
+
+Continue with the [multi-compartment notebook](../examples/02_dmri_multicompartment_model.md), or look up exact signatures in the [simulator API](../reference/simulators.md).

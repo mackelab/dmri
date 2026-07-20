@@ -1,6 +1,6 @@
 # Simulators API
 
-Docstrings power these references. Sections are grouped to keep the table of contents tidy; local signal models are collapsible for quick scanning.
+Exact signatures for acquisition schemes, compartments, mixtures, priors, and noise models. Read the [simulator guide](../guides/simulators.md) first for the underlying concepts, or open the [component gallery](../examples/01_dmri_simulator_components.md) for visual examples.
 
 ## Acquisition schemes
 
@@ -69,7 +69,7 @@ Docstrings power these references. Sections are grouped to keep the table of con
 
 ## Local signal models
 
-Here a selection of voxel-wise dMRI signal simulation compartments are implemented.
+A selection of voxel-wise dMRI signal compartments is implemented below.
 
 ### Isotropic compartments
 
