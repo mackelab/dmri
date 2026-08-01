@@ -63,6 +63,11 @@ dev = [
 cuda = [
     "jax[cuda12]"
 ]
+# For CUDA 13 drivers. The plugin version must match jaxlib exactly; the extra
+# pins it, so install this rather than the plugin on its own.
+cuda13 = [
+    "jax[cuda13]"
+]
 docs = [
     "zensical>=0.0.51,<0.1",
     "mkdocstrings-python>=1.10.0",
@@ -103,10 +108,11 @@ venv = ".venv"
 testpaths = ["tests"]
 
 [tool.setuptools.packages.find]
-include = ["dmri*", "conf_train*", "conf_eval*"]
+include = ["dmri*", "conf*"]
 
 [tool.setuptools.package-data]
 "conf_train" = ["**/*.yaml"]
 "conf_eval" = ["**/*.yaml"]
+"conf" = ["**/*.yaml"]
 "dmri.simulators" = ["data/*"]
 "dmri.utils" = ["*.mplstyle"]

@@ -1,0 +1,26 @@
+# @package _global_
+
+defaults:
+- _self_
+- override /evaluation/export/theta: raw
+- override /evaluation/theta: gt
+run:
+  seed: 42424242
+evaluation:
+  pipeline:
+    sample_mask: false
+    select_models: false
+    default_mask:
+    - true
+    - true
+    - true
+    - true
+    - true
+  input:
+    slice:
+      x: null
+      y: null
+      z: 52
+  export:
+    theta:
+      name: ground_truth_inference_results_b3s

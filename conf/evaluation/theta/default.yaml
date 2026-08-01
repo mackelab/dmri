@@ -1,0 +1,15 @@
+# @package evaluation.sampling.theta
+
+method: uncorrected
+num_samples: 50
+eval_batch_size: null   # null = determine the largest workable batch
+
+params:
+  num_steps: 40
+  t_max: 80
+  # A final Euler correction after the last step. Costs one extra network
+  # evaluation per sample (so num_steps=40 means 41), which `false` saves.
+  last_euler_step: true
+
+defaults:
+  - corrector: auto

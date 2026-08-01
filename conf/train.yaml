@@ -1,0 +1,26 @@
+schema_version: 2
+
+run:
+  name: dmri
+  seed: 0
+
+tracking:
+  enabled: false
+  wandb:
+    project: dmri
+    entity: null
+
+hydra:
+  run:
+    dir: results/${run.name}/${now:%Y-%m-%d_%H-%M-%S}
+  sweep:
+    dir: results/${run.name}/${now:%Y-%m-%d_%H-%M-%S}
+    subdir: ${hydra.job.num}
+
+defaults:
+  - _self_
+  - simulator: simple
+  - model: dmri
+  - training: default
+  - infrastructure/launcher: slurm
+  - infrastructure/partition: none

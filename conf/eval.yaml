@@ -1,0 +1,37 @@
+schema_version: 2
+
+run:
+  seed: 1
+  output_dir: null
+
+checkpoint:
+  results_root: ${hydra:runtime.cwd}/results
+  results_folder: null
+  path: null
+  model_name: dmri
+  params_name: params_ema
+  which: latest
+  pretrained:
+    repo_id: null
+    revision: null
+    cache_dir: null
+    local_files_only: false
+
+evaluation:
+  batch_size: null
+  precision: fp32
+  pipeline:
+    sample_mask: true
+    sample_theta: true
+    select_models: true
+    default_mask: null
+    reuse_theta_samples: false
+
+defaults:
+  - _self_
+  - evaluation/input: file
+  - evaluation/mask: default
+  - evaluation/theta: default
+  - evaluation/selection: none
+  - evaluation/export/theta: ball3stick
+  - evaluation/export/model_selection: ball3stick

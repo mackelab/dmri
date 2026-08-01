@@ -1,0 +1,8 @@
+name: hcp_large
+params:
+  schemes:
+    - name: hcp
+      params:
+        num_acquisitions: 297
+        typical_prob: 0.8
+        random_prob: 0.2

@@ -39,8 +39,8 @@ Pretrained models are acquisition-specific. Confirm that the selected checkpoint
 ### Training
 ```bash
 dmri train --help                      # discover overrides
-dmri train +experiment=b3s_2_4_6_128 launcher=local partition=none use_wandb=false
-dmri train train.optimizer.learning_rate=1e-3
+dmri train +experiment/train=b3s_2_4_6_128 infrastructure/launcher=local infrastructure/partition=none tracking.enabled=false
+dmri train training.optimizer.learning_rate=1e-3
 ```
 
 Runs write to `results/<name>/<timestamp>/` with checkpoints and the frozen `.hydra/` config. Use `dmri.train.utils.load_checkpoint(...)` to restore in notebooks.
@@ -48,32 +48,33 @@ Runs write to `results/<name>/<timestamp>/` with checkpoints and the frozen `.hy
 ### Evaluation
 ```bash
 dmri eval --help
-dmri eval +experiment=eval_b3s_no_selection \
-  model_name=<run_name>/<timestamp> \
-  data.data_folder=<data_folder>
+dmri eval +experiment/eval=eval_b3s_no_selection \
+  checkpoint.model_name=<run_name>/<timestamp> \
+  evaluation.input.data_folder=<data_folder>
 ```
 
 Full evaluation is the advanced Hydra interface for trained runs, custom samplers, exports, and ground-truth metrics. For routine inference without ground-truth metrics, use `dmri predict`. The deprecated `dmri_eval` command remains as a compatibility alias.
 
 ## Configuration map
 
-Hydra configs live in `conf_train/` for training and `conf_eval/` for evaluation.
+Training and evaluation share the versioned Hydra tree in `conf/`.
 
 ```
-conf_train/
-├── config.yaml           # run metadata + defaults
-├── experiment/           # ready-made presets
-├── launcher/             # local/slurm launchers
+conf/
+├── train.yaml            # training entry config
+├── eval.yaml             # evaluation entry config
+├── experiment/           # train/eval presets
+├── infrastructure/       # local/slurm and resource profiles
 ├── model/                # dmri/ssfp architectures
-├── partition/            # resource profiles
 ├── simulator/            # signal simulation recipes
-└── train/                # loop knobs
+├── training/             # loop knobs
     ├── dataloader/       # buffer sizes, batching, prefetch
     ├── optimizer/        # optax configs, schedulers, EMA
     └── default*.yaml     # inner steps, cadence, weights
+└── evaluation/           # inputs, sampling, selection, exports
 ```
 
-Evaluation metrics are composed under `conf_eval/export/metrics/` and pulled into exporter presets (e.g. `conf_eval/export/ball3stick.yaml`). Add SBC via `conf_eval/export/metrics/sbc_model_mask.yaml`.
+Evaluation metrics are composed under `conf/evaluation/export/theta/metrics/` and pulled into exporter presets.
 
 ## Usage
 

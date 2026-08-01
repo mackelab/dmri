@@ -25,6 +25,14 @@ local_files_only: false
 output_dir: null
 reuse_theta_samples: false
 
+# Batching. Leave the per-stage `eval_batch_size` values null to have the largest
+# workable batch determined from the device; set this to pin an exact value.
+batch_size: null
+
+# Numeric precision for the network forward pass: fp32, bf16, or fp16.
+# Parameters, the sampler and the export always stay float32.
+precision: fp32
+
 # Sampling configs
 seed: 1
 sample_mask: true

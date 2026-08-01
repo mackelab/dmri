@@ -4,19 +4,14 @@ from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-import optax
 from flax import nnx
 from huggingface_hub import HfApi, snapshot_download
 from omegaconf import OmegaConf
 
+from dmri.config import build_artifact_config, load_artifact_config, normalize_config
 from dmri.train.build_model import build_model
 from dmri.train.build_simulator import build_simulator
 from dmri.train.checkpointing import CheckpointManager
-from dmri.train.train_script import (
-    build_optimizer,
-    get_ema_params,
-    initialize_ema_state,
-)
 
 
 def load_cfg(path):
@@ -27,7 +22,7 @@ def load_cfg(path):
         os.path.join(path, ".hydra", "config.yaml"),
     ):
         if os.path.exists(config_path):
-            return OmegaConf.load(config_path)
+            return normalize_config(OmegaConf.load(config_path), "train")
 
     # Find most recent run directory (format: YYYY-MM-DD_HH-MM-SS)
     dirs = [
@@ -68,8 +63,7 @@ def load_cfg(path):
                 f"Could not find config.yaml in either .hydra or 0/.hydra directories in {base_path}"
             )
 
-    cfg = OmegaConf.load(config_path)
-    return cfg
+    return normalize_config(OmegaConf.load(config_path), "train")
 
 
 def _checkpoint_source(path: Path, which: str | int) -> tuple[Path, Path]:
@@ -108,7 +102,7 @@ def bundle_checkpoint(path, output_dir, model_name=None, which="best") -> Path:
     """
     path = Path(path).expanduser().resolve()
     cfg = load_cfg(path)
-    model_name = model_name or cfg.name
+    model_name = model_name or cfg.run.name
     if not model_name or Path(model_name).name != model_name:
         raise ValueError("model_name must be a single directory name")
 
@@ -121,6 +115,7 @@ def bundle_checkpoint(path, output_dir, model_name=None, which="best") -> Path:
         shutil.rmtree(model_dir)
     model_dir.mkdir(parents=True)
     OmegaConf.save(cfg, model_dir / "config.yaml")
+    OmegaConf.save(build_artifact_config(cfg), model_dir / "artifact.yaml")
     shutil.copytree(source, model_dir / relative_destination)
     return model_dir
 
@@ -206,12 +201,16 @@ def load_checkpoint(
     cache_dir=None,
     token=None,
     local_files_only=False,
+    precision=None,
 ):
     """Restore a checkpoint from a local result directory or Hugging Face.
 
     Provide ``path`` for a local checkpoint. For a remote bundle, provide both
     ``repo_id`` and ``model_name``; the selected subfolder is downloaded into
     the Hugging Face cache before the normal Orbax restore path is used.
+
+    ``precision`` selects the compute dtype for the rebuilt model (see
+    :mod:`dmri.eval.precision`); the default keeps the checkpoint's own setting.
     """
     if repo_id is not None:
         if path is not None:
@@ -231,11 +230,25 @@ def load_checkpoint(
 
     path = os.path.abspath(os.fspath(path))
     cfg = load_cfg(path)
-    sim_type, simulator = build_simulator(cfg)
-    model = build_model(cfg, sim_type)
+    artifact = load_artifact_config(path)
+    build_cfg = (
+        OmegaConf.create({
+            "model": OmegaConf.to_container(artifact.model, resolve=False),
+            "simulator": OmegaConf.to_container(artifact.simulator, resolve=False),
+        })
+        if artifact is not None
+        else cfg
+    )
+    if precision is not None:
+        # Must patch before build_model, which reads these keys.
+        from dmri.eval.precision import apply_precision_to_cfg
+
+        apply_precision_to_cfg(build_cfg, precision)
+    sim_type, simulator = build_simulator(build_cfg)
+    model = build_model(build_cfg, sim_type)
     model.eval()
 
-    graphdef, params, state = nnx.split(model, nnx.Param, ...)
+    _graphdef, params, _state = nnx.split(model, nnx.Param, ...)
 
     checkpoint_dir = os.path.join(path, "checkpoints")
     continue_training = True
@@ -246,17 +259,6 @@ def load_checkpoint(
         recovery_threshold=cfg.get("recovery_threshold", float("inf")),
         continue_training=continue_training,
     )
-
-    optimizer = build_optimizer(cfg.train.optimizer)
-    opt_state = optimizer.init(params)
-    ema_transform = (
-        optax.ema(cfg.train.ema_decay, debias=False) if cfg.train.track_ema else None
-    )
-    ema_state = initialize_ema_state(cfg.train.track_ema, ema_transform, params)
-    ema_params = get_ema_params(ema_state) if ema_state is not None else None
-    if partial_restore:
-        opt_state = None
-        ema_state = None
 
     from_best = False
     if which == "latest":
@@ -269,19 +271,13 @@ def load_checkpoint(
     else:
         raise ValueError(f"Invalid checkpoint type: {which}")
 
-    restore_kwargs = dict(
+    checkpoint = checkpoint_manager.restore_parameters(
         step=latest_step,
         params=params,
-        optimizer_state=opt_state,
-        model_state=state,
+        from_best=from_best,
+        partial_restore=partial_restore,
     )
-    if cfg.train.track_ema:
-        restore_kwargs["params_ema"] = ema_params
-        restore_kwargs["ema_state"] = ema_state
-
-    restore_kwargs["from_best"] = from_best
-    restore_kwargs["partial_restore"] = partial_restore
-
-    checkpoint = checkpoint_manager.restore(**restore_kwargs)
+    if checkpoint is None:
+        raise FileNotFoundError(f"No checkpoint found in {checkpoint_dir}")
 
     return checkpoint, model, simulator

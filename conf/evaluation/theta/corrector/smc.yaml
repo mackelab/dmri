@@ -1,0 +1,8 @@
+# @package evaluation.sampling.theta.corrector
+
+name: smc_corrected
+lam_start: 0.95
+num_steps: 2
+num_inner_steps: 1
+num_integration_steps: 2
+step_size: 0.005

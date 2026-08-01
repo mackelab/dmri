@@ -12,6 +12,7 @@ from dmri.train.train_script import TrainState, apply_checkpoint_to_state
 from dmri.train.utils import (
     bundle_checkpoint,
     download_checkpoint_from_hub,
+    load_cfg,
     upload_checkpoint_to_hub,
 )
 
@@ -130,7 +131,14 @@ def make_checkpoint_tree(tmp_path):
     checkpoint.mkdir(parents=True)
     (checkpoint / "_CHECKPOINT_METADATA").write_text("{}")
     (checkpoint / ".zarray").write_text("{}")
-    OmegaConf.save({"name": "example-model"}, run_dir / "config.yaml")
+    OmegaConf.save(
+        {
+            "name": "example-model",
+            "model": {"name": "ExampleModel"},
+            "simulator": {"sim_type": {"name": "ExampleSimulator"}},
+        },
+        run_dir / "config.yaml",
+    )
     return run_dir
 
 
@@ -141,8 +149,65 @@ def test_bundle_checkpoint_creates_portable_layout(tmp_path):
 
     assert model_dir.name == "example-model"
     assert (model_dir / "config.yaml").exists()
+    assert (model_dir / "artifact.yaml").exists()
     assert (model_dir / "checkpoints" / "best" / "12" / "_CHECKPOINT_METADATA").exists()
     assert (model_dir / "checkpoints" / "best" / "12" / ".zarray").exists()
+
+    config = OmegaConf.load(model_dir / "config.yaml")
+    artifact = OmegaConf.load(model_dir / "artifact.yaml")
+    assert config.schema_version == 2
+    assert config.run.name == "example-model"
+    assert artifact.artifact_version == 1
+    assert "training" not in artifact
+
+
+def test_load_cfg_migrates_legacy_timestamp_layout(tmp_path):
+    hydra_dir = tmp_path / "2026-01-02_03-04-05" / ".hydra"
+    hydra_dir.mkdir(parents=True)
+    OmegaConf.save(
+        {
+            "name": "legacy",
+            "seed": 9,
+            "model": {"name": "ExampleModel"},
+            "simulator": {"sim_type": {"name": "ExampleSimulator"}},
+            "train": {"track_ema": False},
+        },
+        hydra_dir / "config.yaml",
+    )
+
+    cfg = load_cfg(tmp_path)
+
+    assert cfg.schema_version == 2
+    assert cfg.run.name == "legacy"
+    assert cfg.run.seed == 9
+    assert cfg.training.track_ema is False
+
+
+def test_inference_restore_requests_ema_only_when_present(tmp_path):
+    checkpoint_dir = tmp_path / "checkpoints"
+    (checkpoint_dir / "12" / "params_ema").mkdir(parents=True)
+    calls = {}
+
+    class FakeOrbaxManager:
+        def latest_step(self):
+            return 12
+
+        def restore(self, step, args):
+            calls["step"] = step
+            calls["args"] = args
+            return {"params": {"weight": 1}, "params_ema": {"weight": 2}}
+
+    manager = CheckpointManager.__new__(CheckpointManager)
+    manager.ckpt_dir = str(checkpoint_dir)
+    manager.best_ckpt_dir = str(checkpoint_dir / "best")
+    manager.manager = FakeOrbaxManager()
+    manager.best_manager = FakeOrbaxManager()
+
+    restored = manager.restore_parameters(None, {"weight": 0})
+
+    assert calls["step"] == 12
+    assert restored["params_ema"]["weight"] == 2
+    assert restored["step"] == 12
 
 
 def test_upload_checkpoint_uses_model_subfolder(tmp_path, monkeypatch):

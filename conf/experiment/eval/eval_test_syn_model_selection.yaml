@@ -1,0 +1,29 @@
+# @package _global_
+
+defaults:
+- _self_
+- override /evaluation/export/theta: model_selection_metrics
+- override /evaluation/input: synthetic
+export_model_selection:
+  export_feasible_model_probabilities: false
+run:
+  seed: 42424242
+evaluation:
+  pipeline:
+    sample_mask: true
+    sample_theta: false
+    select_models: false
+    default_mask:
+    - true
+    - true
+    - true
+    - true
+    - true
+  input:
+    slice:
+      x: null
+      y: null
+      z: 52
+  export:
+    theta:
+      name: test_model_selection_metrics

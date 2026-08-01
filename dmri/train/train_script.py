@@ -19,6 +19,7 @@ from flax import nnx
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, ListConfig, OmegaConf
 
+from dmri.config import build_artifact_config, runtime_config
 from dmri.train.build_model import build_model
 from dmri.train.build_simulator import build_simulator
 from dmri.train.checkpointing import CheckpointManager
@@ -879,11 +880,13 @@ def build_optimizer(optimizer_cfg):
     return optax.chain(*grad_transforms)
 
 
-@hydra.main(
-    config_path="../../conf_train", config_name="config.yaml", version_base=None
-)
+@hydra.main(config_path="../../conf", config_name="train.yaml", version_base=None)
 def _main(cfg: DictConfig):
-    log, output_dir, output_super_dir = configure_environment(cfg)
+    cfg = runtime_config(cfg, "train")
+    log, output_dir, _ = configure_environment(cfg)
+    OmegaConf.save(
+        build_artifact_config(cfg), os.path.join(output_dir, "artifact.yaml")
+    )
     wandb_active = init_wandb_if_needed(cfg)
 
     rng_key = seed_everything(cfg.seed)
@@ -901,7 +904,7 @@ def _main(cfg: DictConfig):
 
     evaluator = build_pure_eval_fns(graphdef, sim_type)
 
-    checkpoint_dir = os.path.join(output_super_dir, "checkpoints")
+    checkpoint_dir = os.path.join(output_dir, "checkpoints")
     os.makedirs(checkpoint_dir, exist_ok=True)
     log.info(f"Checkpoint directory: {checkpoint_dir}")
     checkpoint_manager = CheckpointManager(

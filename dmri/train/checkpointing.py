@@ -183,6 +183,42 @@ class CheckpointManager:
         )
         return manager.restore(target_step, args=args)
 
+    def restore_parameters(
+        self,
+        step: int | None,
+        params: Any,
+        *,
+        from_best: bool = False,
+        partial_restore: bool = False,
+    ) -> dict[str, Any] | None:
+        """Restore only parameter items needed for inference."""
+        manager = self.best_manager if from_best else self.manager
+        target_step = manager.latest_step() if step is None else step
+        if target_step is None:
+            logging.warning("No checkpoint found to restore.")
+            return None
+
+        checkpoint_root = self.best_ckpt_dir if from_best else self.ckpt_dir
+        step_dir = os.path.join(checkpoint_root, str(target_step))
+
+        def restore_args():
+            if not partial_restore:
+                return ocp.args.StandardRestore(params)  # type: ignore
+            return ocp.args.PyTreeRestore(
+                item=params,
+                restore_args=ocp.checkpoint_utils.construct_restore_args(params),
+                partial_restore=True,
+            )
+
+        items: dict[str, ocp.args.CheckpointArgs] = {"params": restore_args()}
+        if os.path.exists(os.path.join(step_dir, "params_ema")):
+            items["params_ema"] = restore_args()
+
+        restored = manager.restore(target_step, args=ocp.args.Composite(**items))
+        result = dict(restored)
+        result["step"] = target_step
+        return result
+
     def get_latest_step(self) -> int | None:
         return self.manager.latest_step()
 

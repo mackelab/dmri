@@ -5,18 +5,18 @@ Use the full evaluation CLI to run advanced posterior inference, model selection
 ## Typical workflow
 
 ```bash
-dmri eval +experiment=eval_b3s_best_model_selection \
-  model_name=<run_name>/<timestamp> \
-  data.data_folder=<data_folder>
+dmri eval +experiment/eval=eval_b3s_best_model_selection \
+  checkpoint.model_name=<run_name>/<timestamp> \
+  evaluation.input.data_folder=<data_folder>
 ```
 
-- `model_name` points at the timestamped training directory below `results/`.
-- File-based presets require either `data.data_folder` or `data.path`.
+- `checkpoint.model_name` points at the timestamped training directory below `results/`.
+- File-based presets require either `evaluation.input.data_folder` or `evaluation.input.path`.
 - Exports (NIfTI volumes plus JSON summaries) are written next to the run under folders like `ball3stick_model_selection_results/`.
 
 ## Switching evaluation presets
 
-Prebaked experiments live in `conf_eval/experiment/`:
+Prebaked experiments live in `conf/experiment/eval/`:
 
 - `eval_b3s_no_selection`: run inference with all model components enabled.
 - `eval_b3s_average_model_selection`: use averaging over model posteriors.
@@ -25,14 +25,14 @@ Prebaked experiments live in `conf_eval/experiment/`:
 Override any Hydra parameter inline:
 
 ```bash
-dmri eval +experiment=eval_ground_truth_b3s theta_sample/corrector=smc
+dmri eval +experiment/eval=eval_ground_truth_b3s evaluation/theta/corrector=smc
 ```
 
 The deprecated `dmri_eval` command remains available as a compatibility alias for `dmri eval`.
 
 ## Metric exports
 
-Metric sets are composed under `conf_eval/export/metrics/` and referenced by exporter configs such as `conf_eval/export/ball3stick.yaml`.
+Metric sets are composed under `conf/evaluation/export/theta/metrics/` and referenced by exporter configs such as `conf/evaluation/export/theta/ball3stick.yaml`.
 Each metric writes a NIfTI volume plus a JSON summary of configured aggregations (mean, median, percentiles).
 
 ## Loading results programmatically

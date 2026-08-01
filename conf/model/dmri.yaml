@@ -1,0 +1,13 @@
+init_seed: 0
+name: DMRIInferenceModelConfigMaskPriorAmortizedPP
+model_dim: 128
+use_attention_mask: True
+inference_loss_type: v
+precision: null
+dtype: null
+preferred_element_type: null
+
+defaults:
+  - embedding_net: bvalbvec
+  - inference_net: simformer
+  - model_selection_net: prior_amortized

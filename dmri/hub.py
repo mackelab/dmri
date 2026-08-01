@@ -27,6 +27,7 @@ def load_pretrained(
     cache_dir=None,
     token=None,
     local_files_only=False,
+    precision=None,
 ) -> PretrainedModel:
     checkpoint, model, simulator = load_checkpoint(
         repo_id=repo_id,
@@ -36,6 +37,7 @@ def load_pretrained(
         cache_dir=cache_dir,
         token=token,
         local_files_only=local_files_only,
+        precision=precision,
     )
     params = checkpoint.get("params_ema")
     if params is None:

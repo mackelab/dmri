@@ -1,8 +1,10 @@
 import logging
 import os
 import socket
-from collections.abc import Mapping, Sequence
+import time
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import nullcontext
+from dataclasses import dataclass
 from types import SimpleNamespace
 
 import hydra
@@ -13,6 +15,16 @@ import numpy as np
 from flax import nnx
 from omegaconf import DictConfig, ListConfig, OmegaConf
 
+from dmri.config import runtime_config
+from dmri.eval import console
+from dmri.eval.autobatch import (
+    available_devices,
+    cache_dir,
+    load_cached_batch_size,
+    make_cache_key,
+    replicated_sharding_for,
+    resolve_batch_size,
+)
 from dmri.eval.data_sources import generate_synthetic_data
 from dmri.eval.export_metrics import MetricContext, run_configured_metrics
 from dmri.eval.export_models import get_model_selection_exporter
@@ -21,10 +33,13 @@ from dmri.eval.export_theta import (
     export_thetas_to_files_ball3stick,
 )
 from dmri.eval.load_data import load_and_process_data
+from dmri.eval.precision import is_half, normalize_precision
 from dmri.eval.sampling_methods import (
+    build_base_theta_sample_fn,
+    build_corrector_fn,
     build_mask_sample_fn,
-    build_theta_sample_fn,
     eval_in_batches,
+    network_evaluations_per_sample,
 )
 from dmri.eval.selection import select_models
 from dmri.hub import load_pretrained
@@ -56,7 +71,7 @@ logo = r"""
 
 
 def _first_device(kind: str):
-    devices = jax.devices(kind)
+    devices = available_devices(kind)
     return devices[0] if devices else None
 
 
@@ -77,16 +92,22 @@ def _to_cpu_array(value):
     return value
 
 
-def _put_tree_on_device(value, device):
-    if device is None:
-        return value
-
-    def maybe_put(item):
-        if isinstance(item, (jax.Array, np.ndarray)):
-            return jax.device_put(item, device)
-        return item
-
-    return jax.tree_util.tree_map(maybe_put, value)
+def _replicate_model(model, devices, logger=None):
+    """Put a full copy of every model array on each evaluation device."""
+    if not devices:
+        return model
+    sharding = replicated_sharding_for(devices)
+    state = nnx.state(model)
+    replicated = jax.tree_util.tree_map(
+        lambda x: (
+            jax.device_put(x, sharding) if isinstance(x, (jax.Array, np.ndarray)) else x
+        ),
+        state,
+    )
+    nnx.update(model, replicated)
+    if logger is not None and len(devices) > 1:
+        logger.info("Replicated model parameters across %d devices", len(devices))
+    return model
 
 
 def _to_int(value):
@@ -185,10 +206,15 @@ def _build_slice_tuple(slice_cfg, volume_shape):
     return tuple(slices)
 
 
-def _apply_slice_to_brain(slice_cfg, brain_mask, data_norm, logger):
+def _restrict_brain_mask_to_slice(slice_cfg, brain_mask, logger):
+    """Narrow a brain mask to a sub-volume, returning the mask and slice tuple.
+
+    Restricting the mask before the signal is read means excluded voxels are
+    never loaded at all.
+    """
     slice_tuple = _build_slice_tuple(slice_cfg, brain_mask.shape)
     if slice_tuple is None:
-        return brain_mask, data_norm, None
+        return brain_mask, None
 
     selection_mask = np.zeros_like(brain_mask, dtype=bool)
     selection_mask[slice_tuple] = True
@@ -216,8 +242,7 @@ def _apply_slice_to_brain(slice_cfg, brain_mask, data_norm, logger):
         voxels_before,
     )
 
-    data_norm = np.where(brain_mask[..., None], data_norm, 0.0)
-    return brain_mask, data_norm, slice_tuple
+    return brain_mask, slice_tuple
 
 
 def _cfg_get(cfg, key, default=None):
@@ -439,7 +464,7 @@ def _maybe_run_metrics(
     model_mask,
     model_mask_samples,
     brain_mask_flat,
-    data_norm,
+    brain_shape,
     export_template,
     thetas_synth,
     true_model_mask,
@@ -485,7 +510,7 @@ def _maybe_run_metrics(
             model_mask=model_mask,
             model_mask_samples=model_mask_samples,
             brain_mask_flat=brain_mask_flat,
-            data_norm=data_norm,
+            brain_shape=brain_shape,
             orig_data=export_template,
             out_path=out_path,
             true_model_parameters=thetas_synth,
@@ -538,9 +563,10 @@ def main():
     _main()
 
 
-@hydra.main(config_path="../../conf_eval", config_name="config.yaml", version_base=None)
+@hydra.main(config_path="../../conf", config_name="eval.yaml", version_base=None)
 def _main(cfg: DictConfig):
     """Evaluate score based inference"""
+    cfg = runtime_config(cfg, "eval")
     log = logging.getLogger(__name__)
     log.info(OmegaConf.to_yaml(cfg))
 
@@ -564,10 +590,7 @@ def _main(cfg: DictConfig):
 def _resolve_eval_devices():
     """Return the preferred device set for heavy eval (GPUs > TPUs > default)."""
     for kind in ("gpu", "tpu"):
-        try:
-            available = tuple(jax.devices(kind))
-        except Exception:
-            available = False
+        available = available_devices(kind)
         if available:
             return available
     return tuple(jax.devices())
@@ -594,6 +617,14 @@ def _run_eval_pipeline(
     log.info(f"Setting seed: {cfg.seed}")
     key = jax.random.PRNGKey(cfg.seed)
 
+    precision = normalize_precision(_cfg_get(cfg, "precision"))
+    if is_half(precision):
+        log.info(
+            "Using %s for the network forward pass; parameters, the sampler and "
+            "the export stay float32.",
+            precision,
+        )
+
     # Load model and simulator first (needed for synthetic data)
     pretrained_repo_id = _cfg_get(cfg, "pretrained_repo_id")
     if pretrained_repo_id not in (None, "", "null", "None"):
@@ -609,26 +640,33 @@ def _run_eval_pipeline(
             revision=_cfg_get(cfg, "pretrained_revision"),
             cache_dir=_cfg_get(cfg, "pretrained_cache_dir"),
             local_files_only=bool(_cfg_get(cfg, "local_files_only", False)),
+            precision=precision,
         )
         model = pretrained.model
     else:
         log.info(f"Loading model from {checkpoint_root}/{cfg.model_name}")
         path_checkpoint = os.path.join(checkpoint_root, cfg.model_name)
         checkpoint, model, _ = load_checkpoint(
-            path_checkpoint, which=_cfg_get(cfg, "checkpoint", "latest")
+            path_checkpoint,
+            which=_cfg_get(cfg, "checkpoint", "latest"),
+            precision=precision,
         )
         graphdef, params, static, state = nnx.split(
             model, nnx.Param, nnx.Intermediate, ...
         )
-        params = checkpoint[cfg.params_name]
-        params = _put_tree_on_device(params, heavy_device)
-        static = _put_tree_on_device(static, heavy_device)
-        state = _put_tree_on_device(state, heavy_device)
+        params = checkpoint.get(cfg.params_name)
+        if params is None:
+            params = checkpoint["params"]
         model = nnx.merge(graphdef, params, static, state, copy=True)
         model.eval()
+
+    _replicate_model(model, eval_devices, log)
     sim_type = model.tokenizer.simulator
 
     source = _cfg_get(data_cfg, "source", "real")
+
+    slice_cfg = getattr(data_cfg, "slice", None)
+    clip_quantile = 0.999 if cfg.data.clip_outliers else None
 
     if source == "synthetic":
         log.info("Generating synthetic evaluation data using simulator.")
@@ -644,55 +682,77 @@ def _run_eval_pipeline(
             key,
         ) = generate_synthetic_data(data_cfg, sim_type, key)
         use_true_model_mask = cfg.data.use_true_model_mask_for_synthetic
+
+        brain_mask, volume_slice = _restrict_brain_mask_to_slice(
+            slice_cfg, brain_mask, log
+        )
+        full_data_flat_in_brain = data_norm.reshape(-1, data_norm.shape[-1])[
+            brain_mask.reshape(-1), :
+        ].astype(np.float32)
+        np.nan_to_num(
+            full_data_flat_in_brain, nan=0.0, posinf=0.0, neginf=0.0, copy=False
+        )
+        if clip_quantile is not None and full_data_flat_in_brain.size:
+            upper = np.quantile(full_data_flat_in_brain, clip_quantile)
+            np.clip(full_data_flat_in_brain, 0, upper, out=full_data_flat_in_brain)
     else:
         data_path = _resolve_data_path(data_cfg)
         log.info(f"Loading data from {data_path}")
-        data, data_norm, brain_mask, bvals, bvecs = load_and_process_data(
+        volume_slice = None
+
+        def _mask_filter(mask, _log=log):
+            nonlocal volume_slice
+            mask, volume_slice = _restrict_brain_mask_to_slice(slice_cfg, mask, _log)
+            return mask
+
+        # The signal is read straight into the flat in-brain layout, normalised
+        # and clipped there; out-of-mask voxels are never loaded.
+        data, full_data_flat_in_brain, brain_mask, bvals, bvecs = load_and_process_data(
             data_path,
             data_cfg.brain_mask,
             data_cfg.mri_data,
             data_cfg.bvals_data,
             data_cfg.bvecs_data,
             data_cfg.round_bvals,
+            mask_filter=_mask_filter,
+            clip_quantile=clip_quantile,
         )
         true_model_mask = None
         thetas_synth = None
         acq_synth = None
         use_true_model_mask = False
 
-    # Optionally restrict processing to a sub-volume
-    brain_mask, data_norm, volume_slice = _apply_slice_to_brain(
-        getattr(data_cfg, "slice", None), brain_mask, data_norm, log
-    )
     export_template = SimpleNamespace(
         affine=data.affine,
         shape=data.shape,
         volume_slice=volume_slice,
     )
 
-    # Only infer within the brain mask
-    full_data_flat = data_norm.reshape(-1, data_norm.shape[-1])
+    brain_shape = brain_mask.shape
     brain_mask_flat = brain_mask.reshape(-1)
     acq = acq_synth if acq_synth is not None else acquisition_scheme(bvals, bvecs)
-    full_data_flat_in_brain = full_data_flat[brain_mask_flat, :]
-    full_data_flat_in_brain = np.nan_to_num(
-        full_data_flat_in_brain, nan=0.0, posinf=0.0, neginf=0.0
-    )
     log.info(
         f"Full data flat in brain quantiles 1%, 10%, 50%, 90%, 99%: {np.quantile(full_data_flat_in_brain, [0.01, 0.1, 0.5, 0.9, 0.99])}"
     )
 
-    # Clip outliers
-    if cfg.data.clip_outliers:
-        exclude_outliers = np.quantile(full_data_flat_in_brain, 0.999)
-        full_data_flat_in_brain = np.clip(full_data_flat_in_brain, 0, exclude_outliers)
+    with _device_scope(heavy_device):
+        stage_batch_sizes = _autotune_batch_sizes(
+            cfg,
+            key,
+            model,
+            acq,
+            sim_type,
+            full_data_flat_in_brain,
+            log,
+            eval_devices,
+        )
 
     key, key_masks = jax.random.split(key)
     # Sample masks if needed
     if cfg.sample_mask:
         log.info("Sampling masks")
         with _device_scope(heavy_device):
-            models_sampled_brain = sample_mask(
+            models_sampled_brain, feasible_model_probabilities = sample_mask(
                 cfg,
                 key_masks,
                 model,
@@ -700,12 +760,15 @@ def _run_eval_pipeline(
                 full_data_flat_in_brain,
                 log,
                 devices=eval_devices,
+                batch_size=stage_batch_sizes.get(STAGE_MASK),
             )
         models_sampled_brain = _to_cpu_array(models_sampled_brain)
+        feasible_model_probabilities = _to_cpu_array(feasible_model_probabilities)
         avg_freq = np.mean(models_sampled_brain, axis=(0, 1))
         log.info(f"Average frequency of all models: {avg_freq}")
     else:
         models_sampled_brain = None
+        feasible_model_probabilities = None
     log.info(
         f"Models sampled brain shape: {models_sampled_brain.shape if models_sampled_brain is not None else 'None'}"
     )
@@ -771,8 +834,10 @@ def _run_eval_pipeline(
                     model_mask=models_selected_brain,
                     devices=eval_devices,
                     default_mask=default_mask,
+                    batch_sizes=stage_batch_sizes,
                 )
         model_parameters_brain = _to_cpu_array(model_parameters_brain)
+        _warn_on_non_finite_thetas(model_parameters_brain, precision, log)
     else:
         model_parameters_brain = None
     log.info(
@@ -801,8 +866,12 @@ def _run_eval_pipeline(
     if _has_model_selection_to_export(models_selected_brain, models_sampled_brain):
         log.info("Exporting model selection of type '%s'", export_type)
         exporter = get_model_selection_exporter(export_type)
-        feasible_model_probabilities = None
-        if _should_compute_feasible_model_probabilities(cfg, export_cfg, export_type):
+        if (
+            feasible_model_probabilities is None
+            and _should_compute_feasible_model_probabilities(
+                cfg, export_cfg, export_type
+            )
+        ):
             if getattr(export_cfg, "feasible_models", None) is None:
                 log.warning(
                     "export_model_selection.feasible_models is not set; skipping feasible model probabilities."
@@ -812,7 +881,14 @@ def _run_eval_pipeline(
                 with _device_scope(heavy_device):
                     feasible_model_probabilities = (
                         _compute_feasible_model_probabilities(
-                            cfg, export_cfg, model, acq, full_data_flat_in_brain
+                            cfg,
+                            export_cfg,
+                            model,
+                            acq,
+                            full_data_flat_in_brain,
+                            logger=log,
+                            devices=eval_devices,
+                            batch_size=stage_batch_sizes.get(STAGE_FEASIBLE),
                         )
                     )
                 feasible_model_probabilities = _to_cpu_array(
@@ -831,7 +907,7 @@ def _run_eval_pipeline(
                 out_path,
                 export_template,
                 brain_mask_flat,
-                data_norm.shape[:-1],
+                brain_shape,
                 feasible_model_probabilities,
             )
             return True
@@ -871,7 +947,7 @@ def _run_eval_pipeline(
                 models_sampled_brain,
                 models_sampled_brain,
                 brain_mask_flat,
-                data_norm,
+                brain_shape,
                 export_template,
                 thetas_synth,
                 true_model_mask,
@@ -899,7 +975,7 @@ def _run_eval_pipeline(
                 true_model_mask,
                 thetas_synth,
                 brain_mask_flat,
-                data_norm.shape[:-1],
+                brain_shape,
                 out_path,
                 export_template,
             )
@@ -913,7 +989,7 @@ def _run_eval_pipeline(
                     if models_selected_brain is not None
                     else default_mask,
                     brain_mask_flat,
-                    data_norm.shape[:-1],
+                    brain_shape,
                     out_path,
                     export_template,
                 )
@@ -936,7 +1012,7 @@ def _run_eval_pipeline(
         models_selected_brain,
         models_sampled_brain,
         brain_mask_flat,
-        data_norm,
+        brain_shape,
         export_template,
         thetas_synth,
         true_model_mask,
@@ -947,28 +1023,353 @@ def _run_eval_pipeline(
     )
 
 
-def sample_mask(cfg, key, model, acq, data, logger, devices=None):
-    """Sample a mask from the model"""
+def _warn_on_non_finite_thetas(thetas, precision, logger):
+    """Report non-finite samples, naming half precision when it is in play."""
+    if thetas is None:
+        return 0.0
+    non_finite = int(np.count_nonzero(~np.isfinite(thetas)))
+    if not non_finite:
+        return 0.0
+    fraction = non_finite / thetas.size
+    message = (
+        f"{non_finite} non-finite theta values ({fraction:.2%} of samples). "
+        "The affected voxels will export as zeros."
+    )
+    if is_half(precision):
+        logger.warning(
+            "%s This run used %s; rerun with precision=fp32 if the maps look wrong.",
+            message,
+            precision,
+        )
+    else:
+        logger.warning("%s", message)
+    return fraction
+
+
+def _resolved(node):
+    """Config subtree as a plain, comparable value."""
+    if isinstance(node, (DictConfig, ListConfig)):
+        return OmegaConf.to_container(node, resolve=True)
+    return node
+
+
+def _stage_shape_inputs(cfg, stage):
+    """Config that determines this stage's graph, and so its memory footprint.
+
+    Per stage, so changing the ODE step count does not re-tune mask sampling.
+    """
+    if stage.startswith("theta"):
+        return (
+            cfg.theta_sample.num_samples,
+            _resolved(_cfg_get(cfg, "theta_sample.params")),
+            _resolved(_cfg_get(cfg, "theta_sample.corrector")),
+        )
+    return (
+        cfg.mask_sample.n_samples,
+        _cfg_get(cfg, "mask_sample.method"),
+        _cfg_get(cfg, "mask_sample.p_mask"),
+        len(_feasible_models_for_mask_pass(cfg) or ()),
+    )
+
+
+def _batch_cache_key(cfg, stage, data, devices, *extra):
+    """Identify a batching workload so a probed size can be reused across runs.
+
+    Everything that changes the stage's memory footprint must be in here; the
+    source fingerprint is added by `make_cache_key`.
+    """
+    device = devices[0] if devices else None
+    stats = None
+    try:
+        stats = device.memory_stats() if device is not None else None
+    except Exception:
+        stats = None
+    return make_cache_key(
+        stage,
+        cfg.model_name,
+        data.shape[-1],
+        *_stage_shape_inputs(cfg, stage),
+        _cfg_get(cfg, "model_selection.name"),
+        # Half precision admits a larger batch, so it needs its own entry.
+        normalize_precision(_cfg_get(cfg, "precision")),
+        getattr(device, "device_kind", "cpu"),
+        (stats or {}).get("bytes_limit"),
+        len(devices) if devices else 1,
+        *extra,
+    )
+
+
+def _resolve_stage_batch_size(cfg, stage, fn, key, data, *extra_args, logger, devices):
+    """Pick a batch size for one batched stage, honouring the config override."""
+    return resolve_batch_size(
+        fn,
+        data,
+        *extra_args,
+        key_example=key,
+        configured=cfg[stage].eval_batch_size,
+        devices=devices,
+        num_voxels=data.shape[0],
+        cache_key=_batch_cache_key(cfg, stage, data, devices),
+        logger=logger,
+        override=cfg.get("batch_size"),
+    )
+
+
+def _feasible_models(cfg):
+    """Feasible masks the export wants scored, if any."""
+    export_cfg = _cfg_get(cfg, "export_model_selection")
+    if export_cfg is None:
+        return None
+    export_type = _cfg_get(
+        cfg, "export_model_selection.type", _cfg_get(cfg, "export.type")
+    )
+    if not _should_compute_feasible_model_probabilities(cfg, export_cfg, export_type):
+        return None
+    return _cfg_get(cfg, "export_model_selection.feasible_models")
+
+
+def _feasible_models_for_mask_pass(cfg):
+    """Feasible masks folded into the mask-sampling pass, which shares its head."""
+    return _feasible_models(cfg) if cfg.sample_mask else None
+
+
+def _standalone_feasible_models(cfg):
+    """Feasible masks needing their own pass, because no mask pass will run."""
+    return None if cfg.sample_mask else _feasible_models(cfg)
+
+
+def _theta_mask_stand_in(cfg, sim_type):
+    """Shape-accurate model mask for probing, before the real one is sampled.
+
+    Only rank and trailing shape matter, so one row is enough.
+    """
+    num_comp = len(sim_type.model_types) + len(sim_type.noise_types)
+    selection = _cfg_get(cfg, "model_selection.name", "none")
+    if selection == "none" and _cfg_get(cfg, "default_mask") is None:
+        return jnp.ones(num_comp, dtype=jnp.bool_)
+    return jnp.ones((1, cfg.theta_sample.num_samples, num_comp), dtype=jnp.bool_)
+
+
+#: Stage names. Shared by the autotuner and the runner so a size measured for
+#: one stage is always looked up under the same key.
+STAGE_MASK = "mask_sample"
+STAGE_THETA_BASE = "theta_base"
+STAGE_THETA_CORRECTOR = "theta_corrector"
+STAGE_FEASIBLE = "feasible_models"
+
+
+@dataclass(frozen=True)
+class BatchStage:
+    """One batched pass over the voxel axis, and how to size it."""
+
+    name: str
+    label: str
+    build: Callable[[], Callable]
+    #: Config section holding this stage's explicit `eval_batch_size`, if any.
+    config_section: str = "mask_sample"
+    #: Arguments the stage takes before the signal (the corrector's thetas).
+    leading_args: tuple = ()
+    #: Arguments it takes after it (a per-voxel model mask).
+    trailing_args: tuple = ()
+
+    def probe_args(self, data):
+        return (*self.leading_args, data, *self.trailing_args)
+
+    def configured(self, cfg):
+        return _cfg_get(cfg, f"{self.config_section}.eval_batch_size")
+
+    def cache_key(self, cfg, data, devices):
+        return _batch_cache_key(cfg, self.name, data, devices)
+
+
+def _batch_stages(cfg, model, acq, sim_type):
+    """The batched passes this configuration will run, in order."""
+    stages = []
+
+    if cfg.sample_mask:
+        feasible_models = _feasible_models_for_mask_pass(cfg)
+        stages.append(
+            BatchStage(
+                name=STAGE_MASK,
+                label="mask sampling"
+                + (" + model selection" if feasible_models else ""),
+                build=lambda: build_mask_sample_fn(
+                    cfg.mask_sample.method,
+                    cfg.mask_sample.n_samples,
+                    model,
+                    acq,
+                    cfg.mask_sample.p_mask,
+                    feasible_models=feasible_models,
+                ),
+            )
+        )
+
+    if cfg.sample_theta:
+        mask = _theta_mask_stand_in(cfg, sim_type)
+        per_voxel_mask = (mask,) if mask.ndim > 1 else ()
+        stages.append(
+            BatchStage(
+                name=STAGE_THETA_BASE,
+                label="theta sampling",
+                config_section="theta_sample",
+                build=lambda: build_base_theta_sample_fn(
+                    cfg.theta_sample.num_samples,
+                    model,
+                    acq,
+                    mask,
+                    cfg.theta_sample.params,
+                ),
+                trailing_args=per_voxel_mask,
+            )
+        )
+
+        corrector_name = _cfg_get(cfg, "theta_sample.corrector.name", "none")
+        if corrector_name not in (None, "none", "uncorrected"):
+            thetas = jnp.zeros(
+                (1, cfg.theta_sample.num_samples, sim_type.theta_dim), jnp.float32
+            )
+            stages.append(
+                BatchStage(
+                    name=STAGE_THETA_CORRECTOR,
+                    label="corrector",
+                    config_section="theta_sample",
+                    build=lambda: build_corrector_fn(
+                        corrector_name,
+                        model,
+                        acq,
+                        mask,
+                        sim_type,
+                        cfg.theta_sample.corrector,
+                    ),
+                    leading_args=(thetas,),
+                    trailing_args=per_voxel_mask,
+                )
+            )
+
+    feasible = _standalone_feasible_models(cfg)
+    if feasible is not None:
+        stages.append(
+            BatchStage(
+                name=STAGE_FEASIBLE,
+                label="model selection",
+                build=lambda: _build_feasible_probability_fn(cfg, feasible, model, acq),
+            )
+        )
+
+    return stages
+
+
+def _autotune_batch_sizes(cfg, key, model, acq, sim_type, data, log, devices):
+    """Resolve every stage's batch size before any sampling starts.
+
+    Probing compiles the stage graphs: slow, but once per machine. Doing it here
+    keeps that cost in one labelled place rather than stalling the run repeatedly.
+    """
+    stages = _batch_stages(cfg, model, acq, sim_type)
+    if not stages:
+        return {}
+
+    override = cfg.get("batch_size")
+    resolved = {}
+    pending = []
+    for stage in stages:
+        cached = (
+            None
+            if override
+            else load_cached_batch_size(stage.cache_key(cfg, data, devices))
+        )
+        if cached:
+            resolved[stage.name] = min(cached, data.shape[0])
+        else:
+            pending.append(stage)
+
+    if not pending:
+        log.info(
+            "Using cached batch sizes: %s",
+            ", ".join(f"{name}={size}" for name, size in resolved.items()),
+        )
+        return resolved
+
+    message = (
+        f"Autotuning batch sizes for this device (one-time; cached in {cache_dir()})"
+    )
+    log.info(message)
+    console.say(f"\n{message}")
+    started = time.perf_counter()
+    for index, stage in enumerate(pending, start=1):
+        stage_started = time.perf_counter()
+        resolved[stage.name] = resolve_batch_size(
+            stage.build(),
+            *stage.probe_args(data),
+            key_example=key,
+            configured=stage.configured(cfg),
+            devices=devices,
+            num_voxels=data.shape[0],
+            cache_key=stage.cache_key(cfg, data, devices),
+            logger=log,
+            override=override,
+        )
+        summary = (
+            f"  [{index}/{len(pending)}] {stage.label:<36} "
+            f"{resolved[stage.name]:>7,} vox/batch  "
+            f"{time.perf_counter() - stage_started:5.1f}s"
+        )
+        log.info(summary)
+        console.say(summary)
+
+    done = (
+        f"Autotuning done in {time.perf_counter() - started:.1f}s "
+        "- later runs reuse it."
+    )
+    log.info(done)
+    console.say(done + "\n")
+    return resolved
+
+
+def sample_mask(cfg, key, model, acq, data, logger, devices=None, batch_size=None):
+    """Sample model masks, and the feasible-mask probabilities if wanted.
+
+    Returns ``(masks, feasible_probabilities)``, the latter None unless the
+    export asks for them.
+    """
+    feasible_models = _feasible_models_for_mask_pass(cfg)
     sample_mask_fn = build_mask_sample_fn(
         cfg.mask_sample.method,
         cfg.mask_sample.n_samples,
         model,
         acq,
         cfg.mask_sample.p_mask,
+        feasible_models=feasible_models,
+    )
+    batch_size = batch_size or _resolve_stage_batch_size(
+        cfg, STAGE_MASK, sample_mask_fn, key, data, logger=logger, devices=devices
     )
     models_sampled_brain = eval_in_batches(
         sample_mask_fn,
         key,
         data,
-        batch_size=cfg.mask_sample.eval_batch_size,
+        batch_size=batch_size,
         logger=logger,
         devices=devices,
+        cache_key=_batch_cache_key(cfg, STAGE_MASK, data, devices),
+        desc="Sampling model masks",
     )
+    if feasible_models is None:
+        return models_sampled_brain, None
     return models_sampled_brain
 
 
 def sample_theta(
-    cfg, key, model, acq, data, logger, model_mask=None, devices=None, default_mask=None
+    cfg,
+    key,
+    model,
+    acq,
+    data,
+    logger,
+    model_mask=None,
+    devices=None,
+    default_mask=None,
+    batch_sizes=None,
 ):
     """Sample theta parameters"""
     sim_type = model.tokenizer.simulator
@@ -1001,61 +1402,124 @@ def sample_theta(
 
     name = cfg.theta_sample.corrector.name
     logger.info(f"Using theta sampling corrector: {name}")
-    sample_theta_fn = build_theta_sample_fn(
-        name,
+    nfe = network_evaluations_per_sample(cfg.theta_sample.params)
+    logger.info(
+        "%d ODE steps -> %d network evaluations per sample, %d samples per voxel",
+        cfg.theta_sample.params.get("num_steps", 0),
+        nfe,
         cfg.theta_sample.num_samples,
-        model,
-        acq,
-        model_mask,
-        sim_type,
-        cfg.theta_sample.params,
-        cfg.theta_sample.corrector,
     )
 
-    if model_mask is not None and model_mask.ndim > 1:
-        thetas_full = eval_in_batches(
-            sample_theta_fn,
-            key,
-            data,
-            model_mask,
-            batch_size=cfg.theta_sample.eval_batch_size,
+    batched_mask = model_mask is not None and model_mask.ndim > 1
+    extra_args = (model_mask,) if batched_mask else ()
+    key_base, key_corrector = jax.random.split(key)
+
+    labels = {
+        STAGE_THETA_BASE: "Sampling parameters",
+        STAGE_THETA_CORRECTOR: "Refining parameters",
+    }
+
+    def _run_stage(stage, fn, stage_key, *stage_data):
+        cache_key = _batch_cache_key(cfg, stage, data, devices)
+        batch_size = (batch_sizes or {}).get(stage) or resolve_batch_size(
+            fn,
+            *stage_data,
+            key_example=stage_key,
+            configured=cfg.theta_sample.eval_batch_size,
+            devices=devices,
+            num_voxels=data.shape[0],
+            cache_key=cache_key,
+            logger=logger,
+            override=cfg.get("batch_size"),
+        )
+        return eval_in_batches(
+            fn,
+            stage_key,
+            *stage_data,
+            batch_size=batch_size,
             logger=logger,
             devices=devices,
+            cache_key=cache_key,
+            desc=labels.get(stage),
         )
-    else:
-        thetas_full = eval_in_batches(
-            sample_theta_fn,
-            key,
-            data,
-            batch_size=cfg.theta_sample.eval_batch_size,
-            logger=logger,
-            devices=devices,
-        )
-    return thetas_full
+
+    # Separate passes: the corrector fits a ~7x larger batch than the sampler.
+    logger.info("Sampling thetas (network sampler)")
+    base_fn = build_base_theta_sample_fn(
+        cfg.theta_sample.num_samples, model, acq, model_mask, cfg.theta_sample.params
+    )
+    thetas_full = _run_stage(STAGE_THETA_BASE, base_fn, key_base, data, *extra_args)
+
+    if name in (None, "none", "uncorrected"):
+        return thetas_full
+
+    logger.info("Correcting thetas (%s)", name)
+    corrector_fn = build_corrector_fn(
+        name, model, acq, model_mask, sim_type, cfg.theta_sample.corrector
+    )
+    return _run_stage(
+        STAGE_THETA_CORRECTOR,
+        corrector_fn,
+        key_corrector,
+        thetas_full,
+        data,
+        *extra_args,
+    )
 
 
-def _compute_feasible_model_probabilities(cfg, export_cfg, model, acq, data):
-    """Compute probabilities over feasible model masks for each voxel."""
-    feasible_models = jnp.array(export_cfg.feasible_models, dtype=jnp.bool)
-    p_mask = cfg.mask_sample.p_mask
+def _build_feasible_probability_fn(cfg, feasible_models, model, acq):
+    """Probability over the feasible model masks, per voxel."""
+    feasible_models = jnp.asarray(feasible_models, dtype=jnp.bool_)
+    p_mask_arr = jnp.array([cfg.mask_sample.p_mask])
 
     def eval_feasible_log_probs(x):
-        model_logpmf = jax.vmap(model.log_prob_mask, in_axes=(0, None, None, None))(
-            feasible_models, acq, x, jnp.array([p_mask])
+        return jax.vmap(model.log_prob_mask, in_axes=(0, None, None, None))(
+            feasible_models, acq, x, p_mask_arr
         )
-        return model_logpmf
 
-    batch_size = 10_000
-    probabilities = []
-    for i in range(0, data.shape[0], batch_size):
-        batch_data = data[i : i + batch_size]
-        batch_logpmf = jax.vmap(eval_feasible_log_probs, in_axes=(0,))(batch_data)
-        batch_probs = jax.nn.softmax(batch_logpmf, axis=-1)
-        probabilities.append(batch_probs)
+    batched = jax.jit(jax.vmap(eval_feasible_log_probs, in_axes=(0,)))
 
-    if not probabilities:
+    def _eval_fn(keys, batch_data):
+        del keys  # Deterministic computation; keys are unused.
+        return jax.nn.softmax(batched(batch_data), axis=-1)
+
+    return _eval_fn
+
+
+def _compute_feasible_model_probabilities(
+    cfg, export_cfg, model, acq, data, logger=None, devices=None, batch_size=None
+):
+    """Compute probabilities over feasible model masks for each voxel."""
+    if data.shape[0] == 0:
         return None
-    return np.concatenate(probabilities, axis=0)
+
+    _eval_fn = _build_feasible_probability_fn(
+        cfg, export_cfg.feasible_models, model, acq
+    )
+
+    key = jax.random.PRNGKey(0)
+    cache_key = _batch_cache_key(cfg, STAGE_FEASIBLE, data, devices)
+    batch_size = batch_size or resolve_batch_size(
+        _eval_fn,
+        data,
+        key_example=key,
+        configured=cfg.mask_sample.eval_batch_size,
+        devices=devices,
+        num_voxels=data.shape[0],
+        cache_key=cache_key,
+        logger=logger,
+        override=cfg.get("batch_size"),
+    )
+    return eval_in_batches(
+        _eval_fn,
+        key,
+        data,
+        batch_size=batch_size,
+        logger=logger,
+        devices=devices,
+        cache_key=cache_key,
+        desc="Scoring feasible models",
+    )
 
 
 def embed_in_full_brain_array(to_embed, brain_mask_flat, brain_shape):

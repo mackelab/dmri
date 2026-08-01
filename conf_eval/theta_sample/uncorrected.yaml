@@ -1,6 +1,6 @@
 method: uncorrected
 num_samples: 50
-eval_batch_size: 30_000
+eval_batch_size: null   # null = determine the largest workable batch
 
 params:
   num_steps: 256

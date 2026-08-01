@@ -1,4 +1,4 @@
 method: "naive"
 p_mask: 0.3
 n_samples: 50
-eval_batch_size: 30_000
+eval_batch_size: null   # null = determine the largest workable batch

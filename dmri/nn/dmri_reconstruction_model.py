@@ -429,10 +429,13 @@ class DMRIInferenceModel(nnx.Module):
         acq: AcquisitionSchemeLike,
         x: Array,
         mask_prior: Array | None = None,
+        y_ctx: Array | None = None,
+        y: Array | None = None,
     ) -> Array:
         # Update for different model configs
         mask_prior = jnp.asarray(mask_prior) if mask_prior is not None else None
-        y_ctx, y = self._encode_observations(acq, x)
+        if y_ctx is None or y is None:
+            y_ctx, y = self._encode_observations(acq, x)
         model_mask = self.model_decoder.sample(
             rng,
             tokenizer=self.tokenizer,
@@ -449,9 +452,12 @@ class DMRIInferenceModel(nnx.Module):
         acq: AcquisitionSchemeLike,
         x: Array,
         mask_prior: Array | None = None,
+        y_ctx: Array | None = None,
+        y: Array | None = None,
     ) -> Array:
         mask_prior_arr = jnp.asarray(mask_prior) if mask_prior is not None else None
-        y_ctx, y = self._encode_observations(acq, x)
+        if y_ctx is None or y is None:
+            y_ctx, y = self._encode_observations(acq, x)
         log_prob = self.model_decoder.log_prob(
             model_mask,
             self.tokenizer,

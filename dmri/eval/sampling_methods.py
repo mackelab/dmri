@@ -1,3 +1,4 @@
+import sys
 from collections.abc import Sequence
 from functools import partial
 
@@ -7,6 +8,12 @@ import numpy as np
 from blackjax import hmc, tempered_smc
 from blackjax.smc.resampling import systematic
 
+from dmri.eval.autobatch import (
+    available_devices,
+    batch_sharding_for,
+    store_cached_batch_size,
+)
+
 
 def _resolve_devices(
     devices: Sequence[jax.Device] | str | None = None,
@@ -14,7 +21,7 @@ def _resolve_devices(
 ) -> tuple[jax.Device, ...]:
     """Resolve an explicit device list, falling back to preferred kinds when unspecified."""
     if isinstance(devices, str):
-        resolved = tuple(jax.devices(devices))
+        resolved = available_devices(devices)
         if not resolved:
             raise ValueError(f"No JAX devices available for kind '{devices}'.")
         return resolved
@@ -25,13 +32,50 @@ def _resolve_devices(
         return resolved
     if preferred_device_kinds:
         for kind in preferred_device_kinds:
-            available = jax.devices(kind)
+            available = available_devices(kind)
             if available:
-                return tuple(available)
+                return available
     available = tuple(jax.devices())
     if not available:
         raise RuntimeError("No JAX devices are available for evaluation.")
     return available
+
+
+_OOM_MARKERS = ("out of memory", "resource_exhausted", "failed to allocate")
+
+
+def _is_oom(error) -> bool:
+    message = str(error).lower()
+    return any(marker in message for marker in _OOM_MARKERS)
+
+
+def _voxel_progress(desc, total):
+    """A progress bar over voxels, or None when nothing would see it."""
+    if not desc or not sys.stderr.isatty():
+        return None
+    try:
+        from tqdm.auto import tqdm
+    except ImportError:
+        return None
+    return tqdm(
+        total=total,
+        desc=desc,
+        unit="vox",
+        unit_scale=True,
+        leave=False,
+        bar_format="  {desc:<22} {percentage:3.0f}%|{bar:24}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+    )
+
+
+def _pad_to(batch_data, target_size):
+    """Pad the leading axis of every array up to ``target_size``."""
+    padding = target_size - batch_data[0].shape[0]
+    if padding <= 0:
+        return batch_data
+    return jax.tree_util.tree_map(
+        lambda x: jnp.pad(x, ((0, padding),) + ((0, 0),) * (x.ndim - 1)),
+        batch_data,
+    )
 
 
 def eval_in_batches(
@@ -43,8 +87,18 @@ def eval_in_batches(
     min_batch_size=100,
     devices: Sequence[jax.Device] | str | None = None,
     preferred_device_kinds: Sequence[str] | None = ("gpu", "tpu"),
+    cache_key: str | None = None,
+    desc: str | None = None,
 ):
-    """Evaluate a function on data batches, overlapping host prep with device compute."""
+    """Evaluate a function on data batches, overlapping host prep with device compute.
+
+    Every batch is padded to ``batch_size`` so only a single shape is ever traced;
+    the padded rows are trimmed from the results.
+
+    Each row gets its key from a single up-front split over the whole input, so
+    the result depends only on ``key`` -- not on the batch size, the device count
+    or where the batch boundaries happen to fall.
+    """
     eval_results = []
     if logger is not None:
         print_fn = logger.info
@@ -56,226 +110,220 @@ def eval_in_batches(
 
     resolved_devices = _resolve_devices(devices, preferred_device_kinds)
     num_devices = len(resolved_devices)
-
-    def _finalize_single_result(res):
-        """Bring a device result to host as numpy."""
-        return np.asarray(jax.device_get(res))
-
-    def _finalize_pmap_result(res, original_batch_size):
-        np_results = np.asarray(res)
-        flat_results = np_results.reshape(-1, *np_results.shape[2:])
-        return flat_results[:original_batch_size]
+    batch_sharding = batch_sharding_for(resolved_devices)
 
     if num_devices > 1:
-        # Use pmap when multiple devices are available
         device_desc = ", ".join(
             f"{d.platform}:{d.id}" if hasattr(d, "id") else d.platform
             for d in resolved_devices
         )
-        print_fn(f"Using pmap across devices [{device_desc}]")
-
-        # Split batch size across devices
-        device_batch_size = max(batch_size // num_devices, min_batch_size)
-
-        # Create pmap function
-        @partial(jax.pmap, devices=resolved_devices)
-        def pmap_fn(device_key, *device_data):
-            # Split the device key for the batch
-            batch_keys = jax.random.split(device_key, device_data[0].shape[0])
-            return fn(batch_keys, *device_data)
-
-        # Use device_batch_size * num_devices as the effective batch size
-        current_batch_size = device_batch_size * num_devices
-        batch_start = 0
-
-        pending_result = None
-        while batch_start < data[0].shape[0]:
-            try:
-                key, subkey = jax.random.split(key)
-                print_fn(
-                    f"Evaluating batch {batch_start} with batch size {current_batch_size} ({device_batch_size} per device across {num_devices} devices)"
-                )
-                batch_end = min(batch_start + current_batch_size, data[0].shape[0])
-                batch_data = jax.tree_util.tree_map(
-                    lambda x, start=batch_start, end=batch_end: x[start:end], data
-                )
-
-                # Split batch data across devices
-                original_batch_size = batch_data[0].shape[0]
-                padding_size = (
-                    num_devices - (original_batch_size % num_devices)
-                ) % num_devices
-                if padding_size:
-                    batch_data = jax.tree_util.tree_map(
-                        lambda x, pad=padding_size: jnp.pad(
-                            x, ((0, pad),) + ((0, 0),) * (x.ndim - 1)
-                        ),
-                        batch_data,
-                    )
-
-                device_batch_size_actual = batch_data[0].shape[0] // num_devices
-
-                # Reshape data for pmap (num_devices, device_batch_size, ...)
-                pmap_data = jax.tree_util.tree_map(
-                    lambda x, devices=num_devices, bs=device_batch_size_actual: (
-                        x.reshape(devices, bs, *x.shape[1:])
-                    ),
-                    batch_data,
-                )
-
-                # Split keys for each device
-                device_keys = jax.random.split(subkey, num_devices)
-
-                # Dispatch computation before blocking on previous result
-                pmap_results = pmap_fn(device_keys, *pmap_data)
-                if pending_result is not None:
-                    eval_results.append(_finalize_pmap_result(*pending_result))
-                pending_result = (pmap_results, original_batch_size)
-                batch_start = batch_end
-            except Exception as e:
-                if (
-                    "out of memory" in str(e).lower()
-                    and current_batch_size > min_batch_size * num_devices
-                ):
-                    print_fn(
-                        f"Out of memory error, reducing batch size from {current_batch_size} to {current_batch_size // 2}"
-                    )
-                    # Clear caches
-                    jax.clear_caches()
-                    current_batch_size = current_batch_size // 2
-                    device_batch_size = max(
-                        current_batch_size // num_devices, min_batch_size
-                    )
-                    continue
-                else:
-                    if pending_result is not None:
-                        eval_results.append(_finalize_pmap_result(*pending_result))
-                    raise e
-        if pending_result is not None:
-            eval_results.append(_finalize_pmap_result(*pending_result))
+        print_fn(f"Sharding batches across {num_devices} devices [{device_desc}]")
     else:
-        # Fallback to original single-device implementation
-        single_device = resolved_devices[0]
-        print_fn(f"Using single device implementation on {single_device}")
-        current_batch_size = batch_size
-        batch_start = 0
+        print_fn(f"Using single device implementation on {resolved_devices[0]}")
 
-        pending_result = None
-        while batch_start < data[0].shape[0]:
-            try:
-                key, subkey = jax.random.split(key)
+    def _finalize(res, original_batch_size):
+        """Bring a device result to host as numpy, dropping padded rows."""
+        return jax.tree_util.tree_map(
+            lambda leaf: np.asarray(jax.device_get(leaf))[:original_batch_size], res
+        )
+
+    def _record_batch_size(size):
+        if cache_key is not None:
+            store_cached_batch_size(cache_key, size)
+
+    # One key per row, decided before batching, so the draws depend on the seed
+    # alone and not on where the batch boundaries fall.
+    all_keys = np.asarray(jax.random.split(key, expected_total_size))
+
+    current_batch_size = batch_size
+    batch_start = 0
+    pending_result = None
+    progress = _voxel_progress(desc, expected_total_size)
+
+    while batch_start < data[0].shape[0]:
+        try:
+            if progress is None:
+                shards = (
+                    f" ({current_batch_size // num_devices} per device across "
+                    f"{num_devices} devices)"
+                    if num_devices > 1
+                    else ""
+                )
                 print_fn(
-                    f"Evaluating batch {batch_start} with batch size {current_batch_size}"
+                    f"Evaluating batch {batch_start} with batch size "
+                    f"{current_batch_size}{shards}"
                 )
-                batch_end = min(batch_start + current_batch_size, data[0].shape[0])
-                batch_data = jax.tree_util.tree_map(
-                    lambda x, start=batch_start, end=batch_end: x[start:end], data
-                )
-                batch_keys = jax.random.split(subkey, batch_data[0].shape[0])
-                batch_data_device = jax.device_put(batch_data, single_device)
-                batch_keys_device = jax.device_put(batch_keys, single_device)
+            batch_end = min(batch_start + current_batch_size, data[0].shape[0])
+            batch_data = jax.tree_util.tree_map(
+                lambda x, start=batch_start, end=batch_end: x[start:end], data
+            )
+            # Pad up to the full batch so only one shape is ever traced, keeping
+            # the total divisible by the device count so the shards stay even.
+            original_batch_size = batch_data[0].shape[0]
+            pad_target = min(current_batch_size, expected_total_size)
+            pad_target += (-pad_target) % num_devices
+            batch_data = _pad_to(batch_data, pad_target)
 
-                # Dispatch computation; fetch previous result while this runs to overlap host/device work.
-                batch_res = fn(batch_keys_device, *batch_data_device)
+            batch_keys = _pad_to((all_keys[batch_start:batch_end],), pad_target)[0]
+            # Sharding the leading axis lets jit partition the work.
+            batch_data_device = jax.device_put(batch_data, batch_sharding)
+            batch_keys_device = jax.device_put(batch_keys, batch_sharding)
+
+            # Dispatch computation; fetch previous result while this runs to overlap host/device work.
+            batch_res = fn(batch_keys_device, *batch_data_device)
+            if pending_result is not None:
+                eval_results.append(_finalize(*pending_result))
+            pending_result = (batch_res, original_batch_size)
+            if progress is not None:
+                progress.update(batch_end - batch_start)
+            batch_start = batch_end
+        except Exception as e:
+            if _is_oom(e) and current_batch_size > min_batch_size * num_devices:
+                reduced = max(current_batch_size // 2, min_batch_size * num_devices)
+                reduced -= reduced % num_devices
+                print_fn(
+                    f"Out of memory error, reducing batch size from {current_batch_size} to {reduced}"
+                )
+                # Clear caches
+                jax.clear_caches()
+                current_batch_size = reduced
+                _record_batch_size(current_batch_size)
+                if progress is not None:
+                    progress.reset()
+                    progress.update(batch_start)
+                continue
+            else:
                 if pending_result is not None:
-                    eval_results.append(_finalize_single_result(pending_result))
-                pending_result = batch_res
-                batch_start = batch_end
-            except Exception as e:
-                if (
-                    "out of memory" in str(e).lower()
-                    and current_batch_size > min_batch_size
-                ):
-                    print_fn(
-                        f"Out of memory error, reducing batch size from {current_batch_size} to {current_batch_size // 2}"
-                    )
-                    # Clear caches
-                    jax.clear_caches()
-                    current_batch_size = current_batch_size // 2
-                    continue
-                else:
-                    if pending_result is not None:
-                        eval_results.append(_finalize_single_result(pending_result))
-                    raise e
-        if pending_result is not None:
-            eval_results.append(_finalize_single_result(pending_result))
+                    eval_results.append(_finalize(*pending_result))
+                raise e
 
-    result = np.concatenate(eval_results, axis=0)
+    if pending_result is not None:
+        eval_results.append(_finalize(*pending_result))
+    if progress is not None:
+        progress.close()
+
+    if len(eval_results) == 1:
+        result = eval_results[0]
+    else:
+        result = jax.tree_util.tree_map(
+            lambda *parts: np.concatenate(parts, axis=0), *eval_results
+        )
 
     # Safety check: ensure the result has the correct total dimensions
-    if result.shape[0] != expected_total_size:
-        raise ValueError(
-            f"Result shape mismatch: expected first dimension to be {expected_total_size}, "
-            f"but got {result.shape[0]}. This indicates a bug in the batching logic."
-        )
+    for leaf in jax.tree_util.tree_leaves(result):
+        if leaf.shape[0] != expected_total_size:
+            raise ValueError(
+                f"Result shape mismatch: expected first dimension to be "
+                f"{expected_total_size}, but got {leaf.shape[0]}. This indicates a "
+                "bug in the batching logic."
+            )
 
     return result
 
 
-def build_mask_sample_fn(method, num_samples, model, acq, p_mask):
-    if method == "naive":
+def build_mask_sample_fn(method, num_samples, model, acq, p_mask, feasible_models=None):
+    """Sample model masks, optionally alongside feasible-mask probabilities.
 
-        def sample_mask_per_x(key, x):
-            keys = jax.random.split(key, num_samples)
-            return jax.vmap(model.sample_mask, in_axes=(0, None, None, None))(
-                keys, acq, x, jnp.array([p_mask])
-            )
-
-        sample_mask_per_x = jax.jit(jax.vmap(sample_mask_per_x, in_axes=(0, 0)))
-
-        return sample_mask_per_x
-    else:
+    Both use the same head on the same signal, so when the probabilities are
+    wanted they share this pass and its encoding. Returns just the masks when
+    ``feasible_models`` is None, else ``(masks, probabilities)``.
+    """
+    if method != "naive":
         # TODO Add temperature sampling
         raise ValueError(f"Method {method} not supported")
 
+    prior = jnp.array([p_mask])
+    feasible = (
+        None if feasible_models is None else jnp.asarray(feasible_models, jnp.bool_)
+    )
 
-def build_theta_sample_fn(
-    method, num_samples, model, acq, model_mask, sim_type, params, params_corrector
-):
+    def per_voxel(key, x):
+        y_ctx, y = model._encode_observations(acq, x)
+        keys = jax.random.split(key, num_samples)
+        masks = jax.vmap(model.sample_mask, in_axes=(0, None, None, None, None, None))(
+            keys, acq, x, prior, y_ctx, y
+        )
+        if feasible is None:
+            return masks
+        log_pmf = jax.vmap(
+            model.log_prob_mask, in_axes=(0, None, None, None, None, None)
+        )(feasible, acq, x, prior, y_ctx, y)
+        return masks, jax.nn.softmax(log_pmf, axis=-1)
+
+    return jax.jit(jax.vmap(per_voxel, in_axes=(0, 0)))
+
+
+def _batched_over_voxels(fn, model_mask, num_leading_args):
+    """vmap ``fn`` over voxels, binding a shared mask when it is not per-voxel."""
+    if model_mask is None or model_mask.ndim > 1:
+        return jax.jit(jax.vmap(fn, in_axes=(0,) * (num_leading_args + 1)))
+    return jax.jit(
+        jax.vmap(partial(fn, model_mask=model_mask), in_axes=(0,) * num_leading_args)
+    )
+
+
+def build_base_theta_sample_fn(num_samples, model, acq, model_mask, params):
+    """The network sampler alone: signal -> raw theta samples.
+
+    Kept separate from the corrector, which fits a far larger batch.
+    """
     num_steps = params.get("num_steps", 25)
     t_max = params.get("t_max", 80)
     t_min = params.get("t_min")
+    last_euler_step = params.get("last_euler_step", True)
 
     def base_sample_fn(key, x, model_mask):
         if num_steps > 0:
-            K = num_samples
             in_axes_model_mask = 0 if model_mask.ndim == 2 else None
             sample_fn = jax.vmap(
                 partial(
                     model.sample_theta,
                     num_steps=num_steps,
+                    last_euler_step=last_euler_step,
                     t_min=t_min,
                     t_max=t_max,
                 ),
                 in_axes=(0, None, None, in_axes_model_mask),
             )
-            keys = jax.random.split(key, K)
+            keys = jax.random.split(key, num_samples)
             theta = sample_fn(keys, acq, x, model_mask)
         else:
             theta = jax.random.normal(
                 key, (num_samples, model.tokenizer.simulator.theta_dim)
             )
-        return theta
+        # The bijection, correctors and likelihood downstream all assume float32,
+        # so a half-precision network must not leak into them.
+        return theta.astype(jnp.float32)
 
+    return _batched_over_voxels(base_sample_fn, model_mask, 2)
+
+
+def network_evaluations_per_sample(params):
+    """Network evaluations the ODE solver performs for one posterior sample.
+
+    One to initialise, one per interval between the ``num_steps`` grid points,
+    and one more if a final Euler correction is taken.
+    """
+    num_steps = params.get("num_steps", 25)
+    if num_steps <= 0:
+        return 0
+    return 1 + max(num_steps - 1, 0) + int(params.get("last_euler_step", True))
+
+
+def build_corrector_fn(method, model, acq, model_mask, sim_type, params_corrector):
+    """The corrector alone: (raw thetas, signal) -> corrected thetas.
+
+    Operates on theta rather than on network activations, so it is far cheaper
+    per voxel and gets its own, much larger batch size.
+    """
     corrector = build_corrector(
         method, model, acq, model_mask, sim_type, params_corrector
     )
 
-    # Combine sampling and correction
-    def sample_theta_per_x(key, x, model_mask):
-        key1, key2 = jax.random.split(key)
-        theta = base_sample_fn(key1, x, model_mask)
-        theta_corrected = corrector(key2, theta, x, model_mask)
-        return theta_corrected
+    def correct_per_x(key, theta, x, model_mask):
+        return jnp.asarray(corrector(key, theta, x, model_mask), dtype=jnp.float32)
 
-    if model_mask is None or model_mask.ndim > 1:
-        sample_theta_per_x = jax.jit(jax.vmap(sample_theta_per_x, in_axes=(0, 0, 0)))
-    else:
-        sample_theta_per_x = jax.jit(
-            jax.vmap(partial(sample_theta_per_x, model_mask=model_mask), in_axes=(0, 0))
-        )
-
-    return sample_theta_per_x
+    return _batched_over_voxels(correct_per_x, model_mask, 3)
 
 
 def build_model_fn(sim_type):
@@ -316,7 +364,6 @@ def build_corrector(method, model, acq, model_mask, sim_type, params):
 
     if method == "auto":
         method = "smc_corrected" if model_mask.ndim < 3 else "mcmc_corrected"
-    print(model_mask.shape)
 
     if method == "uncorrected":
 
