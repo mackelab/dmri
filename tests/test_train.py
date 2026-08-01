@@ -41,6 +41,25 @@ def test_recovery_triggers_for_non_finite_metrics():
     assert not disabled.should_recover(float("nan"))
 
 
+def test_checkpoint_save_builds_args_without_persisting():
+    manager = CheckpointManager.__new__(CheckpointManager)
+    manager.keep_best = False
+
+    class UnexpectedPersistence:
+        def save(self, *args, **kwargs):
+            raise AssertionError("checkpoint persistence should be disabled")
+
+    manager.manager = UnexpectedPersistence()
+
+    manager.save(
+        step=1,
+        params={"weight": jnp.array([1.0])},
+        optimizer_state=None,
+        loss=0.5,
+        write_standard=False,
+    )
+
+
 def test_missing_optimizer_state_is_reinitialized():
     params = {"weight": jnp.array([1.0])}
     optimizer = optax.sgd(0.1)

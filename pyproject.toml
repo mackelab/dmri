@@ -2,31 +2,55 @@
 name = "dmri"
 version = "0.1.0"
 description = "A project for selecting models for diffusion MRI."
+readme = "README.md"
 authors = [
   { name = "Manuel Gloeckler", email = "manuel.gloeckler@uni-tuebingen.de" }
 ]
 license = "MIT"
 requires-python = ">=3.11"
+keywords = [
+    "diffusion MRI",
+    "JAX",
+    "model selection",
+    "simulation-based inference",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+]
 dependencies = [
     "hydra-core>=1.3",
-    "hydra-submitit-launcher",
-    "hydra-optuna-sweeper",
-    "jupyter",
-    "wandb",
+    "hydra-submitit-launcher>=1.2",
+    "hydra-optuna-sweeper>=1.2",
+    "jupyter>=1.1",
+    "wandb>=0.23",
     "matplotlib>=3.7.0",
     "tqdm>=4.65.0",
     "dipy>=1.7.0",
     "nibabel>=5.1.0",
     "pandas>=2.0.0",
     "probjax @ git+https://github.com/mackelab/probjax.git",
-    "orbax-checkpoint",
-    "plotly",
-    "optax",
-    "absl-py",
+    "orbax-checkpoint>=0.11",
+    "plotly>=6.4",
+    "optax>=0.2",
+    "absl-py>=2.3",
     "huggingface-hub>=0.34",
     # probjax and dmri.utils.shm use APIs removed in jax 0.9
     "jax>=0.8,<0.9"
 ]
+
+[project.urls]
+Homepage = "https://www.mackelab.org/dmri/"
+Documentation = "https://www.mackelab.org/dmri/"
+Repository = "https://github.com/mackelab/dmri"
+Issues = "https://github.com/mackelab/dmri/issues"
+Changelog = "https://github.com/mackelab/dmri/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [
@@ -47,7 +71,7 @@ docs = [
 
 
 [project.scripts]
-dmri = "dmri.train.train_script:main"
+dmri = "dmri.cli:main"
 dmri_eval = "dmri.eval.eval_script:main"
 
 [build-system]
@@ -58,7 +82,7 @@ build-backend = "setuptools.build_meta"
 line-length = 88
 lint.select = ["E", "F", "B", "I", "W", "C4", "N", "UP"]
 lint.ignore = ["E501", "N806", "C408", "N803","N802"]
-target-version = "py39"
+target-version = "py311"
 fix = true
 
 [tool.ruff.format]
@@ -82,5 +106,7 @@ testpaths = ["tests"]
 include = ["dmri*", "conf_train*", "conf_eval*"]
 
 [tool.setuptools.package-data]
-"conf_train" = ["*"]
-"conf_eval" = ["*"]
+"conf_train" = ["**/*.yaml"]
+"conf_eval" = ["**/*.yaml"]
+"dmri.simulators" = ["data/*"]
+"dmri.utils" = ["*.mplstyle"]

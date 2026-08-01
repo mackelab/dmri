@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from functools import cache
-from typing import Any, Callable
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -302,14 +302,18 @@ class MultiCompartment(SignalCompartment):
 
             # Model compartments (reuse the same mask slice as the fractions)
             model_component_mask = mask_arr[:num_models]
-            for is_active, compartment in zip(model_component_mask, cls.model_types):
+            for is_active, compartment in zip(
+                model_component_mask, cls.model_types, strict=True
+            ):
                 mask_list.append(
                     jnp.full((compartment.theta_dim,), is_active, dtype=jnp.bool_)
                 )
 
             # Noise compartments (occupy the tail of the mask)
             noise_component_mask = mask_arr[num_models : num_models + num_noise]
-            for is_active, compartment in zip(noise_component_mask, cls.noise_types):
+            for is_active, compartment in zip(
+                noise_component_mask, cls.noise_types, strict=True
+            ):
                 mask_list.append(
                     jnp.full((compartment.theta_dim,), is_active, dtype=jnp.bool_)
                 )
@@ -390,10 +394,10 @@ class MultiCompartment(SignalCompartment):
 
         # Create model compartments
         model_compartments = [
-            m.from_theta(t) for m, t in zip(model_types, model_thetas)
+            m.from_theta(t) for m, t in zip(model_types, model_thetas, strict=True)
         ]
         noise_compartments = [
-            m.from_theta(t) for m, t in zip(cls.noise_types, noise_thetas)
+            m.from_theta(t) for m, t in zip(cls.noise_types, noise_thetas, strict=True)
         ]
         return (
             fractions,

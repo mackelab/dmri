@@ -1,5 +1,6 @@
+from collections.abc import Callable
 from functools import partial
-from typing import Any, Callable, NamedTuple
+from typing import Any, NamedTuple
 
 import jax
 import jax.numpy as jnp

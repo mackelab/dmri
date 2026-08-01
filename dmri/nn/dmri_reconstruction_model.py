@@ -1,6 +1,6 @@
 import copy
 from dataclasses import dataclass, field
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 import jax
 import jax.numpy as jnp
@@ -93,8 +93,8 @@ class DMRIInferenceModel(nnx.Module):
         theta: Array,
         x: Array,
         acq: AcquisitionSchemeLike,
-        mask_prior: Optional[Array] = None,
-        alpha_prior: Optional[Array] = None,
+        mask_prior: Array | None = None,
+        alpha_prior: Array | None = None,
         model_idx: list[int] | None = None,
         noise_idx: list[int] | None = None,
         t: ArrayLike | None = None,
@@ -309,11 +309,11 @@ class DMRIInferenceModel(nnx.Module):
         model_mask: Array,
         x: Array,
         acq: AcquisitionSchemeLike,
-        mask_prior: Optional[Array] = None,
-        alpha_prior: Optional[Array] = None,
-        model_idx: Optional[list[int]] = None,
-        noise_idx: Optional[list[int]] = None,
-    ) -> tuple[Array, Optional[Array], Array, Optional[Array]]:
+        mask_prior: Array | None = None,
+        alpha_prior: Array | None = None,
+        model_idx: list[int] | None = None,
+        noise_idx: list[int] | None = None,
+    ) -> tuple[Array, Array | None, Array, Array | None]:
         # Embed model configuration
         tokens_cfg = self.tokenizer.embed_cfgs(
             model_mask,
@@ -328,8 +328,8 @@ class DMRIInferenceModel(nnx.Module):
     def theta_mask(
         self,
         model_mask: Array,
-        model_idx: Optional[list[int]] = None,
-        noise_idx: Optional[list[int]] = None,
+        model_idx: list[int] | None = None,
+        noise_idx: list[int] | None = None,
     ) -> Array:
         theta_token_mask = self.tokenizer.theta_token_mask(
             model_mask, model_idx=model_idx, noise_idx=noise_idx
@@ -339,8 +339,8 @@ class DMRIInferenceModel(nnx.Module):
     def marginalization_mask(
         self,
         model_mask: Array,
-        model_idx: Optional[list[int]] = None,
-        noise_idx: Optional[list[int]] = None,
+        model_idx: list[int] | None = None,
+        noise_idx: list[int] | None = None,
     ) -> Array:
         with jax.ensure_compile_time_eval():
             _model_mask_extended = self.tokenizer.theta_token_mask(
@@ -364,8 +364,8 @@ class DMRIInferenceModel(nnx.Module):
         mask_prior: Array | None = None,
         alpha_prior: Array | None = None,
         target_score: Array | None = None,
-        model_idx: Optional[list[int]] = None,
-        noise_idx: Optional[list[int]] = None,
+        model_idx: list[int] | None = None,
+        noise_idx: list[int] | None = None,
         permute_order: bool = False,
         use_loss_mask: bool = False,
         weight_by_complexity: bool = False,
@@ -536,7 +536,7 @@ class DMRIInferenceModel(nnx.Module):
         acq: AcquisitionSchemeLike,
         x: ArrayLike,
         model_mask: Array,
-        t: Optional[ArrayLike] = None,
+        t: ArrayLike | None = None,
     ) -> Array:
         if t is None:
             t = jnp.ones((1,)) * 0.01

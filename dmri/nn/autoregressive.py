@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Optional
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -21,8 +21,8 @@ class DMRIModelSelectionConfig:
     attn_size: int = 16
     dropout_rate: float = 0.0
     prior_params_embed_dim: int = 0
-    mask_prior_dim: Optional[int] = None
-    kv_in_features: Optional[int] = None
+    mask_prior_dim: int | None = None
+    kv_in_features: int | None = None
     use_flash_attention: bool = False
     use_flash_cross_attention: bool = False
     normalize_qk_attn: bool = False
@@ -36,7 +36,7 @@ class DMRIModelSelectionConfig:
 @dataclass
 class DMRIModelSelectionAmortizedPriorConfig(DMRIModelSelectionConfig):
     prior_params_embed_dim: int = 64  # Context dimension embedding
-    mask_prior_dim: Optional[int] = 1  # Scalar mask probability
+    mask_prior_dim: int | None = 1  # Scalar mask probability
 
 
 class BinaryAutoregressiveDecoder(nnx.Module):
@@ -56,9 +56,9 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         attn_size: int = 16,
         dropout_rate: float = 0.0,
         prior_params_embed_dim: int = 0,
-        mask_prior_dim: Optional[int] = None,
+        mask_prior_dim: int | None = None,
         additional_context_dim: int = 0,
-        kv_in_features: Optional[int] = None,
+        kv_in_features: int | None = None,
         enable_cross_attention: bool = True,
         use_flash_attention: bool = False,
         use_flash_cross_attention: bool = False,
@@ -146,10 +146,10 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         self,
         model_mask: Array,
         tokenizer: Tokenizer,
-        mask_prior: Optional[Array] = None,
-        additional_context: Optional[Array] = None,
-        y: Optional[Array] = None,
-        mask: Optional[Array] = None,
+        mask_prior: Array | None = None,
+        additional_context: Array | None = None,
+        y: Array | None = None,
+        mask: Array | None = None,
         decode: bool = False,
         deterministic: bool = False,
         **kwargs: Any,
@@ -191,9 +191,9 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         self,
         batch_shape: tuple[Any, ...],
         dtype: jnp.dtype,
-        mask_prior: Optional[Array],
-        additional_context: Optional[Array],
-    ) -> Optional[Array]:
+        mask_prior: Array | None,
+        additional_context: Array | None,
+    ) -> Array | None:
         batch_shape = tuple(batch_shape)
         context_parts = []
 
@@ -267,9 +267,9 @@ class BinaryAutoregressiveDecoder(nnx.Module):
     def _forward_tokens(
         self,
         input_tokens: Array,
-        y: Optional[Array],
-        context: Optional[Array] = None,
-        attention_mask: Optional[Array] = None,
+        y: Array | None,
+        context: Array | None = None,
+        attention_mask: Array | None = None,
         decode: bool = False,
         deterministic: bool = False,
     ) -> Array:
@@ -318,12 +318,12 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         model_mask: ArrayLike,
         tokenizer: Tokenizer,
         y: Array,
-        rng: Optional[RngKey] = None,
+        rng: RngKey | None = None,
         permute_order: bool = False,
         label_smoothing: float = 0.0,
-        mask_prior: Optional[Array] = None,
-        additional_context: Optional[Array] = None,
-        tokens_cfg: Optional[Array] = None,
+        mask_prior: Array | None = None,
+        additional_context: Array | None = None,
+        tokens_cfg: Array | None = None,
         **kwargs: Any,
     ) -> Array:
         if permute_order:
@@ -391,8 +391,8 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         tokenizer,
         y,
         dim,
-        mask_prior: Optional[Array] = None,
-        additional_context: Optional[Array] = None,
+        mask_prior: Array | None = None,
+        additional_context: Array | None = None,
     ):
         return naive_autoregressive_decoding(
             self,
@@ -409,8 +409,8 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         model_mask: Array,
         tokenizer: Tokenizer,
         y: Array,
-        mask_prior: Optional[Array] = None,
-        additional_context: Optional[Array] = None,
+        mask_prior: Array | None = None,
+        additional_context: Array | None = None,
         **kwargs: Any,
     ) -> Array:
         model_mask_logits = self(
@@ -435,8 +435,8 @@ def naive_autoregressive_decoding(
     tokenizer: Tokenizer,
     y: Array,
     dim: int,
-    mask_prior: Optional[Array] = None,
-    additional_context: Optional[Array] = None,
+    mask_prior: Array | None = None,
+    additional_context: Array | None = None,
 ) -> Array:
     x = jnp.zeros((dim,), dtype=jnp.bool_)
 

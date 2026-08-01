@@ -10,13 +10,13 @@ hide:
     <h1>Model selection and parameter inference for diffusion MRI.</h1>
     <p class="landing-lede">DMRI provides JAX implementations of composable tissue models and amortized inference methods for estimating model structure and biophysical parameters across acquisition protocols.</p>
     <div class="landing-actions">
-      <a class="md-button md-button--primary" href="getting-started/">Installation and usage</a>
+      <a class="md-button md-button--primary" href="guides/prediction/">Run a pretrained model</a>
       <a class="landing-text-link" href="examples/">Example notebooks <span aria-hidden="true">→</span></a>
     </div>
     <ul class="landing-tags" aria-label="Key capabilities">
       <li>JIT + VMAP</li>
       <li>Hydra experiments</li>
-      <li>Model selection</li>
+      <li>Pretrained inference</li>
     </ul>
   </div>
 
@@ -41,12 +41,15 @@ hide:
       <span class="workflow-step__number">03</span>
       <div><h3>Estimate</h3><p>Train amortized inference networks on simulated observations.</p></div>
     </a>
-    <a href="examples/03_pretrained_models/" class="workflow-step">
+    <a href="guides/prediction/" class="workflow-step">
       <span class="workflow-step__number">04</span>
-      <div><h3>Assess</h3><p>Quantify model selection, uncertainty, and coverage.</p></div>
+      <div><h3>Predict</h3><p>Apply a compatible pretrained model to a standard dMRI folder.</p></div>
     </a>
   </div>
 </section>
+
+!!! warning "Research use only"
+    DMRI has not been clinically validated. Pretrained checkpoints must be used only with compatible acquisition schemes; matching the required filenames is not sufficient to establish compatibility.
 
 <section class="landing-section landing-section--split">
   <div class="capability-intro">

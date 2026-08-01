@@ -67,56 +67,65 @@ def export_thetas_to_files_ball3stick(
     ).astype(np.float32)
     export_nifti(full_thetas, orig_data, out_path, "raw_thetas.nii.gz")
 
-    def to_fractions(theta):
-        return sim_type.from_theta(theta, model_mask=model_mask).model_fractions
+    num_components = len(sim_type.model_types) + len(sim_type.noise_types)
+    if model_mask is None:
+        model_mask = np.ones((*thetas.shape[:2], num_components), dtype=np.bool_)
+    else:
+        model_mask = np.asarray(model_mask, dtype=np.bool_)
+        if model_mask.ndim == 1:
+            model_mask = np.broadcast_to(
+                model_mask, (*thetas.shape[:2], model_mask.shape[-1])
+            )
+        elif model_mask.ndim == 2:
+            model_mask = np.broadcast_to(
+                model_mask[:, None, :],
+                (thetas.shape[0], thetas.shape[1], model_mask.shape[-1]),
+            )
+        if model_mask.shape[:2] != thetas.shape[:2]:
+            raise ValueError(
+                "model_mask must align with the voxel and sample dimensions of thetas"
+            )
 
-    def to_diffusivities(theta):
-        return (
-            sim_type.from_theta(theta, model_mask=model_mask).model_compartments[0].lam
-        )
+    def to_fractions(theta, mask):
+        return sim_type.from_theta(theta, model_mask=mask).model_fractions
 
-    def direction_s1(theta):
-        return (
-            sim_type.from_theta(theta, model_mask=model_mask).model_compartments[1].mu
-        )
+    def to_diffusivities(theta, mask):
+        return sim_type.from_theta(theta, model_mask=mask).model_compartments[0].lam
 
-    def direction_s2(theta):
-        return (
-            sim_type.from_theta(theta, model_mask=model_mask).model_compartments[2].mu
-        )
+    def direction_s1(theta, mask):
+        return sim_type.from_theta(theta, model_mask=mask).model_compartments[1].mu
 
-    def direction_s3(theta):
-        return (
-            sim_type.from_theta(theta, model_mask=model_mask).model_compartments[3].mu
-        )
+    def direction_s2(theta, mask):
+        return sim_type.from_theta(theta, model_mask=mask).model_compartments[2].mu
 
-    def snr(theta):
-        return (
-            sim_type.from_theta(theta, model_mask=model_mask).noise_compartments[0].snr
-        )
+    def direction_s3(theta, mask):
+        return sim_type.from_theta(theta, model_mask=mask).model_compartments[3].mu
 
-    fractions = np.array(jax.vmap(jax.vmap(to_fractions))(thetas), dtype=np.float32)
-    diffusitivity = np.array(
-        jax.vmap(jax.vmap(to_diffusivities))(thetas), dtype=np.float32
-    )
-    mu1 = np.array(jax.vmap(jax.vmap(direction_s1))(thetas), dtype=np.float32)
-    mu2 = np.array(jax.vmap(jax.vmap(direction_s2))(thetas), dtype=np.float32)
-    mu3 = np.array(jax.vmap(jax.vmap(direction_s3))(thetas), dtype=np.float32)
-    snr = np.array(jax.vmap(jax.vmap(snr))(thetas), dtype=np.float32)
+    def snr(theta, mask):
+        return sim_type.from_theta(theta, model_mask=mask).noise_compartments[0].snr
+
+    def map_samples(fn):
+        return jax.vmap(jax.vmap(fn))(thetas, model_mask)
+
+    fractions = np.array(map_samples(to_fractions), dtype=np.float32)
+    diffusitivity = np.array(map_samples(to_diffusivities), dtype=np.float32)
+    mu1 = np.array(map_samples(direction_s1), dtype=np.float32)
+    mu2 = np.array(map_samples(direction_s2), dtype=np.float32)
+    mu3 = np.array(map_samples(direction_s3), dtype=np.float32)
+    snr = np.array(map_samples(snr), dtype=np.float32)
 
     # To save multishell stds
     is_multi_shell = sim_type.model_types[0] is MultiShellStaticBall
     if is_multi_shell:
 
-        def to_diffusivities_std(theta):
+        def to_diffusivities_std(theta, mask):
             return (
-                sim_type
-                .from_theta(theta, model_mask=model_mask)
+                sim_type.from_theta(theta, model_mask=mask)
                 .model_compartments[0]
                 .lam_std
             )
 
-        diffusitivity_std = np.array(jax.vmap(jax.vmap(to_diffusivities_std))(thetas))
+        diffusitivity_std = np.array(map_samples(to_diffusivities_std))
         diffusitivity_std_mean = np.mean(diffusitivity_std, axis=1)
 
         full_diffusitivity_std_mean = embed_in_full_brain_array(
@@ -128,15 +137,6 @@ def export_thetas_to_files_ball3stick(
             out_path,
             "mean_dstdsamples_std.nii.gz",
         )
-
-    if model_mask is not None:
-        # Mask out voxels that are not in the model
-        if model_mask.ndim == 2:
-            model_mask = model_mask[..., None, :]
-            model_mask = np.repeat(model_mask, fractions.shape[1], axis=-1)
-        fractions = np.where(model_mask, fractions, 0)
-    else:
-        fractions = fractions
 
     if cfg.export.sort_by_fractions:
         logging.info("Sorting fiber fractions and corresponding directions.")

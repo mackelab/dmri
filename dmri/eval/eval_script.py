@@ -27,6 +27,7 @@ from dmri.eval.sampling_methods import (
     eval_in_batches,
 )
 from dmri.eval.selection import select_models
+from dmri.hub import load_pretrained
 from dmri.simulators import acquisition_scheme
 from dmri.train.utils import load_checkpoint
 
@@ -224,7 +225,7 @@ def _cfg_get(cfg, key, default=None):
     return default if value is None else value
 
 
-def _find_theta_samples_file(export_dir, filename="thetas.nii.gz"):
+def _find_theta_samples_file(export_dir, filename="raw_thetas.nii.gz"):
     if not os.path.isdir(export_dir):
         return None
     matches = []
@@ -236,6 +237,18 @@ def _find_theta_samples_file(export_dir, filename="thetas.nii.gz"):
             f"Found multiple {filename} files under export directory {export_dir}: {matches}"
         )
     return matches[0] if matches else None
+
+
+def _has_model_selection_to_export(models_selected, models_sampled):
+    return models_selected is not None or models_sampled is not None
+
+
+def _should_compute_feasible_model_probabilities(cfg, export_cfg, export_type):
+    return bool(
+        cfg.sample_mask
+        and _cfg_get(export_cfg, "export_feasible_model_probabilities", False)
+        and export_type == "ball3stick"
+    )
 
 
 def _load_theta_samples(
@@ -434,6 +447,7 @@ def _maybe_run_metrics(
     eval_devices,
     *,
     add_default_ksd,
+    output_dir=None,
 ):
     """Normalize and run metrics configuration."""
 
@@ -459,7 +473,9 @@ def _maybe_run_metrics(
             )
 
     if metrics_cfg_to_run:
-        out_path = os.path.join(checkpoint_root, cfg.model_name, export_name)
+        out_path = os.path.join(
+            output_dir or os.path.join(checkpoint_root, cfg.model_name), export_name
+        )
         metric_context = MetricContext(
             cfg=cfg,
             sim_type=sim_type,
@@ -564,7 +580,12 @@ def _run_eval_pipeline(
     log.info(f"Model name: {cfg.model_name}")
     data_cfg = getattr(cfg, "data", cfg)
     checkpoint_root = _resolve_checkpoint_root(cfg)
-    output_dir = os.path.join(checkpoint_root, cfg.model_name)
+    configured_output_dir = _cfg_get(cfg, "output_dir")
+    output_dir = (
+        os.path.abspath(os.path.expanduser(str(configured_output_dir)))
+        if configured_output_dir not in (None, "", "null", "None")
+        else os.path.join(checkpoint_root, cfg.model_name)
+    )
     log.info(f"Output directory: {output_dir}")
     log.info(f"Hostname: {socket.gethostname()}")
     log.info(f"Jax devices: {jax.devices()}")
@@ -574,16 +595,37 @@ def _run_eval_pipeline(
     key = jax.random.PRNGKey(cfg.seed)
 
     # Load model and simulator first (needed for synthetic data)
-    log.info(f"Loading model from {checkpoint_root}/{cfg.model_name}")
-    path_checkpoint = os.path.join(checkpoint_root, cfg.model_name)
-    checkpoint, model, _ = load_checkpoint(path_checkpoint)
-    graphdef, params, static, state = nnx.split(model, nnx.Param, nnx.Intermediate, ...)
-    params = checkpoint[cfg.params_name]
-    params = _put_tree_on_device(params, heavy_device)
-    static = _put_tree_on_device(static, heavy_device)
-    state = _put_tree_on_device(state, heavy_device)
-    model = nnx.merge(graphdef, params, static, state, copy=True)
-    model.eval()
+    pretrained_repo_id = _cfg_get(cfg, "pretrained_repo_id")
+    if pretrained_repo_id not in (None, "", "null", "None"):
+        log.info(
+            "Loading pretrained model %s from Hugging Face repo %s",
+            cfg.model_name,
+            pretrained_repo_id,
+        )
+        pretrained = load_pretrained(
+            model_name=cfg.model_name,
+            repo_id=str(pretrained_repo_id),
+            which=_cfg_get(cfg, "checkpoint", "best"),
+            revision=_cfg_get(cfg, "pretrained_revision"),
+            cache_dir=_cfg_get(cfg, "pretrained_cache_dir"),
+            local_files_only=bool(_cfg_get(cfg, "local_files_only", False)),
+        )
+        model = pretrained.model
+    else:
+        log.info(f"Loading model from {checkpoint_root}/{cfg.model_name}")
+        path_checkpoint = os.path.join(checkpoint_root, cfg.model_name)
+        checkpoint, model, _ = load_checkpoint(
+            path_checkpoint, which=_cfg_get(cfg, "checkpoint", "latest")
+        )
+        graphdef, params, static, state = nnx.split(
+            model, nnx.Param, nnx.Intermediate, ...
+        )
+        params = checkpoint[cfg.params_name]
+        params = _put_tree_on_device(params, heavy_device)
+        static = _put_tree_on_device(static, heavy_device)
+        state = _put_tree_on_device(state, heavy_device)
+        model = nnx.merge(graphdef, params, static, state, copy=True)
+        model.eval()
     sim_type = model.tokenizer.simulator
 
     source = _cfg_get(data_cfg, "source", "real")
@@ -701,8 +743,12 @@ def _run_eval_pipeline(
     # Sample theta
     key, key_theta = jax.random.split(key)
     if cfg.sample_theta:
-        export_dir = os.path.join(checkpoint_root, cfg.model_name, cfg.export.name)
-        theta_path = _find_theta_samples_file(export_dir)
+        export_dir = os.path.join(output_dir, cfg.export.name)
+        theta_path = (
+            _find_theta_samples_file(export_dir)
+            if bool(_cfg_get(cfg, "reuse_theta_samples", False))
+            else None
+        )
         if theta_path is not None:
             log.info("Loading existing theta samples from %s", theta_path)
             model_parameters_brain = _load_theta_samples(
@@ -752,20 +798,11 @@ def _run_eval_pipeline(
         cfg, "export_model_selection.name", "model_selection_results"
     )
     export_type = _cfg_get(cfg, "export_model_selection.type", "ball3stick")
-    if sample_mask:
+    if _has_model_selection_to_export(models_selected_brain, models_sampled_brain):
         log.info("Exporting model selection of type '%s'", export_type)
         exporter = get_model_selection_exporter(export_type)
         feasible_model_probabilities = None
-        export_feasible_probs = bool(
-            _cfg_get(export_cfg, "export_feasible_model_probabilities", False)
-        )
-        if (
-            False
-            and sample_mask
-            and export_feasible_probs
-            and export_type == "ball3stick"
-        ):
-            # TODO: Fix this
+        if _should_compute_feasible_model_probabilities(cfg, export_cfg, export_type):
             if getattr(export_cfg, "feasible_models", None) is None:
                 log.warning(
                     "export_model_selection.feasible_models is not set; skipping feasible model probabilities."
@@ -785,7 +822,7 @@ def _run_eval_pipeline(
         def _export_masks(masks, target_name, label):
             if masks is None:
                 return False
-            out_path = os.path.join(checkpoint_root, cfg.model_name, target_name)
+            out_path = os.path.join(output_dir, target_name)
             log.info("Exporting model selection %s to %s", label, out_path)
             exporter(
                 cfg,
@@ -841,11 +878,12 @@ def _run_eval_pipeline(
                 heavy_device,
                 eval_devices,
                 add_default_ksd=False,
+                output_dir=output_dir,
             )
     log.info("Exporting inferred parameters.")
     # Export samples
     if model_parameters_brain is not None:
-        out_path = os.path.join(checkpoint_root, cfg.model_name, cfg.export.name)
+        out_path = os.path.join(output_dir, cfg.export.name)
         export_cfg = cfg.export
         export_type = (
             export_cfg.get("type", "ball3stick")
@@ -871,7 +909,9 @@ def _run_eval_pipeline(
                     cfg,
                     model_parameters_brain,
                     sim_type,
-                    None,
+                    models_selected_brain
+                    if models_selected_brain is not None
+                    else default_mask,
                     brain_mask_flat,
                     data_norm.shape[:-1],
                     out_path,
@@ -903,6 +943,7 @@ def _run_eval_pipeline(
         heavy_device,
         eval_devices,
         add_default_ksd=True,
+        output_dir=output_dir,
     )
 
 

@@ -1,4 +1,4 @@
-from typing import Callable, Optional
+from collections.abc import Callable
 
 import jax
 import jax.numpy as jnp
@@ -9,9 +9,9 @@ import jax.numpy as jnp
 def run_tarp(
     thetas_true: jnp.ndarray,
     posterior_samples: jnp.ndarray,
-    references: Optional[jnp.ndarray] = None,
+    references: jnp.ndarray | None = None,
     distance: Callable = jnp.linalg.norm,
-    num_bins: Optional[int] = 30,
+    num_bins: int | None = 30,
     z_score_theta: bool = True,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
@@ -32,7 +32,7 @@ def _run_tarp(
     thetas: jnp.ndarray,
     references: jnp.ndarray,
     distance: Callable = jnp.linalg.norm,
-    num_bins: Optional[int] = 30,
+    num_bins: int | None = 30,
     z_score_theta: bool = False,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     """

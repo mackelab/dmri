@@ -13,11 +13,11 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Iterable, Mapping, MutableMapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -1212,7 +1212,7 @@ def _summarize_metric(spec: MetricSpec, metric_values: np.ndarray) -> dict[str, 
             percentiles = np.percentile(flat, q_values)
             if np.isscalar(percentiles):
                 percentiles = [float(percentiles)]
-            for q, value in zip(q_values, percentiles):
+            for q, value in zip(q_values, percentiles, strict=True):
                 summaries[_format_percentile_name(agg, q)] = float(value)
         else:
             raise ValueError(

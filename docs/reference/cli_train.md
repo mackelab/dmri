@@ -1,12 +1,12 @@
 # Training CLI
 
-The `dmri` command is Hydra-based and pulls defaults from the packaged `conf_train` configuration module. Use this page to discover the main groups and override them on the command line.
+The `dmri train` command is Hydra-based and pulls defaults from the packaged `conf_train` configuration module. Hydra overrides follow the subcommand.
 
 ## Essential commands
 
-- List overrides for a preset: `dmri +experiment=b3s_2_4_6_128 --help`
-- Dry-run the resolved config: `dmri +experiment=b3s_2_4_6_128 --cfg job`
-- Override inline: `dmri +experiment=b3s_2_4_6_128 train.dataloader.train_loader.batch_size=128 train.optimizer.learning_rate=1e-3`
+- List overrides for a preset: `dmri train +experiment=b3s_2_4_6_128 --help`
+- Dry-run the resolved config: `dmri train +experiment=b3s_2_4_6_128 --cfg job`
+- Override inline: `dmri train +experiment=b3s_2_4_6_128 train.dataloader.train_loader.batch_size=128 train.optimizer.learning_rate=1e-3`
 
 ## Configuration map (`conf_train/`)
 

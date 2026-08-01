@@ -1,12 +1,14 @@
 # Evaluation CLI
 
-The `dmri_eval` command mirrors the training interface and pulls defaults from the packaged `conf_eval` configuration module. Use these configs to run posterior inference, model selection, and exports for trained runs.
+The `dmri eval` command is the advanced Hydra interface. It pulls defaults from the packaged `conf_eval` configuration module and supports posterior inference, model selection, configurable metrics, and exports for trained runs. Use [`dmri predict`](cli_predict.md) for the simpler pretrained workflow, which omits ground-truth metrics.
 
 ## Essential commands
 
-- List overrides for a preset: `dmri_eval +experiment=eval_b3s_best_model_selection --help`
-- Dry-run the resolved config: `dmri_eval +experiment=eval_b3s_best_model_selection --cfg job`
-- Override inline: `dmri_eval +experiment=eval_ground_truth_b3s theta_sample/corrector=smc`
+- List overrides for a preset: `dmri eval +experiment=eval_b3s_best_model_selection --help`
+- Dry-run the resolved config: `dmri eval +experiment=eval_b3s_best_model_selection --cfg job`
+- Override inline: `dmri eval +experiment=eval_ground_truth_b3s theta_sample/corrector=smc`
+
+The deprecated `dmri_eval` executable remains as a compatibility alias.
 
 ## Configuration map (`conf_eval/`)
 

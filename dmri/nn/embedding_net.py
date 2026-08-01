@@ -1,5 +1,6 @@
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -31,8 +32,8 @@ class DMRIEmbeddingConfig:
     bvals_embed_dim: int = 3
     signals_embed_dim: int = 3
     bvec_repeats: int = 1
-    y_seq_dim: Optional[int] = None
-    y_glob_dim: Optional[int] = None
+    y_seq_dim: int | None = None
+    y_glob_dim: int | None = None
     min_bval: float = 0.0
     max_bval: float = 4000.0
     min_signal: float = 0.0
@@ -70,8 +71,8 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
         bvals_embed_dim: int = 3,
         signals_embed_dim: int = 3,
         bvec_repeats: int = 1,
-        y_seq_dim: Optional[int] = None,
-        y_glob_dim: Optional[int] = None,
+        y_seq_dim: int | None = None,
+        y_glob_dim: int | None = None,
         min_bval: float = 0.0,
         max_bval: float = 4000.0,
         min_signal: float = 0.0,
@@ -365,8 +366,8 @@ class SSFPEmbeddingNetConfig:
     preferred_element_type: DTypeLike | None = None
     use_global_summary_token: bool = False
     global_summary_bins: int = 8
-    y_seq_dim: Optional[int] = None
-    y_glob_dim: Optional[int] = None
+    y_seq_dim: int | None = None
+    y_glob_dim: int | None = None
 
 
 class SSFPEmbeddingNet(nnx.Module):
@@ -388,8 +389,8 @@ class SSFPEmbeddingNet(nnx.Module):
         use_flash_attention: bool = False,
         use_global_summary_token: bool = False,
         global_summary_bins: int = 8,
-        y_seq_dim: Optional[int] = None,
-        y_glob_dim: Optional[int] = None,
+        y_seq_dim: int | None = None,
+        y_glob_dim: int | None = None,
         dtype: DTypeLike | None = None,
         param_dtype: DTypeLike | None = None,
         precision: PrecisionLike | None = None,

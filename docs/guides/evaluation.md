@@ -1,11 +1,11 @@
 # Evaluation & Export
 
-Use the evaluation CLI to run posterior inference, model selection, and export derived maps for downstream analysis.
+Use the full evaluation CLI to run advanced posterior inference, model selection, configurable metrics, and exports. For routine pretrained inference without ground-truth metrics, use [`dmri predict`](prediction.md).
 
 ## Typical workflow
 
 ```bash
-dmri_eval +experiment=eval_b3s_best_model_selection \
+dmri eval +experiment=eval_b3s_best_model_selection \
   model_name=<run_name>/<timestamp> \
   data.data_folder=<data_folder>
 ```
@@ -25,8 +25,10 @@ Prebaked experiments live in `conf_eval/experiment/`:
 Override any Hydra parameter inline:
 
 ```bash
-dmri_eval +experiment=eval_ground_truth_b3s theta_sample/corrector=smc
+dmri eval +experiment=eval_ground_truth_b3s theta_sample/corrector=smc
 ```
+
+The deprecated `dmri_eval` command remains available as a compatibility alias for `dmri eval`.
 
 ## Metric exports
 

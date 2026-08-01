@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use DMRI, please cite this software."
+type: software
+title: "DMRI: Diffusion MRI Model Selection"
+version: 0.1.0
+authors:
+  - family-names: Gloeckler
+    given-names: Manuel
+    email: manuel.gloeckler@uni-tuebingen.de
+repository-code: "https://github.com/mackelab/dmri"
+url: "https://www.mackelab.org/dmri/"
+license: MIT

@@ -471,7 +471,10 @@ class MixtureOfFODs(SphericalDistribution):
 
     def pdf(self, n):
         return jnp.sum(
-            jnp.array([f * m.pdf(n) for f, m in zip(self.fractions, self.components)]),
+            jnp.array([
+                f * m.pdf(n)
+                for f, m in zip(self.fractions, self.components, strict=True)
+            ]),
             axis=0,
         )
 

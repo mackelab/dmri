@@ -1,4 +1,4 @@
-from typing import Callable, Optional
+from collections.abc import Callable
 
 import jax
 import jax.numpy as jnp
@@ -90,7 +90,7 @@ GRADIENT_TEST_CONFIGS = [
 def test_normal_to_dirichlet_gradients(
     alpha: jnp.ndarray,
     eps: jnp.ndarray,
-    mask: Optional[jnp.ndarray],
+    mask: jnp.ndarray | None,
     loss_fn: Callable[[jnp.ndarray], float],
 ):
     """Test gradients of the normal to Dirichlet transformation using both AD and MC estimation."""
@@ -271,7 +271,7 @@ def test_normal_to_dirichlet_edge_cases(alpha: jnp.ndarray, eps: jnp.ndarray):
 
 @pytest.mark.parametrize("alpha,pi,mask", ROUNDTRIP_TEST_CONFIGS)
 def test_normal_dirichlet_invertibility(
-    alpha: jnp.ndarray, pi: jnp.ndarray, mask: Optional[jnp.ndarray]
+    alpha: jnp.ndarray, pi: jnp.ndarray, mask: jnp.ndarray | None
 ):
     """Test that normal_to_dirichlet and dirichlet_to_normal are inverse operations.
 

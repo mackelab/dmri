@@ -1,7 +1,7 @@
 import logging
 import math
 import os
-from typing import Any, Optional
+from typing import Any
 
 import orbax.checkpoint as ocp
 
@@ -46,7 +46,7 @@ class CheckpointManager:
         self.recovery_threshold = (
             float("inf") if recovery_threshold is None else recovery_threshold
         )
-        self.prev_metric: Optional[float] = None
+        self.prev_metric: float | None = None
 
         if continue_training:
             latest = self.manager.latest_step()
@@ -62,7 +62,7 @@ class CheckpointManager:
         params: Any,
         optimizer_state: Any | None,
         loss: float,
-        val_loss: Optional[float] = None,
+        val_loss: float | None = None,
         params_ema: Any = None,
         model_state: Any = None,
         ema_state: Any = None,
@@ -130,13 +130,12 @@ class CheckpointManager:
         params: Any,
         optimizer_state: Any | None,
         loss: float = float("inf"),
-        val_loss: Optional[float] = None,
+        val_loss: float | None = None,
         write_standard: bool = True,
         params_ema: Any = None,
         model_state: Any = None,
         ema_state: Any = None,
         rng: Any = None,
-        partial_restore: bool = False,
     ) -> None:
         args = self._build_save_args(
             step=step,
@@ -148,7 +147,6 @@ class CheckpointManager:
             model_state=model_state,
             ema_state=ema_state,
             rng=rng,
-            partial_restore=partial_restore,
         )
         if write_standard:
             self.manager.save(step, args=args)
@@ -158,7 +156,7 @@ class CheckpointManager:
 
     def restore(
         self,
-        step: Optional[int],
+        step: int | None,
         params: Any,
         optimizer_state: Any,
         from_best: bool = False,
@@ -185,11 +183,11 @@ class CheckpointManager:
         )
         return manager.restore(target_step, args=args)
 
-    def get_latest_step(self) -> Optional[int]:
+    def get_latest_step(self) -> int | None:
         return self.manager.latest_step()
 
     def should_recover(
-        self, current_metric: Optional[float], recovery_threshold: float | None = None
+        self, current_metric: float | None, recovery_threshold: float | None = None
     ) -> bool:
         if current_metric is None:
             return False

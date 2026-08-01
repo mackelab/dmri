@@ -19,32 +19,41 @@ source .venv/bin/activate
 # install editable package + dev tools; add --extra cuda for GPUs
 uv pip install -e '.[dev]'
 
-# run a first training job (one local GPU, no SLURM/W&B needed)
-dmri +experiment=b3s_2_4_6_128 launcher=local partition=none use_wandb=false
+# run the default pretrained model on a standard dMRI folder
+dmri predict /path/to/dmri_folder
 ```
 
 Prefer pip? Use `pip install -e '.[dev]'`. CUDA users can opt into `.[cuda]`.
 
 ## CLI in one glance
 
+### Prediction
+```bash
+dmri predict FOLDER
+```
+
+`FOLDER` must contain `data.nii.gz`, `nodif_brain_mask.nii.gz`, `bvals`, and `bvecs`. The default `b3s_2_4_6_128` model is downloaded from the public [`manugloeck/dmri-pretrained`](https://huggingface.co/manugloeck/dmri-pretrained) repository and cached by `huggingface_hub`. Results are written below `FOLDER/dmri_output/` in `ball3stick_inference_results/` and `ball3stick_model_selection_results/`.
+
+Pretrained models are acquisition-specific. Confirm that the selected checkpoint is compatible with the input acquisition scheme; the standard filenames alone do not establish compatibility. DMRI is research software and has not been clinically validated.
+
 ### Training
 ```bash
-dmri --help                      # discover overrides
-dmri +experiment=b3s_2_4_6_128 launcher=local partition=none use_wandb=false   # run a preset locally
-dmri train.optimizer.learning_rate=1e-3  # inline override example
+dmri train --help                      # discover overrides
+dmri train +experiment=b3s_2_4_6_128 launcher=local partition=none use_wandb=false
+dmri train train.optimizer.learning_rate=1e-3
 ```
 
 Runs write to `results/<name>/<timestamp>/` with checkpoints and the frozen `.hydra/` config. Use `dmri.train.utils.load_checkpoint(...)` to restore in notebooks.
 
 ### Evaluation
 ```bash
-dmri_eval --help
-dmri_eval +experiment=eval_b3s_no_selection \
+dmri eval --help
+dmri eval +experiment=eval_b3s_no_selection \
   model_name=<run_name>/<timestamp> \
   data.data_folder=<data_folder>
 ```
 
-Outputs land next to the training run (e.g. `ball3stick_model_selection_results/`). Adapt data locations in `conf_eval/config.yaml`.
+Full evaluation is the advanced Hydra interface for trained runs, custom samplers, exports, and ground-truth metrics. For routine inference without ground-truth metrics, use `dmri predict`. The deprecated `dmri_eval` command remains as a compatibility alias.
 
 ## Configuration map
 

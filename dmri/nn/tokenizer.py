@@ -1,7 +1,7 @@
 from abc import abstractmethod
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from functools import partial
-from typing import Any, Callable, Optional
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -37,8 +37,8 @@ class DMRITokenizer(Tokenizer):
         simulator: type[MultiCompartment],
         *,
         token_dim: int = 64,
-        theta_encode_nets: Optional[nnx.List[nnx.Module | None]] = None,
-        theta_decode_nets: Optional[nnx.List[nnx.Module | None]] = None,
+        theta_encode_nets: nnx.List[nnx.Module | None] | None = None,
+        theta_decode_nets: nnx.List[nnx.Module | None] | None = None,
         init_component_embeddings: Callable | None = None,
         dtype: DTypeLike | None = None,
         param_dtype: DTypeLike | None = None,
@@ -157,12 +157,12 @@ class DMRITokenizer(Tokenizer):
 
     def encode(
         self,
-        theta: Optional[ArrayLike] = None,
-        model_mask: Optional[ArrayLike] = None,
-        tokens_cfg: Optional[Array] = None,
-        alpha_prior: Optional[ArrayLike] = None,
-        model_idx: Optional[Sequence[int]] = None,
-        noise_idx: Optional[Sequence[int]] = None,
+        theta: ArrayLike | None = None,
+        model_mask: ArrayLike | None = None,
+        tokens_cfg: Array | None = None,
+        alpha_prior: ArrayLike | None = None,
+        model_idx: Sequence[int] | None = None,
+        noise_idx: Sequence[int] | None = None,
     ) -> Array:
         if model_idx is None:
             model_idx = self.model_indices
@@ -196,8 +196,8 @@ class DMRITokenizer(Tokenizer):
     def decode(
         self,
         tokens: ArrayLike,
-        model_idx: Optional[Sequence[int]] = None,
-        noise_idx: Optional[Sequence[int]] = None,
+        model_idx: Sequence[int] | None = None,
+        noise_idx: Sequence[int] | None = None,
         **kwargs: Any,
     ) -> Array:
         if model_idx is None:
@@ -231,8 +231,8 @@ class DMRITokenizer(Tokenizer):
     def theta_token_mask(
         self,
         model_mask: Array,
-        model_idx: Optional[Sequence[int]] = None,
-        noise_idx: Optional[Sequence[int]] = None,
+        model_idx: Sequence[int] | None = None,
+        noise_idx: Sequence[int] | None = None,
     ) -> Array:
         with jax.ensure_compile_time_eval():
             if model_idx is None:
@@ -286,9 +286,9 @@ class DMRITokenizer(Tokenizer):
     def embed_cfgs(
         self,
         model_mask: Array,
-        alpha_prior: Optional[ArrayLike] = None,
-        model_idx: Optional[Sequence[int]] = None,
-        noise_idx: Optional[Sequence[int]] = None,
+        alpha_prior: ArrayLike | None = None,
+        model_idx: Sequence[int] | None = None,
+        noise_idx: Sequence[int] | None = None,
     ) -> Array:
         """
         Embeds the configuration of model and noise types into tokens.
@@ -358,9 +358,9 @@ class DMRITokenizer(Tokenizer):
         self,
         theta: Array,
         tokens_cfg: Array,
-        model_idx: Optional[Sequence[int]] = None,
-        noise_idx: Optional[Sequence[int]] = None,
-        model_mask: Optional[Array] = None,
+        model_idx: Sequence[int] | None = None,
+        noise_idx: Sequence[int] | None = None,
+        model_mask: Array | None = None,
     ) -> Array:
         """
         Embeds the continuous parameter vector theta into token representation.
@@ -490,9 +490,9 @@ class DMRITokenizer(Tokenizer):
     def decode_theta(
         self,
         tokens: Array,
-        model_idx: Optional[Sequence[int]] = None,
-        noise_idx: Optional[Sequence[int]] = None,
-        model_mask: Optional[Array] = None,
+        model_idx: Sequence[int] | None = None,
+        noise_idx: Sequence[int] | None = None,
+        model_mask: Array | None = None,
         **kwargs: Any,
     ) -> Array:
         """Decode tokens back into the continuous parameter vector theta."""
@@ -643,9 +643,9 @@ class DMRITokenizerPP(DMRITokenizer):
         self,
         theta: Array,
         tokens_cfg: Array,
-        model_idx: Optional[Sequence[int]] = None,
-        noise_idx: Optional[Sequence[int]] = None,
-        model_mask: Optional[Array] = None,
+        model_idx: Sequence[int] | None = None,
+        noise_idx: Sequence[int] | None = None,
+        model_mask: Array | None = None,
     ) -> Array:
         if model_idx is None:
             model_idx = self.model_indices
@@ -738,9 +738,9 @@ class DMRITokenizerPP(DMRITokenizer):
     def decode_theta(
         self,
         tokens: Array,
-        model_idx: Optional[Sequence[int]] = None,
-        noise_idx: Optional[Sequence[int]] = None,
-        model_mask: Optional[Array] = None,
+        model_idx: Sequence[int] | None = None,
+        noise_idx: Sequence[int] | None = None,
+        model_mask: Array | None = None,
         **kwargs: Any,
     ) -> Array:
         del kwargs

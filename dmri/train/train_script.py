@@ -6,7 +6,7 @@ import socket
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 # memory_fraction = 0.9  # Use 98% of available memory
 # os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = str(memory_fraction)
@@ -116,8 +116,8 @@ def _normalise_loader_params(params_cfg: Any, count: int) -> list[dict[Any, Any]
 
 
 def _resolve_device_spec(
-    device_spec: Any, *, default: Optional[jax.Device] = None
-) -> Optional[jax.Device]:
+    device_spec: Any, *, default: jax.Device | None = None
+) -> jax.Device | None:
     """Resolve a device specification into a concrete ``jax.Device``."""
     if device_spec is None:
         return default
@@ -277,7 +277,7 @@ def create_dataloaders(
 
     train_datasets = []
     for simulator, override, rng in zip(
-        simulators, train_dataset_overrides, train_rngs
+        simulators, train_dataset_overrides, train_rngs, strict=True
     ):
         dataset_params = build_dataset_params(dataset_base_cfg, override, rng)
         logging.info(f"Creating training dataset with params: {dataset_params}")
@@ -293,7 +293,7 @@ def create_dataloaders(
 
     train_loaders = []
     for index, (dataset, loader_cfg) in enumerate(
-        zip(train_datasets, train_loader_overrides)
+        zip(train_datasets, train_loader_overrides, strict=True)
     ):
         loader_params = build_loader_params(loader_cfg, seed=base_seed + index)
         train_loaders.append(
@@ -320,8 +320,8 @@ def create_dataloaders(
 
 
 def align_to_inner_steps(
-    value: Optional[int], inner_steps: int, name: str, log: logging.Logger
-) -> Optional[int]:
+    value: int | None, inner_steps: int, name: str, log: logging.Logger
+) -> int | None:
     """Align cadence values to multiples of inner_steps; warn if adjustment is needed."""
     if value is None:
         return None
@@ -337,8 +337,8 @@ def align_to_inner_steps(
 
 
 def initialize_ema_state(
-    track_ema: bool, ema_transform: Optional[optax.GradientTransformation], params: Any
-) -> Optional[Any]:
+    track_ema: bool, ema_transform: optax.GradientTransformation | None, params: Any
+) -> Any | None:
     """Initialise EMA state if requested."""
     if not track_ema or ema_transform is None:
         return None
@@ -346,7 +346,7 @@ def initialize_ema_state(
     return ema_state
 
 
-def get_ema_params(ema_state: Optional[Any]) -> Optional[Any]:
+def get_ema_params(ema_state: Any | None) -> Any | None:
     """Extract EMA parameters from the EMA state."""
     if ema_state is None:
         return None
@@ -361,7 +361,7 @@ def apply_checkpoint_to_state(
     checkpoint: Any | dict[str, Any],
     cfg: DictConfig,
     optimizer: optax.GradientTransformation,
-    ema_transform: Optional[optax.GradientTransformation],
+    ema_transform: optax.GradientTransformation | None,
     log: logging.Logger,
     rebuild_optimizer: bool,
 ) -> TrainState:
@@ -429,7 +429,7 @@ def save_training_checkpoint(
     loss_value: float,
     track_ema: bool,
     *,
-    val_loss_value: Optional[float] = None,
+    val_loss_value: float | None = None,
     write_standard: bool = True,
 ) -> None:
     """Persist the full training state via the checkpoint manager."""
@@ -452,7 +452,7 @@ def resume_from_checkpoint(
     checkpoint_manager: CheckpointManager,
     optimizer: optax.GradientTransformation,
     train_state: TrainState,
-    ema_transform: Optional[optax.GradientTransformation],
+    ema_transform: optax.GradientTransformation | None,
     log: logging.Logger,
 ) -> TrainState:
     """Load the latest checkpoint if continue_training is enabled."""
@@ -519,7 +519,7 @@ def build_loss_fn(cfg: DictConfig, graphdef: Any):
         loss1 = []
         loss2 = []
 
-        for batch, subkey in zip(batches, rngs):
+        for batch, subkey in zip(batches, rngs, strict=True):
             print(cfg.train.permute_order)
             losses = model.loss_fn(
                 subkey,
@@ -547,7 +547,7 @@ def build_update_fn(
     optimizer: optax.GradientTransformation,
     loss_fn,
     use_ema: bool,
-    ema_transform: Optional[optax.GradientTransformation],
+    ema_transform: optax.GradientTransformation | None,
 ):
     """Create the JIT-compiled update step including optional EMA maintenance."""
     if use_ema and ema_transform is None:
@@ -578,10 +578,10 @@ def train_loop(
     loaders: Sequence[Any],
     eval_loader: Any,
     track_ema: bool,
-    ema_transform: Optional[optax.GradientTransformation],
-    checkpoint_freq: Optional[int],
-    eval_freq: Optional[int],
-    restart_every: Optional[int],
+    ema_transform: optax.GradientTransformation | None,
+    checkpoint_freq: int | None,
+    eval_freq: int | None,
+    restart_every: int | None,
     max_train_hours: float,
     wandb_active: bool,
 ):

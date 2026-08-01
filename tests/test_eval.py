@@ -1,8 +1,14 @@
 import jax.numpy as jnp
 import nibabel as nb
 import numpy as np
+from omegaconf import OmegaConf
 
-from dmri.eval.eval_script import _load_theta_samples
+from dmri.eval.eval_script import (
+    _find_theta_samples_file,
+    _has_model_selection_to_export,
+    _load_theta_samples,
+    _should_compute_feasible_model_probabilities,
+)
 from dmri.eval.export_metrics import (
     MetricSpec,
     _scatter_metric_values,
@@ -46,3 +52,31 @@ def test_load_theta_samples_extracts_brain_voxels(tmp_path):
 
     assert loaded.shape == (2, 2, 3)
     assert jnp.array_equal(loaded, samples.reshape(4, 2, 3)[brain_mask])
+
+
+def test_find_theta_samples_uses_exported_raw_filename(tmp_path):
+    path = tmp_path / "nested" / "raw_thetas.nii.gz"
+    path.parent.mkdir()
+    path.touch()
+
+    assert _find_theta_samples_file(tmp_path) == str(path)
+
+
+def test_model_selection_export_requires_generated_masks():
+    assert not _has_model_selection_to_export(None, None)
+    assert _has_model_selection_to_export(np.ones((1, 2)), None)
+    assert _has_model_selection_to_export(None, np.ones((1, 2, 3)))
+
+
+def test_feasible_probability_export_is_enabled_by_config():
+    cfg = OmegaConf.create({"sample_mask": True})
+    export_cfg = OmegaConf.create({
+        "export_feasible_model_probabilities": True,
+        "feasible_models": [[True, False]],
+    })
+
+    assert _should_compute_feasible_model_probabilities(cfg, export_cfg, "ball3stick")
+    cfg.sample_mask = False
+    assert not _should_compute_feasible_model_probabilities(
+        cfg, export_cfg, "ball3stick"
+    )

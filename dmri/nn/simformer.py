@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 import jax
 import jax.numpy as jnp
@@ -43,7 +43,7 @@ class DMRIThetaInferenceConfig:
     normalize_qk_cross_attn: bool = False
     gate_attention: bool = False
     gate_mlp: bool = False
-    kv_in_features: Optional[int] = None
+    kv_in_features: int | None = None
     dtype: DTypeLike | None = None
     param_dtype: DTypeLike | None = None
     precision: PrecisionLike | None = None
@@ -69,7 +69,7 @@ class DiffusionTransformer(nnx.Module):
         normalize_qk_cross_attn: bool = False,
         gate_attention: bool = False,
         gate_mlp: bool = False,
-        kv_in_features: Optional[int] = None,
+        kv_in_features: int | None = None,
         dtype: DTypeLike | None = None,
         param_dtype: DTypeLike | None = None,
         precision: PrecisionLike | None = None,
@@ -129,9 +129,9 @@ class DiffusionTransformer(nnx.Module):
         t: ArrayLike,
         x: ArrayLike,
         tokenizer: Tokenizer,
-        y: Optional[Array] = None,
-        context: Optional[Array] = None,
-        attention_mask: Optional[Array] = None,
+        y: Array | None = None,
+        context: Array | None = None,
+        attention_mask: Array | None = None,
         **kwargs: Any,
     ) -> Array:
         time_embed = self.time_embedding(t)
@@ -190,7 +190,7 @@ class EDMSimformer(EDM):
         normalize_qk_cross_attn: bool = False,
         gate_attention: bool = False,
         gate_mlp: bool = False,
-        kv_in_features: Optional[int] = None,
+        kv_in_features: int | None = None,
         loss_type: str = "x0",
         dtype: DTypeLike | None = None,
         param_dtype: DTypeLike | None = None,
@@ -233,12 +233,12 @@ class EDMSimformer(EDM):
         y: Array,
         model_mask: ArrayLike,
         tokens_cfg: Array,
-        target_score: Optional[Array] = None,
-        attention_mask: Optional[ArrayLike] = None,
-        loss_mask: Optional[ArrayLike] = None,
+        target_score: Array | None = None,
+        attention_mask: ArrayLike | None = None,
+        loss_mask: ArrayLike | None = None,
         weight_by_complexity: bool = False,
         cut_off_tsm: float = 0.1,
-        context: Optional[ArrayLike] = None,
+        context: ArrayLike | None = None,
     ) -> Array:
         model_mask_arr = jnp.asarray(model_mask)
         rng0, rng1 = jax.random.split(rng)
@@ -322,10 +322,10 @@ class EDMSimformer(EDM):
         tokenizer: Tokenizer,
         y: Array,
         dim: int,
-        tokens_cfg: Optional[Array] = None,
-        model_mask: Optional[ArrayLike] = None,
-        context: Optional[ArrayLike] = None,
-        attention_mask: Optional[ArrayLike] = None,
+        tokens_cfg: Array | None = None,
+        model_mask: ArrayLike | None = None,
+        context: ArrayLike | None = None,
+        attention_mask: ArrayLike | None = None,
         sample_method: str = "ode",
         num_steps: int = 64,
         last_euler_step: bool = False,
@@ -396,10 +396,10 @@ class EDMSimformer(EDM):
         x: Array,
         tokenizer: Tokenizer,
         y: Array,
-        tokens_cfg: Optional[Array] = None,
-        context: Optional[ArrayLike] = None,
-        attention_mask: Optional[ArrayLike] = None,
-        model_mask: Optional[ArrayLike] = None,
+        tokens_cfg: Array | None = None,
+        context: ArrayLike | None = None,
+        attention_mask: ArrayLike | None = None,
+        model_mask: ArrayLike | None = None,
         t_min: float | None = None,
         t_max: float | None = None,
         num_steps: int = 64,

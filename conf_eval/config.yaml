@@ -15,6 +15,15 @@ results_folder: null
 path_checkpoint: null
 model_name: "dmri"
 params_name: "params_ema"
+checkpoint: "latest"
+
+# Optional pretrained model source and artifact destination.
+pretrained_repo_id: null
+pretrained_revision: null
+pretrained_cache_dir: null
+local_files_only: false
+output_dir: null
+reuse_theta_samples: false
 
 # Sampling configs
 seed: 1

@@ -1,17 +1,22 @@
 # Reference
 
-The reference is split between Hydra-powered commands and the generated Python API.
+The reference is split between command-line interfaces and the generated Python API.
 
 <div class="card-grid">
+  <a class="doc-card" href="cli_predict/">
+    <span class="doc-card__number">CLI</span>
+    <h3>Prediction command</h3>
+    <p>Standard inputs, pretrained checkpoints, output controls, and sampling options.</p>
+  </a>
   <a class="doc-card" href="cli_train/">
     <span class="doc-card__number">CLI</span>
     <h3>Training command</h3>
-    <p>Configuration groups, common overrides, and output layout for <code>dmri</code>.</p>
+    <p>Configuration groups, common overrides, and output layout for <code>dmri train</code>.</p>
   </a>
   <a class="doc-card" href="cli_eval/">
     <span class="doc-card__number">CLI</span>
     <h3>Evaluation command</h3>
-    <p>Data inputs, samplers, metrics, and exports for <code>dmri_eval</code>.</p>
+    <p>Data inputs, samplers, metrics, and exports for <code>dmri eval</code>.</p>
   </a>
   <a class="doc-card" href="simulators/">
     <span class="doc-card__number">API</span>
@@ -22,6 +27,11 @@ The reference is split between Hydra-powered commands and the generated Python A
     <span class="doc-card__number">API</span>
     <h3>Networks and workflows</h3>
     <p>Neural components plus training, evaluation, and utility modules.</p>
+  </a>
+  <a class="doc-card" href="hub/">
+    <span class="doc-card__number">API</span>
+    <h3>Pretrained models</h3>
+    <p>Load, inspect, and list pretrained model bundles from Python.</p>
   </a>
 </div>
 

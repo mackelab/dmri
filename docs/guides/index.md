@@ -1,8 +1,13 @@
 # Guides
 
-These guides describe the principal simulation, training, and evaluation workflows.
+These guides describe the principal prediction, simulation, training, and evaluation workflows.
 
 <div class="card-grid">
+  <a class="doc-card" href="prediction/">
+    <span class="doc-card__number">Inference</span>
+    <h3>Pretrained prediction</h3>
+    <p>Run a compatible public or local checkpoint on a standard dMRI folder.</p>
+  </a>
   <a class="doc-card" href="simulators/">
     <span class="doc-card__number">Modeling</span>
     <h3>Simulators and priors</h3>
