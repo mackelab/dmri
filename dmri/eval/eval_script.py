@@ -562,7 +562,7 @@ def _main(cfg: DictConfig):
     cpu_device = _first_device("cpu")
     try:
         gpu_device = _first_device("gpu")
-    except Exception:
+    except RuntimeError:
         gpu_device = None
     heavy_device = gpu_device or cpu_device
     eval_devices = _resolve_eval_devices()
@@ -1079,7 +1079,7 @@ def _batch_cache_key(cfg, stage, data, devices, *extra):
     stats = None
     try:
         stats = device.memory_stats() if device is not None else None
-    except Exception:
+    except RuntimeError:
         stats = None
     return make_cache_key(
         stage,
@@ -1384,9 +1384,9 @@ def sample_theta(
             model_mask = default_mask
             logger.info(f"Using default mask from config {default_mask}.")
         else:
-            model_mask = jnp.ones(num_comp, dtype=jnp.bool)
+            model_mask = jnp.ones(num_comp, dtype=jnp.bool_)
     else:
-        model_mask = jnp.array(model_mask, dtype=jnp.bool)
+        model_mask = jnp.array(model_mask, dtype=jnp.bool_)
 
         nans_in_samples = jnp.isnan(model_mask).sum()
         logger.info(f"Number of NaNs in model_mask: {nans_in_samples}")

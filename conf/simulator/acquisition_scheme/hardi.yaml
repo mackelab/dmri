@@ -1,6 +1,0 @@
-name: hardi
-params:
-  schemes:
-    - name: hardi
-      params:
-        num_acquisitions: 200

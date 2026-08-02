@@ -1,5 +1,1 @@
-
-with_posterior_score: false
-defaults:
-  - sim_type: all_gaussian_param_reg
-  - acquisition_scheme: hcp
+model_class: dmri.simulators.models.AllGaussianModelsParamCountPrior

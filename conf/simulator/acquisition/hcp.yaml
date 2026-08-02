@@ -1,0 +1,8 @@
+# @package simulator
+
+acquisitions:
+  - _target_: dmri.simulators.random_hcp_acquisition
+    _partial_: true
+    num_acquisitions: 105
+    typical_prob: 0.8
+    random_prob: 0.2

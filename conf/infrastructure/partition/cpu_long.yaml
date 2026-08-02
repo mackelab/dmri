@@ -3,7 +3,7 @@
 hydra:
   mode: MULTIRUN
   launcher:
-    timeout_min: 3600 
+    timeout_min: 3600
     partition: cpu-galvani
     gres: null
     cpus_per_task: 32

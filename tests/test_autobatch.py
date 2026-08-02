@@ -560,3 +560,90 @@ def test_batching_closes_progress_after_an_error(monkeypatch):
             desc="Sampling",
         )
     assert progress.closed
+
+
+class _SyntheticCost:
+    """A workload whose memory is a known affine function of the batch size.
+
+    Per-voxel cost is deliberately higher at tiny batches, which is what makes a
+    linear fit from small probes overestimate and undershoot the real ceiling.
+    """
+
+    def __init__(self, per_voxel, overhead, small_batch_penalty=0.0):
+        self.per_voxel = per_voxel
+        self.overhead = overhead
+        self.small_batch_penalty = small_batch_penalty
+        self.probes = []
+
+    def __call__(self, size):
+        self.probes.append(size)
+        penalty = self.small_batch_penalty / max(size, 1)
+        return self.overhead + size * (self.per_voxel + penalty)
+
+
+def _probe_with(cost, budget, max_batch=10**7, monkeypatch=None):
+    monkeypatch.setattr(autobatch, "_probe_at", lambda fn, size, args, key: cost(size))
+    return autobatch.probe_batch_size(
+        object(),
+        (np.zeros((1, 4), np.float32),),
+        jax.random.PRNGKey(0),
+        budget,
+        max_batch,
+    )
+
+
+def test_probe_finds_the_ceiling_despite_a_misleading_small_batch_fit(monkeypatch):
+    """The seed underestimates; the search must grow to recover the headroom."""
+    budget = 1_000_000
+    cost = _SyntheticCost(per_voxel=50, overhead=1000, small_batch_penalty=200_000)
+    resolved = _probe_with(cost, budget, monkeypatch=monkeypatch)
+
+    ceiling = (budget * autobatch.SAFETY_FACTOR - 1000) / 50
+    assert resolved <= ceiling, "picked a batch that does not fit"
+    assert resolved > 0.7 * ceiling, (
+        f"left too much on the table: {resolved} of {ceiling:.0f}"
+    )
+    assert max(cost.probes) <= ceiling * 2, "probed absurdly far past the ceiling"
+
+
+def test_probe_shrinks_when_the_seed_does_not_fit(monkeypatch):
+    """The opposite error: the seed overestimates and must be walked back."""
+    budget = 1_000_000
+    cost = _SyntheticCost(per_voxel=500, overhead=1000)
+    resolved = _probe_with(cost, budget, monkeypatch=monkeypatch)
+
+    assert cost(resolved) <= budget * autobatch.SAFETY_FACTOR, "resolved size overflows"
+
+
+def test_probe_never_exceeds_the_data_size(monkeypatch):
+    cost = _SyntheticCost(per_voxel=1, overhead=0)
+    resolved = _probe_with(cost, 10**12, max_batch=5_000, monkeypatch=monkeypatch)
+    assert resolved <= 5_000
+
+
+def test_probe_result_always_fits_its_own_budget(monkeypatch):
+    """Whatever the cost curve, the answer must satisfy the budget it was given."""
+    budget = 2_000_000
+    for per_voxel, overhead, penalty in [
+        (10, 0, 0),
+        (137, 5_000, 1_000_000),
+        (1, 1_900_000, 0),
+        (900, 0, 50_000),
+    ]:
+        cost = _SyntheticCost(per_voxel, overhead, penalty)
+        resolved = _probe_with(cost, budget, monkeypatch=monkeypatch)
+        assert (
+            resolved >= autobatch.DEFAULT_MIN_BATCH
+            or resolved == autobatch.DEFAULT_MIN_BATCH
+        )
+        if resolved > autobatch.DEFAULT_MIN_BATCH:
+            assert cost(resolved) <= budget * autobatch.SAFETY_FACTOR, (
+                f"per_voxel={per_voxel} overhead={overhead}: {resolved} overflows"
+            )
+
+
+def test_probe_compile_count_is_bounded(monkeypatch):
+    """Each probe is a real compile, so the search must not run away."""
+    cost = _SyntheticCost(per_voxel=50, overhead=1000, small_batch_penalty=200_000)
+    _probe_with(cost, 1_000_000, monkeypatch=monkeypatch)
+    assert len(cost.probes) <= 12, f"took {len(cost.probes)} compiles"

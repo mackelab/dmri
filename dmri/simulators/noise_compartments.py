@@ -241,9 +241,11 @@ def add_rician_noise(rng, signal, sigma_g):
     Returns:
     - noisy_signal: ndarray of the signal with added Rician noise
     """
-    # Generate Gaussian noise for real and imaginary parts
-    noise_real = jax.random.normal(rng, shape=signal.shape) * sigma_g
-    noise_imag = jax.random.normal(rng, shape=signal.shape) * sigma_g
+    # Independent keys: drawing both parts from `rng` would make them identical
+    # and the magnitude would not be Rician.
+    rng_real, rng_imag = jax.random.split(rng)
+    noise_real = jax.random.normal(rng_real, shape=signal.shape) * sigma_g
+    noise_imag = jax.random.normal(rng_imag, shape=signal.shape) * sigma_g
 
     # Assume original signal is along the real axis
     signal_complex = signal + 0j
@@ -298,9 +300,14 @@ def add_noncentral_chi_noise(rng, signal, sigma_g, num_coils):
     Returns:
     - noisy_signal: ndarray of the signal with added Non-Central Chi noise
     """
-    # Generate Gaussian noise for real and imaginary parts for each coil
-    noise_real = jax.random.normal(rng, shape=(num_coils,) + signal.shape) * sigma_g
-    noise_imag = jax.random.normal(rng, shape=(num_coils,) + signal.shape) * sigma_g
+    # Independent keys per part, as in add_rician_noise.
+    rng_real, rng_imag = jax.random.split(rng)
+    noise_real = (
+        jax.random.normal(rng_real, shape=(num_coils,) + signal.shape) * sigma_g
+    )
+    noise_imag = (
+        jax.random.normal(rng_imag, shape=(num_coils,) + signal.shape) * sigma_g
+    )
 
     # Assume original signal is along the real axis and replicate for each coil
     signal_complex = jnp.tile(signal, (num_coils, 1, 1)) + 0j

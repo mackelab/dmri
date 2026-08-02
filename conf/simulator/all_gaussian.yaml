@@ -1,7 +1,1 @@
-
-prior_mask_alpha: 1.
-prior_mask_beta: 1.
-with_posterior_score: false
-defaults:
-  - sim_type: all_gaussian
-  - acquisition_scheme: hcp
+model_class: dmri.simulators.models.AllGaussianModels

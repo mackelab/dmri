@@ -53,7 +53,7 @@ class Sphere(SignalCompartment):
         attenuation_small = 1.0 - factor_sq / 5.0 + factor_sq**2 / 100.0
 
         E_sphere = jnp.where(small_factor, attenuation_small, attenuation)
-        E_sphere = jnp.clip(E_sphere, a_min=1e-12)  # Guard against log(0)
+        E_sphere = jnp.clip(E_sphere, min=1e-12)  # Guard against log(0)
 
         return jnp.log(E_sphere)
 

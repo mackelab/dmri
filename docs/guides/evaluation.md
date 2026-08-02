@@ -41,7 +41,9 @@ Each metric writes a NIfTI volume plus a JSON summary of configured aggregations
 from pathlib import Path
 import json
 
-export_dir = Path("results/my_run/2026-07-19_12-00-00/ball3stick_model_selection_results")
+export_dir = Path(
+    "results/my_run/2026-07-19_12-00-00/ball3stick_model_selection_results"
+)
 with open(export_dir / "reconstruction_mse_summary.json") as f:
     summary = json.load(f)
 ```

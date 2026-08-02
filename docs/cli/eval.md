@@ -1,6 +1,6 @@
 # Evaluation CLI
 
-The `dmri eval` command is the advanced Hydra interface. It pulls defaults from the shared, versioned `conf` module and supports posterior inference, model selection, configurable metrics, and exports for trained runs. Use [`dmri predict`](cli_predict.md) for the simpler pretrained workflow, which omits ground-truth metrics.
+The `dmri eval` command is the advanced Hydra interface. It pulls defaults from the shared, versioned `conf` module and supports posterior inference, model selection, configurable metrics, and exports for trained runs. Use [`dmri predict`](predict.md) for the simpler pretrained workflow, which omits ground-truth metrics.
 
 ## Essential commands
 

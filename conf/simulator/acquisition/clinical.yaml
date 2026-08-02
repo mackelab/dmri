@@ -1,0 +1,6 @@
+# @package simulator
+
+acquisitions:
+  - _target_: dmri.simulators.random_clinical_acquisition
+    _partial_: true
+    num_acquisitions: 35

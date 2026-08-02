@@ -22,7 +22,11 @@ from dmri.simulators.local_signal_models import (
 )
 from dmri.simulators.local_signal_models.ball import MultiShellStaticBall
 from dmri.simulators.local_signal_models.stick import MultiShellStaticStick
-from dmri.simulators.mask_prior import BetaBernoulliMaskPrior, MaskPrior
+from dmri.simulators.mask_prior import (
+    BetaBernoulliMaskPrior,
+    MaskPrior,
+    TotalParamPenalizedPrior,
+)
 from dmri.simulators.sphereical_distributions import MixtureOfFODs
 from dmri.utils.transform import dirichlet_to_normal, eps_mask, normal_to_dirichlet
 
@@ -144,7 +148,12 @@ class MultiCompartment(SignalCompartment):
 
         signals = [m.signal(acq) for m in model_compartments]
         stacked = jnp.stack(signals, axis=0)
-        return jnp.sum(stacked * model_fractions[:, None], axis=0)
+        weights = model_fractions[:, None]
+        # A masked-off compartment gets fraction exactly 0, but its theta is
+        # unconstrained and may produce NaN -- and 0 * NaN is NaN. Drop those
+        # contributions outright so they cannot reach the mixture.
+        contributions = jnp.where(weights == 0, 0.0, stacked * weights)
+        return jnp.sum(contributions, axis=0)
 
     @staticmethod
     def _noise_mask(model_mask, num_models: int, num_noise: int):
@@ -185,8 +194,11 @@ class MultiCompartment(SignalCompartment):
         num_noise = len(noise_compartments)
         if rng is not None and num_noise > 0:
             noise_mask = cls._noise_mask(model_mask, len(model_compartments), num_noise)
+            # One key per compartment; sharing `rng` would correlate them.
+            noise_keys = jax.random.split(rng, num_noise)
             noise_outputs = [
-                noise_compartments[i].noise(base_signal, rng) for i in range(num_noise)
+                noise_compartments[i].noise(base_signal, noise_keys[i])
+                for i in range(num_noise)
             ]
             stacked_noise = jnp.stack(noise_outputs, axis=0)
             mask_weights = cls._mask_weights(
@@ -205,6 +217,10 @@ class MultiCompartment(SignalCompartment):
         """Instantiate the configured mask-prior distribution."""
         kwargs = dict(cls.mask_prior_kwargs or {})
         kwargs.update(overrides)
+        if issubclass(cls.mask_prior_cls, TotalParamPenalizedPrior):
+            kwargs.setdefault(
+                "num_model_parameters", [model.theta_dim for model in cls.model_types]
+            )
         return cls.mask_prior_cls(
             len(cls.model_types),
             len(cls.noise_types),
@@ -215,30 +231,32 @@ class MultiCompartment(SignalCompartment):
     def log_signal_fn(cls, acq, **kwargs):
         return jnp.log(cls.signal_fn(acq, **kwargs))
 
-    def _reconstruct_params(self):
-        """Rebuild all parameters from theta so eager and JIT paths stay in sync."""
-        return type(self).to_params(self.theta, model_mask=self.model_mask)
+    def _apply_shared_parameters(self):
+        """Push shared parameters onto the compartment classes.
+
+        `from_global_params` writes onto the class object rather than the
+        instance, and `signal_fn` reads them back from there, so this has to run
+        before the physics. Re-applying it here means `signal` does not have to
+        rebuild every parameter just to trigger the side effect.
+        """
+        if self.shared_parameter is None:
+            return
+        for compartment in type(self).model_types:
+            self.shared_parameter.set_shared_params_for_compartment(compartment)
 
     def signal(self, acq: acquisition_scheme, rng=None):
-        (
-            fractions,
-            model_compartments,
-            noise_compartments,
-            model_mask,
-            shared_parameter,
-        ) = self._reconstruct_params()
+        self._apply_shared_parameters()
         return type(self).signal_fn(
             acq,
-            model_compartments,
-            noise_compartments,
-            fractions,
-            model_mask,
-            shared_parameter,
+            self.model_compartments,
+            self.noise_compartments,
+            self.model_fractions,
+            self.model_mask,
+            self.shared_parameter,
             rng=rng,
         )
 
     def log_signal(self, acq: acquisition_scheme, rng=None):
-        """Compute log-signal using reconstructed parameters to mirror the JIT path."""
         return jnp.log(self.signal(acq, rng=rng))
 
     @classmethod
@@ -472,8 +490,12 @@ class MultiCompartment(SignalCompartment):
             for i in range(num_noise)
         ]
         stacked_ll = jnp.stack(ll_values, axis=0)
-        stacked_ll = jnp.nan_to_num(stacked_ll)
         mask_weights = self._mask_weights(noise_mask, stacked_ll.ndim, stacked_ll.dtype)
+        # Discard inactive compartments, whose log-likelihood may be NaN from
+        # unconstrained parameters. An active NaN is left to propagate: this is
+        # a log-likelihood, so silencing it to 0 would claim likelihood 1 and
+        # make an impossible parameter look like a perfect fit.
+        stacked_ll = jnp.where(mask_weights != 0, stacked_ll, 0.0)
         return jnp.sum(stacked_ll * mask_weights, axis=0)
 
 

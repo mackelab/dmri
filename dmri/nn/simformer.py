@@ -136,9 +136,6 @@ class DiffusionTransformer(nnx.Module):
     ) -> Array:
         time_embed = self.time_embedding(t)
         input_embed = tokenizer.encode(x, **kwargs)
-        # print(x.shape)
-        # print(kwargs["tokens_cfg"].shape)
-        # print(input_embed.shape)
         while time_embed.ndim < input_embed.ndim:
             time_embed = time_embed[..., None, :]
         if self.additional_context_dim > 0:
@@ -267,7 +264,6 @@ class EDMSimformer(EDM):
             loss_denoised = weight * jnp.sum(diff, axis=-1, keepdims=True)
             loss = loss_denoised
         elif self.loss_type == "v":
-            print("using v loss")
             total_std = jnp.sqrt(1.0 + std**2)
             alpha_t = 1.0 / total_std
             sigma_t = std / total_std

@@ -1,7 +1,5 @@
 # Getting Started
 
-This page describes environment setup, pretrained prediction, training, and evaluation.
-
 ## Prerequisites
 
 - Python 3.11 or newer
@@ -23,9 +21,13 @@ uv pip install -e '.[dev]'
 - pip without uv: `pip install -e '.[dev]'` (quote extras in zsh).
 - conda: create an env, then install the same extras.
 
-## Run a pretrained prediction
+## Apply a pretrained model
 
-Prepare a folder containing these four files:
+`dmri predict` is the easiest way to apply a pretrained model to diffusion MRI data.
+
+### Step 1: Prepare the folder
+
+The input folder must contain these four files:
 
 ```text
 FOLDER/
@@ -35,52 +37,124 @@ FOLDER/
 └── bvecs
 ```
 
-Then run:
+### Step 2: Run with defaults
 
 ```bash
 dmri predict FOLDER
 ```
 
-The default model is `msb3s_2_4_6_128`, a multi-shell Ball3Stick model from the public `manugloeck/dmri-pretrained` Hugging Face repository. `huggingface_hub` downloads and caches it automatically. Outputs are placed below `FOLDER/dmri_output/` in `ball3stick_inference_results/` and `ball3stick_model_selection_results/`. Prediction does not compute metrics that require ground truth.
+With no other options, the command asks which model and quality preset to use, defaulting to the recommended choice at every prompt:
 
-See the [prediction guide](guides/prediction.md) for model, cache, offline, local-checkpoint, output, and sampling options.
+```text
+Model  (from manugloeck/dmri-pretrained)
+  1) b3s_2_4_6_128     Ball3Stick model family - single-shell dMRI
+  2) b3s_2_4_6_64      Ball3Stick model family - compact single-shell model
+  3) msb3s_2_4_6_128   Multi-shell Ball3Stick model family - multi-shell dMRI  <-
+Choose [1]:
+
+Quality
+  1) fast             20 steps x 25 samples, fp16, no corrector
+  2) balanced         40 steps x 50 samples, fp32, corrected  (default) <-
+  3) high             60 steps x 100 samples, fp32, corrected
+Choose [2]:
+```
+
+Pressing enter accepts the default at every step. Prompts only appear on a terminal, so scripts and CI are not blocked. Pass `--non-interactive` to suppress them explicitly.
+
+The default model is `msb3s_2_4_6_128`, a multi-shell Ball3Stick model from the public `manugloeck/dmri-pretrained` Hugging Face repository. `huggingface_hub` downloads and caches it automatically.
+
+### Step 3: Output layout
+
+Results are placed below `FOLDER/dmri_output/` by default:
+
+```text
+FOLDER/dmri_output/
+├── ball3stick_inference_results/
+│   ├── mean_f0samples.nii.gz          # ball fraction
+│   ├── mean_f1samples.nii.gz          # stick 1 fraction
+│   ├── mean_f2samples.nii.gz          # stick 2 fraction
+│   ├── mean_f3samples.nii.gz          # stick 3 fraction
+│   ├── mean_fsumsamples.nii.gz        # total anisotropic fraction
+│   ├── mean_dsamples.nii.gz           # diffusivity
+│   └── ...
+└── ball3stick_model_selection_results/
+    └── ...
+```
+
+Use `--output-subdir NAME` to choose a different directory name inside `FOLDER`. Use `--overwrite` to replace an existing output folder.
+
+### Step 4: Common options
+
+**Quality presets** control speed and accuracy:
+
+```bash
+dmri predict FOLDER --quality fast      # 20 steps x 25 samples, fp16, no corrector
+dmri predict FOLDER --quality balanced  # 40 steps x 50 samples, fp32, corrected (default)
+dmri predict FOLDER --quality high      # 60 steps x 100 samples, fp32, corrected
+```
+
+**Model modes** control how the model composition varies across voxels:
+
+```bash
+dmri predict FOLDER --model-mode per-sample   # posterior model per voxel/sample (default)
+dmri predict FOLDER --model-mode best          # one best model per voxel
+dmri predict FOLDER --fixed-model B2S          # fixed B2S everywhere
+```
+
+**Hardware and reproducibility:**
+
+```bash
+dmri predict FOLDER --batch-size 8192 --memory-fraction 0.5   # shared GPU
+dmri predict FOLDER --seed 42 --overwrite                   # reproducible re-run
+```
+
+### Step 5: Non-interactive and scripted usage
+
+Pass every option on the command line so the command never prompts:
+
+```bash
+dmri predict FOLDER \
+  --model msb3s_2_4_6_128 \
+  --quality balanced \
+  --model-mode best \
+  --non-interactive \
+  --overwrite
+```
+
+### Step 6: Offline and local checkpoints
+
+Disable downloads and use only cached files:
+
+```bash
+dmri predict FOLDER --local-files-only
+```
+
+Use a local model bundle instead of the Hugging Face Hub:
+
+```bash
+dmri predict FOLDER --local-checkpoint /path/to/model_bundle
+```
+
+See the [prediction guide](guides/prediction.md) and the [CLI reference](cli/predict.md) for the full option list.
 
 !!! warning
     Pretrained models expect acquisition schemes compatible with their training configuration. Check compatibility before inference. DMRI is intended for research and has not been clinically validated.
 
-## Run a training job
+## Other entry points
 
-1. Pick an experiment preset in `conf/experiment/train/` or compose your own under `conf/`.
-2. Launch on a local machine with a GPU, without SLURM or W&B:
-
-   ```bash
-   dmri train +experiment/train=b3s_2_4_6_128 infrastructure/launcher=local infrastructure/partition=none tracking.enabled=false
-   ```
-
-   The local launcher requests one GPU. For a cluster, select launcher and partition profiles that match your site instead of relying on the repository defaults. Set `tracking.enabled=true` after logging into Weights & Biases.
-3. Monitor `results/<run_name>/<timestamp>/` for checkpoints, `artifact.yaml`, Hydra configs (`.hydra/`), and logs.
-
-## Evaluate a trained model
-
-```bash
-dmri eval +experiment/eval=eval_b3s_best_model_selection \
-  checkpoint.model_name=<run_name>/<timestamp> \
-  evaluation.input.data_folder=<data_folder>
-```
-
-- `checkpoint.model_name` is the timestamped training path relative to `results/`.
-- Evaluation requires an input path. Set `evaluation.input.data_folder` or `evaluation.input.path`.
-- Full evaluation is intended for advanced workflows, including configurable exports and ground-truth metrics. Use `dmri predict` for inference without ground-truth metrics.
-- The deprecated `dmri_eval` executable remains as a compatibility alias.
+| Command / API | Purpose | Documentation |
+|---|---|---|
+| `dmri predict` | Apply pretrained models to dMRI data | This page, [prediction guide](guides/prediction.md), [CLI reference](cli/predict.md) |
+| `dmri train` | Train custom models via Hydra presets | [Training guide](guides/training.md), [CLI reference](cli/train.md) |
+| `dmri eval` | Evaluate trained models with full metrics | [Evaluation guide](guides/evaluation.md), [CLI reference](cli/eval.md) |
+| `dmri.hub.load_pretrained` | Load models in Python notebooks | [API reference](reference/hub.md) |
 
 ## Know your configs
 
-Hydra powers `dmri train` and `dmri eval`. Use `--help` to see overrides for a specific experiment, and refer to the CLI reference pages for curated config maps:
+Hydra powers `dmri train` and `dmri eval`. Use `--help` to see overrides for a specific experiment. Common tweak locations:
 
-- [Prediction CLI reference](reference/cli_predict.md)
-- [Training CLI reference](reference/cli_train.md)
-- [Evaluation CLI reference](reference/cli_eval.md)
+- `training.optimizer` — learning rate, scheduler
+- `model.*` — architecture groups
+- `conf/simulator/` — simulator definitions
 
-Common tweaks live in `training.optimizer`, `model.*`, and simulator definitions under `conf/simulator/`.
-
-The [example notebooks](examples/) provide executable demonstrations of the simulation, training, and evaluation interfaces.
+The [example notebooks](examples/) provide executable demonstrations.

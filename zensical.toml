@@ -16,6 +16,11 @@ extra_javascript = [
 nav = [
   { "Home" = "index.md" },
   { "Getting Started" = "getting-started.md" },
+  { "CLI" = [
+    { "dmri predict" = "cli/predict.md" },
+    { "dmri train" = "cli/train.md" },
+    { "dmri eval" = "cli/eval.md" },
+  ] },
   { "Guides" = [
     { "Overview" = "guides/index.md" },
     { "Pretrained Prediction" = "guides/prediction.md" },
@@ -25,18 +30,13 @@ nav = [
   ] },
   { "Examples" = [
     { "Overview" = "examples/index.md" },
-    { "Simulator components" = "examples/01_dmri_simulator_components.md" },
-    { "Multi-compartment model" = "examples/02_dmri_multicompartment_model.md" },
-    { "Using pretrained models" = "examples/03_pretrained_models.md" },
-    { "Train a small model" = "examples/04_train_standalone.md" },
+    { "Simulator components" = "examples/01_dmri_simulator_components.ipynb" },
+    { "Multi-compartment model" = "examples/02_dmri_multicompartment_model.ipynb" },
+    { "Using pretrained models" = "examples/03_pretrained_models.ipynb" },
+    { "Train a small model" = "examples/04_train_standalone.ipynb" },
   ] },
   { "Reference" = [
     { "Overview" = "reference/index.md" },
-    { "Command line" = [
-      { "Prediction CLI" = "reference/cli_predict.md" },
-      { "Training CLI" = "reference/cli_train.md" },
-      { "Evaluation CLI" = "reference/cli_eval.md" },
-    ] },
     { "Python API" = [
       { "Pretrained Models" = "reference/hub.md" },
       { "Simulators" = "reference/simulators.md" },

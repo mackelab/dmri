@@ -507,7 +507,6 @@ def build_loss_fn(cfg: DictConfig, graphdef: Any):
         loss2 = []
 
         for batch, subkey in zip(batches, rngs, strict=True):
-            print(cfg.train.permute_order)
             losses = model.loss_fn(
                 subkey,
                 **batch,
@@ -713,7 +712,6 @@ def train_loop(
             dataset_stats["samples_read/samples_written"] = (
                 samples_read / samples_written
             )
-        print(dataset_stats)
         log.info(
             f"Step {train_state.step}, Loss mask: {loss_mask}, Loss theta: {loss_theta}, sim. time: {dataset_stats.get('avg_production_time', 0.0):.4f}s, read/wrt: {dataset_stats.get('samples_read/samples_written', 0.0):.4f}"
         )

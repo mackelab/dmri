@@ -1,0 +1,6 @@
+# @package simulator
+
+acquisitions:
+  - _target_: dmri.simulators.random_advanced_reasearch_acquisition_scheme
+    _partial_: true
+    num_acquisitions: 355

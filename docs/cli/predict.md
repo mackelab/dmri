@@ -1,5 +1,7 @@
 # Prediction CLI
 
+`dmri predict` is the easiest way to apply a pretrained model to diffusion MRI data. It handles model download, inference, model selection, and map export in a single command.
+
 ## Synopsis
 
 ```text
@@ -187,6 +189,6 @@ run-to-run Monte Carlo noise of float32 itself.
 
 ## Scope
 
-Use `dmri predict` for pretrained inference without ground-truth metrics. Use [`dmri eval`](cli_eval.md) for the full advanced Hydra evaluation pipeline.
+Use `dmri predict` for pretrained inference without ground-truth metrics. Use [`dmri eval`](eval.md) for the full advanced Hydra evaluation pipeline.
 
 Pretrained checkpoints are acquisition-specific: verify compatibility with the input acquisition scheme. DMRI is research-only software and has not been clinically validated.
