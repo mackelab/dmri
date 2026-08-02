@@ -427,6 +427,27 @@ def _apply_defaults(args) -> None:
         args.corrector = preset["corrector"]
 
 
+def _adapt_precision_for_backend(args, backend=None) -> None:
+    """Apply precision fallbacks and warn about impractical CPU runtimes."""
+    if backend is None:
+        import jax
+
+        backend = jax.default_backend()
+    backend = str(backend).lower()
+
+    requested_precision = args.precision
+    args.precision = resolve_precision_for_backend(requested_precision, backend)
+    if args.precision != requested_precision:
+        console.warning(
+            f"{requested_precision} is unsupported on CPU; using {args.precision}."
+        )
+    if backend == "cpu":
+        console.warning(
+            "CPU prediction will be very slow, even for a few thousand voxels. "
+            "Use a supported GPU accelerator when possible."
+        )
+
+
 def _validate_model_mode(args) -> None:
     if args.model_mode == "fixed" and args.fixed_model is None:
         raise ValueError("--fixed-model is required when --model-mode=fixed")
@@ -639,12 +660,7 @@ def main(argv=None):
         # yet -- importing jax alone does not create a backend.
         os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = str(args.memory_fraction)
 
-    requested_precision = args.precision
-    args.precision = resolve_precision_for_backend(requested_precision)
-    if args.precision != requested_precision:
-        console.warning(
-            f"{requested_precision} is unsupported on CPU; using {args.precision}."
-        )
+    _adapt_precision_for_backend(args)
     try:
         overrides = _hydra_overrides(args, folder, output_dir)
     except ValueError as error:

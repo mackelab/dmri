@@ -134,6 +134,33 @@ def test_fast_quality_uses_fp16_without_a_corrector():
     assert args.corrector == "none"
 
 
+def test_cpu_warns_about_slow_prediction_and_falls_back_from_fp16(monkeypatch):
+    from dmri import predict
+
+    warnings = []
+    monkeypatch.setattr(predict.console, "warning", warnings.append)
+    args = Namespace(precision="fp16")
+
+    predict._adapt_precision_for_backend(args, "cpu")
+
+    assert args.precision == "fp32"
+    assert any("few thousand voxels" in warning for warning in warnings)
+    assert any("unsupported on CPU" in warning for warning in warnings)
+
+
+def test_gpu_keeps_fp16_without_a_cpu_warning(monkeypatch):
+    from dmri import predict
+
+    warnings = []
+    monkeypatch.setattr(predict.console, "warning", warnings.append)
+    args = Namespace(precision="fp16")
+
+    predict._adapt_precision_for_backend(args, "gpu")
+
+    assert args.precision == "fp16"
+    assert warnings == []
+
+
 def test_preset_reaches_the_hydra_overrides(input_folder):
     from pathlib import Path
 
