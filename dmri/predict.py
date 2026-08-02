@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 from dmri import console
-from dmri.eval.precision import PRECISION_CHOICES
+from dmri.eval.precision import PRECISION_CHOICES, resolve_precision_for_backend
 from dmri.hub import DEFAULT_MODEL_NAME, DEFAULT_REPO_ID, list_pretrained_models
 
 STANDARD_FILES = ("data.nii.gz", "nodif_brain_mask.nii.gz", "bvals", "bvecs")
@@ -631,7 +631,6 @@ def main(argv=None):
         _apply_defaults(args)
         _validate_model_mode(args)
         output_dir = _prepare_output(folder, args.output_subdir, args.overwrite)
-        overrides = _hydra_overrides(args, folder, output_dir)
     except ValueError as error:
         _parser().error(str(error))
 
@@ -639,6 +638,17 @@ def main(argv=None):
         # Read when the XLA backend is first initialised, which has not happened
         # yet -- importing jax alone does not create a backend.
         os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = str(args.memory_fraction)
+
+    requested_precision = args.precision
+    args.precision = resolve_precision_for_backend(requested_precision)
+    if args.precision != requested_precision:
+        console.warning(
+            f"{requested_precision} is unsupported on CPU; using {args.precision}."
+        )
+    try:
+        overrides = _hydra_overrides(args, folder, output_dir)
+    except ValueError as error:
+        _parser().error(str(error))
 
     console.summary(
         "Prediction",
