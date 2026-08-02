@@ -47,5 +47,3 @@ with open(export_dir / "reconstruction_mse_summary.json") as f:
 ```
 
 Summary files are emitted per configured metric. Their names follow `<metric>_summary.json` unless a metric overrides the filename.
-
-For exploratory plots that are not part of the supported documentation, see the `experimental_notebooks/` directory in the repository. Those notebooks may change without notice.
