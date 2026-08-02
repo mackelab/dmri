@@ -148,7 +148,7 @@ def test_artifact_contains_only_model_construction_config():
         "schema_version": 2,
         "run": {"name": "example"},
         "model": {"name": "Model"},
-        "simulator": {"sim_type": {"name": "Simulator"}},
+        "simulator": {"sim_type": {"name": "Ball3StickNoise"}},
         "training": {"optimizer": {"name": "adam"}},
     })
 
@@ -156,7 +156,7 @@ def test_artifact_contains_only_model_construction_config():
 
     assert artifact.artifact_version == 1
     assert artifact.model.name == "Model"
-    assert artifact.simulator.sim_type.name == "Simulator"
+    assert artifact.simulator.model_class == "dmri.simulators.models.Ball3StickNoise"
     assert "training" not in artifact
 
 

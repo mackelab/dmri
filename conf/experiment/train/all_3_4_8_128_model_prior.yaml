@@ -12,7 +12,7 @@ defaults:
 - _self_
 - override /infrastructure/partition: h100_long
 - override /simulator: all_gaussian_param_count_reg
-- override /simulator/acquisition_scheme: multi
+- override /simulator/acquisition: multi
 - override /model: dmri
 run:
   name: all_2_6_8_128_model_prior

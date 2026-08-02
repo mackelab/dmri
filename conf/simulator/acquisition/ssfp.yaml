@@ -1,0 +1,9 @@
+# @package simulator
+
+acquisitions:
+  - _target_: dmri.simulators.random_ssfp_acquisition
+    _partial_: true
+    num_acquisitions: 120
+  - _target_: dmri.simulators.random_ssfp_acquisition
+    _partial_: true
+    num_acquisitions: 60

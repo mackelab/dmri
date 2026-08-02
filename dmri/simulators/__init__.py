@@ -12,7 +12,15 @@ Key references
 * Behrens et al., 2003. Characterization and propagation of uncertainty in diffusion-weighted MR imaging (Ball–Stick).
 """
 
-from dmri.simulators.acquisition_scheme import acquisition_scheme
+from dmri.simulators.acquisition_scheme import (
+    acquisition_scheme,
+    random_advanced_reasearch_acquisition_scheme,
+    random_clinical_acquisition,
+    random_hardi_acquisition,
+    random_hcp_acquisition,
+    random_hcp_large_acquisition,
+    random_ssfp_acquisition,
+)
 from dmri.simulators.base import NoiseCompartment, SignalCompartment
 from dmri.simulators.local_signal_models import *
 from dmri.simulators.models import *

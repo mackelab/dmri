@@ -125,6 +125,32 @@ def test_simulator_accepts_explicit_mask_and_prior():
     assert jnp.array_equal(result["mask_prior"], prior)
 
 
+def test_new_simulator_config_builds_direct_class_and_acquisition():
+    cfg = OmegaConf.create({
+        "simulator": {
+            "model_class": "dmri.simulators.models.Ball3StickNoise",
+            "posterior_score": False,
+            "mask_prior": {},
+            "acquisitions": [
+                {
+                    "_target_": ("dmri.simulators.random_hcp_acquisition"),
+                    "_partial_": True,
+                    "num_acquisitions": 105,
+                    "typical_prob": 1.0,
+                    "random_prob": 0.0,
+                }
+            ],
+        }
+    })
+
+    model_class, simulators = build_simulator(cfg)
+    result = simulators[0](jax.random.key(2))
+
+    assert model_class.__name__ == "Ball3StickNoise"
+    assert result["x"].shape == (105,)
+    assert "target_score" not in result
+
+
 def make_checkpoint_tree(tmp_path):
     run_dir = tmp_path / "run"
     checkpoint = run_dir / "checkpoints" / "best" / "12"
@@ -138,7 +164,7 @@ def make_checkpoint_tree(tmp_path):
         {
             "name": "example-model",
             "model": {"name": "ExampleModel"},
-            "simulator": {"sim_type": {"name": "ExampleSimulator"}},
+            "simulator": {"sim_type": {"name": "Ball3StickNoise"}},
         },
         run_dir / "config.yaml",
     )
@@ -162,6 +188,10 @@ def test_bundle_checkpoint_creates_portable_layout(tmp_path):
     assert config.run.name == "example-model"
     assert artifact.artifact_version == 1
     assert "training" not in artifact
+    assert artifact.simulator == {
+        "model_class": "dmri.simulators.models.Ball3StickNoise"
+    }
+    assert "acquisitions" not in artifact.simulator
 
 
 def test_bundle_checkpoint_defaults_to_best_and_latest(tmp_path):
@@ -184,7 +214,7 @@ def test_load_cfg_migrates_legacy_timestamp_layout(tmp_path):
             "name": "legacy",
             "seed": 9,
             "model": {"name": "ExampleModel"},
-            "simulator": {"sim_type": {"name": "ExampleSimulator"}},
+            "simulator": {"sim_type": {"name": "Ball3StickNoise"}},
             "train": {"track_ema": False},
         },
         hydra_dir / "config.yaml",

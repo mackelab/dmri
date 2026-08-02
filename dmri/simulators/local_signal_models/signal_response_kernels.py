@@ -11,8 +11,8 @@ from dmri.utils.dmriutils import cart2sph
 
 class StickKernel(SignalKernel):
     theta_dim: int = 1
-    lam_min: float = Stick.max_lam
-    lam_max: float = Stick.min_lam
+    lam_min: float = Stick.min_lam
+    lam_max: float = Stick.max_lam
 
     def __init__(self, lam_par: float):
         self.lam_par = lam_par
@@ -64,10 +64,11 @@ class ZeppelinKernel(SignalKernel):
         lam_par: float,
         rng=None,
     ) -> ArrayLike:
-        """Compute the log signal for given b-values and b-vectors."""
+        """Signal for the given b-values and b-vectors."""
         signal_fn = jax.vmap(Zeppelin.signal_fn, in_axes=(0, None, None, None))
         mu = cart2sph(mu)
-        return signal_fn(acq, mu, lam_perp, lam_par)
+        # Zeppelin.signal_fn takes (acq, mu, lambda_par, lambda_perp).
+        return signal_fn(acq, mu, lam_par, lam_perp)
 
     @classmethod
     def to_params(cls, theta: ArrayLike) -> tuple:

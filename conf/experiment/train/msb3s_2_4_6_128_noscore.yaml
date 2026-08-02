@@ -12,7 +12,7 @@ defaults:
 - _self_
 - override /infrastructure/partition: h100_long
 - override /simulator: multishell_ball3stick_shared
-- override /simulator/acquisition_scheme: multi
+- override /simulator/acquisition: multi
 - override /model: dmri
 run:
   name: msb3s_2_4_6_128_noscore

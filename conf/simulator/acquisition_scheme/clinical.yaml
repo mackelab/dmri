@@ -1,5 +1,0 @@
-name: clinical
-schemes:
-  - name: clinical
-    params:
-      num_acquisitions: 35

@@ -10,6 +10,10 @@ tracking:
     project: dmri
     entity: null
 
+simulator:
+  posterior_score: false
+  mask_prior: {}
+
 hydra:
   run:
     dir: results/${run.name}/${now:%Y-%m-%d_%H-%M-%S}
@@ -19,7 +23,8 @@ hydra:
 
 defaults:
   - _self_
-  - simulator: simple
+  - simulator: ball_stick_zeppelin
+  - simulator/acquisition: hardi
   - model: dmri
   - training: default
   - infrastructure/launcher: slurm
