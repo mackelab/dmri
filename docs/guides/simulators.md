@@ -40,12 +40,14 @@ bvecs = jax.random.normal(jax.random.key(0), (100, 3))
 bvecs = bvecs / jnp.linalg.norm(bvecs, axis=-1, keepdims=True)
 acq = acquisition_scheme(bvals, bvecs)
 
+
 # 2) Model definition
 class BallStickZeppelin(MultiCompartment):
     model_types = [Ball, Stick, Zeppelin]
     noise_types = [BoundedRicianNoise]  # remove or swap for Gaussian if needed
     fraction_prior = jnp.array([1.0, 1.0, 1.0])
     mask_prior_kwargs = {"alpha": 2.0, "beta": 2.0, "min_active_models": 1}
+
 
 # 3) Sample theta + mask and simulate
 mask_prior = BallStickZeppelin.create_mask_prior()
@@ -70,7 +72,9 @@ mask = jnp.array([True, False, True, True])  # 3 models + 1 noise
 theta = jax.random.normal(jax.random.key(0), (BallStickZeppelin.theta_dim,))
 
 # Map theta to physical parameters conditioned on the mask
-fractions, comps, noises, _, shared = BallStickZeppelin.to_params(theta, model_mask=mask)
+fractions, comps, noises, _, shared = BallStickZeppelin.to_params(
+    theta, model_mask=mask
+)
 
 # Round-trip back to theta (useful for diagnostics)
 theta_roundtrip = BallStickZeppelin.to_theta(
@@ -133,4 +137,4 @@ signal = ssfp_signal_fn(
 
 Key references: Stejskal & Tanner (1965) for pulsed-gradient signals; Callaghan (1991) for restricted diffusion; Behrens et al. (2003) for Ball–Stick mixtures; and Gudbjartsson & Patz (1995) for magnitude-noise models.
 
-Continue with the [multi-compartment notebook](../examples/02_dmri_multicompartment_model.md), or look up exact signatures in the [simulator API](../reference/simulators.md).
+Continue with the [multi-compartment notebook](../examples/02_dmri_multicompartment_model.ipynb), or look up exact signatures in the [simulator API](../reference/simulators.md).

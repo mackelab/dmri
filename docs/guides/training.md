@@ -21,6 +21,7 @@ Key output folders under `results/<run_name>/<timestamp>/`:
 
 - Override inline: `dmri train training.dataloader.train_loader.batch_size=128 training.optimizer.learning_rate=1e-3`
 - Switch simulator presets: `dmri train +experiment/train=msb3s_2_4_6_128`
+- Select simulation behavior independently: `dmri train simulator=ball3stick_shared simulator/acquisition=multi simulator.posterior_score=true`
 - Target specific hardware profiles via `conf/infrastructure/partition/*.yaml`.
 
 ## Config map
@@ -35,6 +36,7 @@ conf/
 ├── infrastructure/
 ├── model/
 ├── simulator/
+│   └── acquisition/
 └── training/
     ├── dataloader/
     ├── optimizer/
@@ -45,7 +47,8 @@ conf/
 - `training/default*.yaml`: training loop knobs such as `inner_steps`, checkpoint/eval cadence, max wall-clock hours, EMA tracking, loss weights, label smoothing, and recovery thresholds.
 - `training/dataloader/*.yaml`: simulation and loader settings with CPU, GPU, and multi-GPU variants.
 - `training/optimizer/*.yaml`: optimizer choice and hyperparameters.
-- `simulator/*.yaml`: signal simulation recipes and acquisition schemes to drive synthetic training data.
+- `simulator/*.yaml`: importable `MultiCompartment` class paths; adding a named simulator requires one file.
+- `simulator/acquisition/*.yaml`: importable acquisition-function partials. Acquisition and posterior-score choices are independent of the simulator class.
 - `model/*.yaml`: neural architecture definitions for dmri/ssfp variants.
 - `experiment/train/*.yaml`: ready-made presets combining simulator/model choices with training overrides.
 - `infrastructure/partition/*.yaml`: cluster/queue presets.
@@ -55,7 +58,12 @@ conf/
 
 - Latest checkpoint: the highest numeric step directory under `results/<run>/<timestamp>/checkpoints/`
 - Best checkpoint (if tracked): `results/<run>/<timestamp>/checkpoints/best/`
-- Use `dmri.train.utils.load_checkpoint(path, which="best")` to restore models inside notebooks.
+- `load_checkpoint(path)` restores the latest step by default; pass `which="best"`
+  to restore the validation-selected checkpoint instead.
+
+The portable artifact stores only the simulator model class needed to reconstruct
+the network. Acquisition generation, mask-prior overrides, and posterior-score
+targets remain in the full frozen training config.
 
 ### Publish pretrained checkpoints
 
@@ -85,7 +93,7 @@ Load only the requested model subfolder from the Hub cache:
 from flax import nnx
 from dmri.train.utils import load_checkpoint
 
-checkpoint, model, simulators = load_checkpoint(
+checkpoint, model, simulator_model = load_checkpoint(
     repo_id="manugloeck/dmri-pretrained",
     model_name="b3s_2_4_6_64",
     which="latest",

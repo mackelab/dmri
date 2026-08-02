@@ -2,7 +2,7 @@
 
 Core network building blocks for embedding, model selection, and inference. Start with `dmri_reconstruction_model` for the assembled model; use the remaining modules when customizing an architecture.
 
-For an end-to-end workflow, see [training from scratch](../examples/04_train_standalone.md).
+For an end-to-end workflow, see [training from scratch](../examples/04_train_standalone.ipynb).
 
 ## Reconstruction and selection
 

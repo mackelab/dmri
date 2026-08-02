@@ -5,7 +5,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENCE)
 [![Made with JAX](https://img.shields.io/badge/Made%20with-JAX-007acc.svg)](https://github.com/google/jax)
 
-This package provides simulation-based inference and model selection for fibre reconstruction models in diffusion MRI. It combines common microstructural components into configurable multicompartment models and infers both model composition and continuous parameters.
+> **Pre-release software.** DMRI is not yet stable. The API and CLI may change before a 1.0 release.
+
+This package provides simulators and inference for diffusion MRI model selection. It combines microstructural signal compartments into configurable multicompartment models and infers both model composition and continuous parameters.
 
 **Docs:** https://www.mackelab.org/dmri/
 
@@ -28,6 +30,9 @@ Prefer pip? Use `pip install -e '.[dev]'`. CUDA users can opt into `.[cuda]`.
 ## CLI in one glance
 
 ### Prediction
+
+`dmri predict` is the easiest way to apply a pretrained model to diffusion MRI data.
+
 ```bash
 dmri predict FOLDER
 ```
@@ -37,6 +42,7 @@ dmri predict FOLDER
 Pretrained models are acquisition-specific. Confirm that the selected checkpoint is compatible with the input acquisition scheme; the standard filenames alone do not establish compatibility. DMRI is research software and has not been clinically validated.
 
 ### Training
+
 ```bash
 dmri train --help                      # discover overrides
 dmri train +experiment/train=b3s_2_4_6_128 infrastructure/launcher=local infrastructure/partition=none tracking.enabled=false
@@ -46,6 +52,7 @@ dmri train training.optimizer.learning_rate=1e-3
 Runs write to `results/<name>/<timestamp>/` with checkpoints and the frozen `.hydra/` config. Use `dmri.train.utils.load_checkpoint(...)` to restore in notebooks.
 
 ### Evaluation
+
 ```bash
 dmri eval --help
 dmri eval +experiment/eval=eval_b3s_no_selection \
@@ -66,7 +73,7 @@ conf/
 ├── experiment/           # train/eval presets
 ├── infrastructure/       # local/slurm and resource profiles
 ├── model/                # dmri/ssfp architectures
-├── simulator/            # signal simulation recipes
+├── simulator/            # model classes + acquisition factories
 ├── training/             # loop knobs
     ├── dataloader/       # buffer sizes, batching, prefetch
     ├── optimizer/        # optax configs, schedulers, EMA
@@ -75,6 +82,13 @@ conf/
 ```
 
 Evaluation metrics are composed under `conf/evaluation/export/theta/metrics/` and pulled into exporter presets.
+
+A simulator is selected by importable class path. External models require no
+registry or repository config change:
+
+```bash
+dmri train simulator.model_class=my_package.models.MyModel
+```
 
 ## Usage
 
@@ -98,22 +112,26 @@ bvecs = bvecs / jnp.linalg.norm(bvecs, axis=-1, keepdims=True)
 acq = acquisition_scheme(bvals, bvecs)
 
 # Example simulator for a single ball
-theta = np.random.randn(Ball.theta_dim) # Theta will always be normal
-ball = Ball.from_theta(theta) # Deterministically maps theta to physical parameters
-signal = ball.signal(acq) # Simulate signal
+theta = np.random.randn(Ball.theta_dim)  # Theta will always be normal
+ball = Ball.from_theta(theta)  # Deterministically maps theta to physical parameters
+signal = ball.signal(acq)  # Simulate signal
 
-plt.plot(bvals, signal) # Plot signal
+plt.plot(bvals, signal)  # Plot signal
+
 
 # But you can also combine multiple models
 class BallStickZeppelin(MultiCompartment):
-    model_types=[Ball, Stick, Zeppelin]
+    model_types = [Ball, Stick, Zeppelin]
     noise_types = []
+
 
 theta = np.random.randn(BallStickZeppelin.theta_dim)
 # With all models
 ball_stick_zeppelin = BallStickZeppelin.from_theta(theta)
 # With only ball and stick
-ball_stick = BallStickZeppelin.from_theta(theta, model_mask=jnp.array([True, True, False]))
+ball_stick = BallStickZeppelin.from_theta(
+    theta, model_mask=jnp.array([True, True, False])
+)
 
 # Simulate signal
 signal = ball_stick_zeppelin.signal(acq)

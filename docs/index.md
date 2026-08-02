@@ -6,11 +6,11 @@ hide:
 
 <div class="landing-hero">
   <div class="landing-hero__copy">
-    <p class="landing-kicker"><span></span> Simulation-based inference for diffusion MRI</p>
+    <p class="landing-kicker"><span></span> Diffusion MRI model selection</p>
     <h1>Model selection and parameter inference for diffusion MRI.</h1>
-    <p class="landing-lede">DMRI provides JAX implementations of composable tissue models and amortized inference methods for estimating model structure and biophysical parameters across acquisition protocols.</p>
+    <p class="landing-lede">DMRI provides JAX implementations of composable tissue models and inference methods for estimating model structure and biophysical parameters.</p>
     <div class="landing-actions">
-      <a class="md-button md-button--primary" href="guides/prediction/">Run a pretrained model</a>
+      <a class="md-button md-button--primary" href="getting-started/">Get started</a>
       <a class="landing-text-link" href="examples/">Example notebooks <span aria-hidden="true">→</span></a>
     </div>
     <ul class="landing-tags" aria-label="Key capabilities">
@@ -39,7 +39,7 @@ hide:
     </a>
     <a href="examples/04_train_standalone/" class="workflow-step">
       <span class="workflow-step__number">03</span>
-      <div><h3>Estimate</h3><p>Train amortized inference networks on simulated observations.</p></div>
+      <div><h3>Estimate</h3><p>Train inference networks on simulated observations.</p></div>
     </a>
     <a href="guides/prediction/" class="workflow-step">
       <span class="workflow-step__number">04</span>

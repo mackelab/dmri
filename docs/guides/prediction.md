@@ -142,7 +142,7 @@ dmri predict FOLDER --seed 1 --mask-samples 50 --theta-samples 50
 
 The number of mask samples must be at least the number of theta samples.
 
-Larger sample counts change the amount of sampling work. See the [prediction CLI reference](../reference/cli_predict.md) for the complete option summary.
+Larger sample counts change the amount of sampling work. See the [prediction CLI reference](../cli/predict.md) for the complete option summary.
 
 ## Hardware
 
