@@ -25,7 +25,7 @@ Prebaked experiments live in `conf/experiment/eval/`:
 Override any Hydra parameter inline:
 
 ```bash
-dmri eval +experiment/eval=eval_ground_truth_b3s evaluation/theta/corrector=smc
+dmri eval +experiment/eval=eval_ground_truth_b3s evaluation/theta/corrector@evaluation.sampling.theta.corrector=smc
 ```
 
 The deprecated `dmri_eval` command remains available as a compatibility alias for `dmri eval`.

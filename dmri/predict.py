@@ -412,7 +412,8 @@ def _hydra_overrides(args, folder: Path, output_dir: Path) -> list[str]:
         f"evaluation.precision={getattr(args, 'precision', None) or 'fp32'}"
     )
     overrides.append(
-        f"evaluation/theta/corrector={getattr(args, 'corrector', None) or 'auto'}"
+        "evaluation/theta/corrector@evaluation.sampling.theta.corrector="
+        f"{getattr(args, 'corrector', None) or 'auto'}"
     )
     num_steps = getattr(args, "num_steps", None)
     if num_steps is not None:

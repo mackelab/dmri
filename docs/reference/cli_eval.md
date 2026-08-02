@@ -6,7 +6,7 @@ The `dmri eval` command is the advanced Hydra interface. It pulls defaults from 
 
 - List overrides for a preset: `dmri eval +experiment/eval=eval_b3s_best_model_selection --help`
 - Dry-run the resolved config: `dmri eval +experiment/eval=eval_b3s_best_model_selection --cfg job`
-- Override inline: `dmri eval +experiment/eval=eval_ground_truth_b3s evaluation/theta/corrector=smc`
+- Override inline: `dmri eval +experiment/eval=eval_ground_truth_b3s evaluation/theta/corrector@evaluation.sampling.theta.corrector=smc`
 
 The deprecated `dmri_eval` executable remains as a compatibility alias.
 

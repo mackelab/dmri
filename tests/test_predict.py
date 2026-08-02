@@ -146,7 +146,10 @@ def test_preset_reaches_the_hydra_overrides(input_folder):
     assert "evaluation.sampling.theta.num_samples=25" in overrides
     assert "evaluation.sampling.mask.n_samples=25" in overrides
     assert "evaluation.precision=fp16" in overrides
-    assert "evaluation/theta/corrector=none" in overrides
+    assert (
+        "evaluation/theta/corrector@evaluation.sampling.theta.corrector=none"
+        in overrides
+    )
 
 
 def test_best_model_mode_uses_one_model_per_voxel(input_folder):
