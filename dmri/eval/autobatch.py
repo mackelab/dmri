@@ -44,11 +44,18 @@ MIN_HOST_BUDGET = 512 * 1024**2
 DEFAULT_MIN_BATCH = 256
 # Round batch sizes to a multiple of this so runs do not trace many shapes.
 SHAPE_QUANTUM = 256
-PROBE_SIZES = (8, 64)
+PROBE_SIZES = (8, 1024)
 # XLA's estimate excludes allocator fragmentation; the OOM halving is the net.
 SAFETY_FACTOR = 0.9
-# How many times the probe may correct itself against a measurement.
-REFINE_ROUNDS = 3
+# How many measure-and-predict rounds to spend closing on the ceiling.
+REFINE_ROUNDS = 4
+# Most a single probe may grow over the last size known to fit. Generous,
+# because the affine fit overestimates cost and so predicts conservatively;
+# the cap only guards against a badly wrong fit leaping into an OOM.
+MAX_PROBE_GROWTH = 16.0
+# Stop refining once the predicted gain is this small. Chasing the last few
+# percent costs a full compile per step for no practical gain.
+BISECT_TOLERANCE = 0.10
 # Rows needed per SM before the device is reasonably busy.
 COMPUTE_FLOOR_PER_CORE = 32
 
@@ -145,7 +152,7 @@ def device_memory_budget(device):
     """
     try:
         stats = device.memory_stats()
-    except Exception:
+    except RuntimeError:
         stats = None
     if not stats:
         return host_memory_budget()
@@ -188,14 +195,14 @@ def code_fingerprint():
         for path in sorted(root.rglob("*.py")):
             digest.update(str(path.relative_to(root)).encode())
             digest.update(path.read_bytes())
-    except Exception:
+    except OSError:
         # A fingerprint we cannot compute simply means less cache reuse.
         digest.update(b"unknown")
 
     for package in ("jax", "jaxlib", "flax", "probjax"):
         try:
             digest.update(f"{package}={metadata.version(package)}".encode())
-        except Exception:
+        except metadata.PackageNotFoundError:
             pass
     return digest.hexdigest()[:16]
 
@@ -288,16 +295,26 @@ def _analyzed_bytes(stats):
 
 
 def _probe_at(fn, batch_size, example_args, key_example):
-    """Compile ``fn`` for ``batch_size`` rows and return its analyzed byte cost."""
+    """Compile ``fn`` for ``batch_size`` rows and return its analyzed byte cost.
+
+    Releases everything it allocated before returning. A retained executable
+    counts against the device for the next probe, which would make each
+    measurement depend on the ones before it and on the order they ran in.
+    """
 
     def tile(example):
         example = jnp.asarray(example)
         return jnp.zeros((batch_size, *example.shape[1:]), dtype=example.dtype)
 
-    args = [tile(arg) for arg in example_args]
-    keys = jax.random.split(jnp.asarray(key_example), batch_size)
-    compiled = jax.jit(fn).lower(keys, *args).compile()
-    return _analyzed_bytes(compiled.memory_analysis())
+    args = keys = compiled = None
+    try:
+        args = [tile(arg) for arg in example_args]
+        keys = jax.random.split(jnp.asarray(key_example), batch_size)
+        compiled = jax.jit(fn).lower(keys, *args).compile()
+        return _analyzed_bytes(compiled.memory_analysis())
+    finally:
+        del args, keys, compiled
+        jax.clear_caches()
 
 
 def probe_batch_size(
@@ -313,64 +330,93 @@ def probe_batch_size(
 ):
     """Find the largest batch that fits in ``budget`` using XLA's memory analysis.
 
-    Fits ``bytes(B) = a*B + b`` from two small compilations, solves for the
-    largest B, then recompiles at that B to check the extrapolation held,
-    shrinking until it does. That validating compile is at the shape the run
-    will use, so it is not wasted.
+    Approaches the ceiling from below. A compile that exceeds device memory
+    fails, and fails slowly -- roughly twice the cost of one that succeeds --
+    and leaves allocations behind that skew the next measurement. So rather than
+    probing upward until something breaks, each measurement refines an affine
+    cost model and predicts the next size, with growth capped so the prediction
+    creeps up instead of leaping past the limit.
 
     Returns None if anything goes wrong, leaving the caller on its heuristic.
     """
     usable_budget = budget * SAFETY_FACTOR
+    small, large = probe_sizes
 
-    def solve(slope, intercept):
+    def measure(size):
+        """Analyzed bytes at ``size``, or None if it could not be compiled."""
+        try:
+            return _probe_at(fn, size, example_args, key_example)
+        except Exception as error:
+            if not _looks_like_oom(error) and logger is not None:
+                logger.info(f"Batch-size probe failed at {size} ({error}).")
+            return None
+
+    def predict(anchor_size, anchor_bytes):
+        """Largest size the affine fit through two points says will fit."""
+        slope = (anchor_bytes - bytes_small) / max(anchor_size - small, 1)
         if slope <= 0:
             return None
+        intercept = anchor_bytes - slope * anchor_size
         usable = usable_budget - intercept
         if usable <= 0:
             return min_batch
         return _clamp(usable / slope, min_batch, max_batch)
 
-    small, large = probe_sizes
-    try:
-        bytes_small = _probe_at(fn, small, example_args, key_example)
-        bytes_large = _probe_at(fn, large, example_args, key_example)
-    except Exception as error:  # pragma: no cover - hardware/compiler dependent
-        if logger is not None:
-            logger.info(f"Batch-size probe failed ({error}); using heuristic guess.")
+    bytes_small = measure(small)
+    bytes_large = measure(large)
+    if bytes_small is None or bytes_large is None:
         return None
 
-    slope = (bytes_large - bytes_small) / (large - small)
-    intercept = bytes_small - slope * small
-    candidate = solve(slope, intercept)
+    if bytes_large > usable_budget:
+        # Even the second probe size does not fit, so search downward instead of
+        # treating it as a known-good floor.
+        candidate = predict(large, bytes_large)
+        if candidate is None or candidate >= large:
+            return _clamp(min_batch, min_batch, max_batch)
+        measured = measure(candidate)
+        while measured is None or measured > usable_budget:
+            candidate = _clamp(candidate // 2, min_batch, max_batch)
+            if candidate <= min_batch:
+                return _clamp(min_batch, min_batch, max_batch)
+            measured = measure(candidate)
+        return candidate
+
+    best = _clamp(large, min_batch, max_batch)
+    candidate = predict(large, bytes_large)
     if candidate is None:
         return None
 
     for _ in range(refine_rounds):
-        if candidate <= min_batch:
-            break
-        try:
-            measured = _probe_at(fn, candidate, example_args, key_example)
-        except Exception as error:
-            if _looks_like_oom(error):
-                candidate = _clamp(candidate // 2, min_batch, max_batch)
-                continue
-            if logger is not None:
-                logger.info(f"Batch-size refinement failed ({error}); using estimate.")
+        # Creep towards the ceiling: the fit is least reliable furthest from
+        # the points it was built on, so do not leap.
+        capped = _clamp(min(candidate, best * MAX_PROBE_GROWTH), min_batch, max_batch)
+        if capped <= best:
             break
 
-        if measured <= usable_budget:
-            break
-        # Re-fit through the measured point; far more reliable than the
-        # extrapolation from tiny batches.
-        slope = max((measured - bytes_small) / (candidate - small), 1e-9)
-        intercept = measured - slope * candidate
-        shrunk = solve(slope, intercept)
-        if shrunk is None or shrunk >= candidate:
-            candidate = _clamp(candidate // 2, min_batch, max_batch)
-        else:
-            candidate = shrunk
+        measured = measure(capped)
+        if measured is None:
+            # Too big after all; back off and try once more from lower down.
+            candidate = _clamp(best + (capped - best) // 2, min_batch, max_batch)
+            if candidate <= best:
+                break
+            continue
 
-    return candidate
+        if measured > usable_budget:
+            candidate = predict(capped, measured)
+            if candidate is None or candidate <= best:
+                break
+            continue
+
+        best = capped
+        if capped >= max_batch:
+            break
+        candidate = predict(capped, measured)
+        if candidate is None:
+            break
+        if candidate <= best * (1 + BISECT_TOLERANCE):
+            break
+
+    return best
 
 
 def _clamp(value, min_batch, max_batch):
