@@ -6,6 +6,7 @@ from typing import Any
 from omegaconf import DictConfig, OmegaConf
 
 from dmri.config.migrate import CONFIG_SCHEMA_VERSION, normalize_config
+from dmri.simulators.config import simulator_model_config
 
 ARTIFACT_VERSION = 1
 
@@ -18,7 +19,7 @@ def build_artifact_config(cfg: DictConfig | dict[str, Any]) -> DictConfig:
         "config_schema_version": CONFIG_SCHEMA_VERSION,
         "parameter_tree_version": 1,
         "model": OmegaConf.to_container(canonical.model, resolve=False),
-        "simulator": OmegaConf.to_container(canonical.simulator, resolve=False),
+        "simulator": simulator_model_config(canonical),
     }
     return OmegaConf.create(artifact)
 
