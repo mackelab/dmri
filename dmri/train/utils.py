@@ -9,8 +9,8 @@ from huggingface_hub import HfApi, snapshot_download
 from omegaconf import OmegaConf
 
 from dmri.config import build_artifact_config, load_artifact_config, normalize_config
+from dmri.simulators.config import resolve_simulator_model
 from dmri.train.build_model import build_model
-from dmri.train.build_simulator import build_simulator
 from dmri.train.checkpointing import CheckpointManager
 
 
@@ -258,7 +258,7 @@ def load_checkpoint(
         from dmri.eval.precision import apply_precision_to_cfg
 
         apply_precision_to_cfg(build_cfg, precision)
-    sim_type, simulator = build_simulator(build_cfg)
+    sim_type = resolve_simulator_model(build_cfg)
     model = build_model(build_cfg, sim_type)
     model.eval()
 
@@ -294,4 +294,4 @@ def load_checkpoint(
     if checkpoint is None:
         raise FileNotFoundError(f"No checkpoint found in {checkpoint_dir}")
 
-    return checkpoint, model, simulator
+    return checkpoint, model, sim_type
