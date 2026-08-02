@@ -14,6 +14,7 @@ from dmri.eval.precision import (
     apply_precision_to_cfg,
     is_half,
     normalize_precision,
+    resolve_precision_for_backend,
 )
 
 
@@ -42,12 +43,24 @@ def test_half_presets_keep_params_and_accumulation_in_fp32(name):
 @pytest.mark.parametrize("name", PRECISION_CHOICES)
 def test_apply_precision_patches_model_cfg(name):
     cfg = OmegaConf.create({"model": {"model_dim": 64}})
-    resolved = apply_precision_to_cfg(cfg, name)
+    resolved = apply_precision_to_cfg(cfg, name, platform="gpu")
     assert resolved == name
     for key, value in PRECISION_PRESETS[name].items():
         assert cfg.model[key] == value
     # Unrelated keys survive.
     assert cfg.model.model_dim == 64
+
+
+def test_fp16_falls_back_to_fp32_on_cpu():
+    assert resolve_precision_for_backend("fp16", "cpu") == FP32
+    assert resolve_precision_for_backend("fp16", "gpu") == "fp16"
+    assert resolve_precision_for_backend("bf16", "cpu") == "bf16"
+
+    cfg = OmegaConf.create({"model": {"model_dim": 64}})
+    resolved = apply_precision_to_cfg(cfg, "fp16", platform="cpu")
+
+    assert resolved == FP32
+    assert "dtype" not in cfg.model
 
 
 def test_aliases_and_unknown_values():

@@ -60,16 +60,41 @@ def normalize_precision(precision):
     return name
 
 
+def resolve_precision_for_backend(precision, platform=None):
+    """Return a precision supported by the selected JAX backend.
+
+    CPU backends do not consistently implement fp16 dot products with fp32
+    accumulation, notably on macOS. Keep fp16 as a GPU optimization and fall
+    back to fp32 elsewhere.
+    """
+    name = normalize_precision(precision)
+    if platform is None:
+        import jax
+
+        platform = jax.default_backend()
+    if name == "fp16" and str(platform).lower() == "cpu":
+        return FP32
+    return name
+
+
 def is_half(precision) -> bool:
     return normalize_precision(precision) != FP32
 
 
-def apply_precision_to_cfg(cfg, precision, logger=None):
+def apply_precision_to_cfg(cfg, precision, logger=None, *, platform=None):
     """Patch ``cfg.model`` in place with the preset for ``precision``.
 
     Returns the normalized name. ``fp32`` is a no-op.
     """
-    name = normalize_precision(precision)
+    requested = normalize_precision(precision)
+    name = resolve_precision_for_backend(requested, platform)
+    if logger is not None and name != requested:
+        logger.warning(
+            "%s is unsupported on the %s backend; using %s instead.",
+            requested,
+            platform or "CPU",
+            name,
+        )
     preset = PRECISION_PRESETS[name]
     if not preset:
         return name

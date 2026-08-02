@@ -33,7 +33,11 @@ from dmri.eval.export_theta import (
     export_thetas_to_files_ball3stick,
 )
 from dmri.eval.load_data import load_and_process_data
-from dmri.eval.precision import is_half, normalize_precision
+from dmri.eval.precision import (
+    is_half,
+    normalize_precision,
+    resolve_precision_for_backend,
+)
 from dmri.eval.sampling_methods import (
     build_base_theta_sample_fn,
     build_corrector_fn,
@@ -606,7 +610,14 @@ def _run_eval_pipeline(
     log.info(f"Setting seed: {cfg.seed}")
     key = jax.random.PRNGKey(cfg.seed)
 
-    precision = normalize_precision(_cfg_get(cfg, "precision"))
+    requested_precision = normalize_precision(_cfg_get(cfg, "precision"))
+    precision = resolve_precision_for_backend(requested_precision)
+    if precision != requested_precision:
+        log.warning(
+            "%s is unsupported on the CPU backend; using %s instead.",
+            requested_precision,
+            precision,
+        )
     if is_half(precision):
         log.info(
             "Using %s for the network forward pass; parameters, the sampler and "
