@@ -12,6 +12,7 @@ from dmri.nn.dmri_reconstruction_model import (
     DMRIInferenceModel,
     DMRIInferenceModelConfig,
     DMRIInferenceModelConfigMaskPriorAmortized,
+    DMRIInferenceModelConfigMaskPriorAmortizedPPP,
 )
 from dmri.nn.embedding_net import (
     BvalBvecSignalEmbeddingNet,
@@ -74,6 +75,23 @@ def test_dmri_inference_model_amortized(rng, simulator, data):
     assert isinstance(output, tuple)  # Model returns multiple outputs
     assert output[0].shape == model_mask.shape
     assert output[1].shape == theta.shape
+
+
+def test_legacy_ppp_checkpoint_architecture_still_builds(rng):
+    cfg = DMRIInferenceModelConfigMaskPriorAmortizedPPP(
+        simulator=Ball3Stick,
+        model_dim=64,
+        embedding_cfg=DMRIEmbeddingConfig(),
+        model_selection_cfg=DMRIModelSelectionAmortizedPriorConfig(
+            outlayer="mlp", outnorm=False
+        ),
+        theta_inference_cfg=DMRIThetaInferenceConfig(),
+    )
+
+    model = DMRIInferenceModel(cfg, rng)
+
+    assert type(model.tokenizer).__name__ == "DMRITokenizerPPP"
+    assert type(model.model_decoder.output).__name__ == "MLP"
 
 
 def test_binary_decoder_requires_mask_prior(simulator):

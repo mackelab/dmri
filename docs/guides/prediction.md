@@ -20,7 +20,7 @@ Run the default model with:
 dmri predict FOLDER
 ```
 
-The default model is `b3s_2_4_6_128` from the public Hugging Face repository `manugloeck/dmri-pretrained`. Downloads are cached by `huggingface_hub`.
+The default model is `msb3s_2_4_6_128`, a multi-shell Ball3Stick model from the public Hugging Face repository `manugloeck/dmri-pretrained`. Downloads are cached by `huggingface_hub`.
 
 !!! warning "Acquisition compatibility"
     A pretrained checkpoint expects an acquisition scheme compatible with its training configuration. Required filenames and valid NIfTI inputs do not by themselves establish compatibility. Confirm the selected model's expected acquisition before interpreting results.

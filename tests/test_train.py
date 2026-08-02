@@ -131,6 +131,9 @@ def make_checkpoint_tree(tmp_path):
     checkpoint.mkdir(parents=True)
     (checkpoint / "_CHECKPOINT_METADATA").write_text("{}")
     (checkpoint / ".zarray").write_text("{}")
+    latest = run_dir / "checkpoints" / "15"
+    latest.mkdir()
+    (latest / "_CHECKPOINT_METADATA").write_text("{}")
     OmegaConf.save(
         {
             "name": "example-model",
@@ -159,6 +162,18 @@ def test_bundle_checkpoint_creates_portable_layout(tmp_path):
     assert config.run.name == "example-model"
     assert artifact.artifact_version == 1
     assert "training" not in artifact
+
+
+def test_bundle_checkpoint_defaults_to_best_and_latest(tmp_path):
+    run_dir = make_checkpoint_tree(tmp_path)
+    temporary = run_dir / "checkpoints" / "best" / "broken.orbax-checkpoint-tmp"
+    temporary.mkdir()
+
+    model_dir = bundle_checkpoint(run_dir, tmp_path / "bundle")
+
+    assert (model_dir / "checkpoints" / "best" / "12").is_dir()
+    assert (model_dir / "checkpoints" / "15").is_dir()
+    assert not (model_dir / "checkpoints" / "best" / temporary.name).exists()
 
 
 def test_load_cfg_migrates_legacy_timestamp_layout(tmp_path):
@@ -224,6 +239,8 @@ def test_upload_checkpoint_uses_model_subfolder(tmp_path, monkeypatch):
         def upload_folder(self, **kwargs):
             calls["upload"] = kwargs
             assert (Path(kwargs["folder_path"]) / "config.yaml").exists()
+            assert (Path(kwargs["folder_path"]) / "checkpoints" / "best").exists()
+            assert (Path(kwargs["folder_path"]) / "checkpoints" / "15").exists()
             return "commit"
 
     monkeypatch.setattr("dmri.train.utils.HfApi", FakeApi)

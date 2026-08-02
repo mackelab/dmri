@@ -70,14 +70,14 @@ upload_checkpoint_to_hub(
     "results/b3s_2_4_6_64/<timestamp>",
     "manugloeck/dmri-pretrained",
     model_name="b3s_2_4_6_64",
-    which="best",
     private=False,
 )
 ```
 
 Authenticate once before uploading with `uv run hf auth login`. Repeat the call
-with another `model_name` to add variants to the same repository. `which` accepts
-`"best"` (recommended), `"latest"`, a training-step integer, or `"all"`.
+with another `model_name` to add variants to the same repository. Uploads include
+both the best and latest checkpoints by default. For specialized bundles,
+`which` also accepts `"best"`, `"latest"`, a training-step integer, or `"all"`.
 
 Load only the requested model subfolder from the Hub cache:
 
@@ -88,7 +88,7 @@ from dmri.train.utils import load_checkpoint
 checkpoint, model, simulators = load_checkpoint(
     repo_id="manugloeck/dmri-pretrained",
     model_name="b3s_2_4_6_64",
-    which="best",
+    which="latest",
 )
 params = checkpoint.get("params_ema", checkpoint["params"])
 nnx.update(model, params)

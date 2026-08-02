@@ -32,7 +32,7 @@ Prefer pip? Use `pip install -e '.[dev]'`. CUDA users can opt into `.[cuda]`.
 dmri predict FOLDER
 ```
 
-`FOLDER` must contain `data.nii.gz`, `nodif_brain_mask.nii.gz`, `bvals`, and `bvecs`. The default `b3s_2_4_6_128` model is downloaded from the public [`manugloeck/dmri-pretrained`](https://huggingface.co/manugloeck/dmri-pretrained) repository and cached by `huggingface_hub`. Results are written below `FOLDER/dmri_output/` in `ball3stick_inference_results/` and `ball3stick_model_selection_results/`.
+`FOLDER` must contain `data.nii.gz`, `nodif_brain_mask.nii.gz`, `bvals`, and `bvecs`. The default `msb3s_2_4_6_128` multi-shell Ball3Stick model is downloaded from the public [`manugloeck/dmri-pretrained`](https://huggingface.co/manugloeck/dmri-pretrained) repository and cached by `huggingface_hub`. Results are written below `FOLDER/dmri_output/` in `ball3stick_inference_results/` and `ball3stick_model_selection_results/`.
 
 Pretrained models are acquisition-specific. Confirm that the selected checkpoint is compatible with the input acquisition scheme; the standard filenames alone do not establish compatibility. DMRI is research software and has not been clinically validated.
 

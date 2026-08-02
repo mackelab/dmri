@@ -11,7 +11,7 @@ dmri predict --list-models [--repo-id REPO_ID] [--revision REVISION]
 
 ## Model source
 
-- `--model NAME`: pretrained model name; default `b3s_2_4_6_128`.
+- `--model NAME`: pretrained model name; default `msb3s_2_4_6_128` (multi-shell Ball3Stick).
 - `--repo-id ID`: Hugging Face model repository; default `manugloeck/dmri-pretrained`.
 - `--revision REVISION`: repository branch, tag, or commit.
 - `--cache-dir PATH`: Hugging Face cache directory.
@@ -25,8 +25,9 @@ Run `dmri predict FOLDER` with nothing else and it asks for what it needs:
 
 ```text
 Model  (from manugloeck/dmri-pretrained)
-  1) b3s_2_4_6_128    recommended default <-
-  2) b3s_2_4_6_64
+  1) b3s_2_4_6_128     Ball3Stick model family - single-shell dMRI
+  2) b3s_2_4_6_64      Ball3Stick model family - compact single-shell model
+  3) msb3s_2_4_6_128   Multi-shell Ball3Stick model family - multi-shell dMRI  <-
 Choose [1]:
 
 Quality

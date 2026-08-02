@@ -41,7 +41,7 @@ Then run:
 dmri predict FOLDER
 ```
 
-The default model is `b3s_2_4_6_128` from the public `manugloeck/dmri-pretrained` Hugging Face repository. `huggingface_hub` downloads and caches it automatically. Outputs are placed below `FOLDER/dmri_output/` in `ball3stick_inference_results/` and `ball3stick_model_selection_results/`. Prediction does not compute metrics that require ground truth.
+The default model is `msb3s_2_4_6_128`, a multi-shell Ball3Stick model from the public `manugloeck/dmri-pretrained` Hugging Face repository. `huggingface_hub` downloads and caches it automatically. Outputs are placed below `FOLDER/dmri_output/` in `ball3stick_inference_results/` and `ball3stick_model_selection_results/`. Prediction does not compute metrics that require ground truth.
 
 See the [prediction guide](guides/prediction.md) for model, cache, offline, local-checkpoint, output, and sampling options.
 

@@ -42,7 +42,7 @@ def test_remote_hydra_overrides(input_folder):
     )
     overrides = _hydra_overrides(args, input_folder, input_folder / "out")
     assert "checkpoint.pretrained.repo_id=owner/repo" in overrides
-    assert "checkpoint.which=best" in overrides
+    assert "checkpoint.which=latest" in overrides
     assert "evaluation/selection=average" in overrides
     assert "evaluation.sampling.theta.num_samples=7" in overrides
     assert "~evaluation.export.theta.metrics" in overrides
@@ -250,6 +250,27 @@ def test_choose_falls_back_to_the_default_on_eof(monkeypatch):
     assert _choose("t", [("a", ""), ("b", "")], 1) == "b"
 
 
+def test_choose_uses_arrow_key_dialog_on_a_terminal(monkeypatch):
+    from dmri import predict
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True, raising=False)
+    monkeypatch.setattr("sys.stdout.isatty", lambda: True, raising=False)
+    monkeypatch.setattr(predict, "_arrow_choice", lambda *args: "gamma")
+
+    options = [("alpha", "first"), ("beta", "second"), ("gamma", "third")]
+    assert predict._choose("Model mode", options, 1) == "gamma"
+
+
+def test_arrow_dialog_cancel_uses_the_default(monkeypatch):
+    from dmri import predict
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True, raising=False)
+    monkeypatch.setattr("sys.stdout.isatty", lambda: True, raising=False)
+    monkeypatch.setattr(predict, "_arrow_choice", lambda *args: "balanced")
+
+    assert predict._choose("Quality", [("fast", ""), ("balanced", "")], 1) == "balanced"
+
+
 def test_interactive_setup_only_fills_what_is_missing(monkeypatch):
     from argparse import Namespace
 
@@ -307,6 +328,14 @@ def test_model_listing_failure_does_not_break_the_prompt(monkeypatch):
     monkeypatch.setattr(predict, "list_pretrained_models", offline)
     models = predict._available_models(Namespace(repo_id="r", revision=None))
     assert models == [predict.DEFAULT_MODEL_NAME]
+
+
+def test_known_models_have_family_descriptions():
+    from dmri.predict import _model_description
+
+    assert "Ball3Stick model family" in _model_description("b3s_2_4_6_128")
+    assert "Multi-shell Ball3Stick" in _model_description("msb3s_2_4_6_128")
+    assert _model_description("custom") == "Pretrained dMRI model"
 
 
 def test_console_is_quiet_until_a_cli_turns_it_on(capsys):

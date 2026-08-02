@@ -41,6 +41,11 @@ FIXED_MODELS = {
     "B2S": (True, True, True, False, True),
     "B3S": (True, True, True, True, True),
 }
+MODEL_DESCRIPTIONS = {
+    "b3s_2_4_6_64": "Ball3Stick model family - compact single-shell model",
+    "b3s_2_4_6_128": "Ball3Stick model family - single-shell dMRI",
+    "msb3s_2_4_6_128": "Multi-shell Ball3Stick model family - multi-shell dMRI",
+}
 
 
 def _preset_cost(name):
@@ -218,6 +223,79 @@ def _can_prompt(args) -> bool:
     )
 
 
+def _arrow_choice(title, options, default_index):
+    """Run a compact inline arrow-key selector."""
+    from prompt_toolkit.application import Application
+    from prompt_toolkit.formatted_text import FormattedText
+    from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.layout import Layout
+    from prompt_toolkit.layout.containers import Window
+    from prompt_toolkit.layout.controls import FormattedTextControl
+    from prompt_toolkit.styles import Style
+
+    selected = [default_index]
+
+    def content():
+        rows = [("class:title", f"\n{title}\n")]
+        for index, (value, description) in enumerate(options):
+            active = index == selected[0]
+            style = "class:selected" if active else ""
+            marker = ">" if active else " "
+            default = "  default" if index == default_index else ""
+            rows.append((
+                style,
+                f" {marker} {index + 1}  {value:<14} {description}{default}\n",
+            ))
+        rows.append(("class:hint", "   Up/Down move  Enter select  1-9 jump\n"))
+        return FormattedText(rows)
+
+    bindings = KeyBindings()
+
+    @bindings.add("up")
+    @bindings.add("k")
+    def move_up(event):
+        selected[0] = (selected[0] - 1) % len(options)
+
+    @bindings.add("down")
+    @bindings.add("j")
+    def move_down(event):
+        selected[0] = (selected[0] + 1) % len(options)
+
+    @bindings.add("enter")
+    def accept(event):
+        event.app.exit(result=options[selected[0]][0])
+
+    @bindings.add("c-c")
+    @bindings.add("c-d")
+    def use_default(event):
+        event.app.exit(result=options[default_index][0])
+
+    for index in range(min(len(options), 9)):
+        key = str(index + 1)
+
+        def choose_number(event, choice=index):
+            event.app.exit(result=options[choice][0])
+
+        bindings.add(key)(choose_number)
+
+    application = Application(
+        layout=Layout(
+            Window(
+                FormattedTextControl(content, focusable=True),
+                always_hide_cursor=True,
+            )
+        ),
+        key_bindings=bindings,
+        style=Style.from_dict({
+            "title": "bold",
+            "selected": "bold cyan",
+            "hint": "ansibrightblack",
+        }),
+        full_screen=False,
+    )
+    return application.run()
+
+
 def _choose(title, options, default_index, stream=None):
     """Ask the user to pick one of ``options``; returns the chosen value.
 
@@ -225,6 +303,13 @@ def _choose(title, options, default_index, stream=None):
     the default, so pressing enter through the prompts is always valid.
     """
     stream = stream or sys.stdout
+    if stream is sys.stdout and sys.stdin.isatty() and sys.stdout.isatty():
+        try:
+            return _arrow_choice(title, options, default_index)
+        except (EOFError, ImportError, OSError):
+            # Unsupported terminals retain the number/name prompt below.
+            pass
+
     print(f"\n{title}", file=stream)
     for index, (value, description) in enumerate(options, start=1):
         marker = " <-" if index - 1 == default_index else ""
@@ -247,12 +332,20 @@ def _choose(title, options, default_index, stream=None):
 
 
 def _available_models(args):
-    """Model names in the configured repo, falling back to the default name."""
+    """Return model names from the configured repo, falling back to the default.
+
+    Network or filesystem errors are swallowed so the CLI can still offer the
+    built-in default when offline.
+    """
     try:
         models = list_pretrained_models(args.repo_id, revision=args.revision)
-    except Exception:
+    except (ConnectionError, OSError):
         return [DEFAULT_MODEL_NAME]
     return models or [DEFAULT_MODEL_NAME]
+
+
+def _model_description(name):
+    return MODEL_DESCRIPTIONS.get(name, "Pretrained dMRI model")
 
 
 def _interactive_setup(args) -> None:
@@ -264,10 +357,7 @@ def _interactive_setup(args) -> None:
         )
         args.model = _choose(
             f"Model  (from {args.repo_id})",
-            [
-                (name, "recommended default" if name == DEFAULT_MODEL_NAME else "")
-                for name in models
-            ],
+            [(name, _model_description(name)) for name in models],
             default_index,
         )
 
@@ -287,10 +377,10 @@ def _interactive_setup(args) -> None:
                 [
                     (
                         "per-sample",
-                        "posterior model per voxel and parameter sample (default)",
+                        "full uncertainty - model varies across posterior draws",
                     ),
-                    ("best", "highest-probability model per voxel"),
-                    ("fixed", "one chosen model for every voxel"),
+                    ("best", "stable maps - highest-probability model per voxel"),
+                    ("fixed", "controlled fit - one model throughout the brain"),
                 ],
                 0,
             )
@@ -300,9 +390,9 @@ def _interactive_setup(args) -> None:
         args.fixed_model = _choose(
             "Fixed model",
             [
-                ("B1S", "ball + 1 stick"),
-                ("B2S", "ball + 2 sticks"),
-                ("B3S", "ball + 3 sticks"),
+                ("B1S", "ball + 1 stick - simplest anisotropic model"),
+                ("B2S", "ball + 2 sticks - two-way crossings"),
+                ("B3S", "ball + 3 sticks - complex crossings"),
             ],
             2,
         )
@@ -375,7 +465,7 @@ def _hydra_overrides(args, folder: Path, output_dir: Path) -> list[str]:
         f"evaluation.input.path={folder}",
         f"run.output_dir={output_dir}",
         f"checkpoint.model_name={args.model}",
-        "checkpoint.which=best",
+        "checkpoint.which=latest",
         f"run.seed={args.seed}",
         f"evaluation.sampling.mask.n_samples={args.mask_samples}",
         f"evaluation.sampling.theta.num_samples={args.theta_samples}",

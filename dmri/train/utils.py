@@ -85,7 +85,9 @@ def _checkpoint_source(path: Path, which: str | int) -> tuple[Path, Path]:
     return source, Path("checkpoints") / source.name
 
 
-def bundle_checkpoint(path, output_dir, model_name=None, which="best") -> Path:
+def bundle_checkpoint(
+    path, output_dir, model_name=None, which="best_and_latest"
+) -> Path:
     """Create a portable checkpoint bundle for a model repository.
 
     The bundle contains a root ``config.yaml`` and an Orbax checkpoint tree, so
@@ -95,7 +97,8 @@ def bundle_checkpoint(path, output_dir, model_name=None, which="best") -> Path:
         path: Local training-result directory.
         output_dir: Directory in which to create the model subfolder.
         model_name: Subfolder name. Defaults to ``cfg.name``.
-        which: ``"best"``, ``"latest"``, ``"all"``, or an integer step.
+        which: ``"best_and_latest"`` (default), ``"best"``, ``"latest"``,
+            ``"all"``, or an integer step.
 
     Returns:
         Path to the created model subfolder.
@@ -106,9 +109,16 @@ def bundle_checkpoint(path, output_dir, model_name=None, which="best") -> Path:
     if not model_name or Path(model_name).name != model_name:
         raise ValueError("model_name must be a single directory name")
 
-    source, relative_destination = _checkpoint_source(path, which)
-    if not source.exists():
-        raise FileNotFoundError(f"Checkpoint not found: {source}")
+    if which == "best_and_latest":
+        sources = [
+            _checkpoint_source(path, "best"),
+            _checkpoint_source(path, "latest"),
+        ]
+    else:
+        sources = [_checkpoint_source(path, which)]
+    for source, _ in sources:
+        if not source.exists():
+            raise FileNotFoundError(f"Checkpoint not found: {source}")
 
     model_dir = Path(output_dir).expanduser().resolve() / model_name
     if model_dir.exists():
@@ -116,7 +126,12 @@ def bundle_checkpoint(path, output_dir, model_name=None, which="best") -> Path:
     model_dir.mkdir(parents=True)
     OmegaConf.save(cfg, model_dir / "config.yaml")
     OmegaConf.save(build_artifact_config(cfg), model_dir / "artifact.yaml")
-    shutil.copytree(source, model_dir / relative_destination)
+    for source, relative_destination in sources:
+        shutil.copytree(
+            source,
+            model_dir / relative_destination,
+            ignore=shutil.ignore_patterns("*.orbax-checkpoint-tmp"),
+        )
     return model_dir
 
 
@@ -125,7 +140,7 @@ def upload_checkpoint_to_hub(
     repo_id,
     *,
     model_name=None,
-    which="best",
+    which="best_and_latest",
     private=False,
     token=None,
     commit_message=None,
@@ -138,11 +153,10 @@ def upload_checkpoint_to_hub(
     Returns:
         The Hugging Face commit information returned by ``upload_folder``.
     """
-    api = HfApi(token=token)
-    api.create_repo(repo_id, repo_type="model", private=private, exist_ok=True)
-
     with TemporaryDirectory() as temporary_dir:
         model_dir = bundle_checkpoint(path, temporary_dir, model_name, which)
+        api = HfApi(token=token)
+        api.create_repo(repo_id, repo_type="model", private=private, exist_ok=True)
         return api.upload_folder(
             repo_id=repo_id,
             repo_type="model",
