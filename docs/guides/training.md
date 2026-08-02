@@ -6,10 +6,10 @@ Training is orchestrated via Hydra. Every run captures its config alongside chec
 
 ```bash
 # local machine with one GPU
-dmri +experiment=b3s_2_4_6_128 launcher=local partition=none use_wandb=false
+dmri train +experiment/train=b3s_2_4_6_128 infrastructure/launcher=local infrastructure/partition=none tracking.enabled=false
 
 # SLURM cluster; choose profiles for your site
-dmri +experiment=b3s_2_4_6_128 launcher=slurm partition=<profile>
+dmri train +experiment/train=b3s_2_4_6_128 infrastructure/launcher=slurm infrastructure/partition=<profile>
 ```
 
 Key output folders under `results/<run_name>/<timestamp>/`:
@@ -19,37 +19,37 @@ Key output folders under `results/<run_name>/<timestamp>/`:
 
 ## Tuning experiments
 
-- Override inline: `dmri train.dataloader.train_loader.batch_size=128 train.optimizer.learning_rate=1e-3`
-- Switch simulator presets: `dmri +experiment=msb3s_2_4_6_128`
-- Target specific hardware profiles via `conf_train/partition/*.yaml` (e.g. GPU vs CPU).
+- Override inline: `dmri train training.dataloader.train_loader.batch_size=128 training.optimizer.learning_rate=1e-3`
+- Switch simulator presets: `dmri train +experiment/train=msb3s_2_4_6_128`
+- Target specific hardware profiles via `conf/infrastructure/partition/*.yaml`.
 
 ## Config map
 
-Training configs live in `conf_train/`:
+Training and evaluation share the versioned `conf/` tree:
 
 ```text
-conf_train/
-├── config.yaml
-├── experiment/
-├── launcher/
+conf/
+├── train.yaml
+├── eval.yaml
+├── experiment/train/
+├── infrastructure/
 ├── model/
-├── partition/
 ├── simulator/
-└── train/
+└── training/
     ├── dataloader/
     ├── optimizer/
     ├── default*.yaml
 ```
 
-- `config.yaml`: run metadata (`name`, `seed`, `use_wandb`, output dirs) plus defaults pointing to the simulator, model, train, launcher, and partition groups.
-- `train/default*.yaml`: training loop knobs such as `inner_steps`, checkpoint/eval cadence, max wall-clock hours, EMA tracking (`track_ema`, `ema_decay`), loss weights (`model_selection_weight`, `model_inference_loss_weight`), label smoothing, and recovery thresholds.
-- `train/dataloader/*.yaml`: simulation and loader settings (buffer sizes, batch sizes, shuffle/drop-last, prefetch, async workers) with CPU, GPU, and multi-GPU variants.
-- `train/optimizer/*.yaml`: optimizer choice and hyperparameters (learning rate, scheduler params, adaptive clipping, gradient clip values, EMA toggles).
+- `train.yaml`: schema version, run metadata, tracking, output directories, and training defaults.
+- `training/default*.yaml`: training loop knobs such as `inner_steps`, checkpoint/eval cadence, max wall-clock hours, EMA tracking, loss weights, label smoothing, and recovery thresholds.
+- `training/dataloader/*.yaml`: simulation and loader settings with CPU, GPU, and multi-GPU variants.
+- `training/optimizer/*.yaml`: optimizer choice and hyperparameters.
 - `simulator/*.yaml`: signal simulation recipes and acquisition schemes to drive synthetic training data.
 - `model/*.yaml`: neural architecture definitions for dmri/ssfp variants.
-- `experiment/*.yaml`: ready-made presets combining simulator/model choices with train overrides.
-- `partition/*.yaml`: cluster/queue presets for resource requests and time limits.
-- `launcher/*.yaml`: Hydra launcher wiring for local or Slurm execution.
+- `experiment/train/*.yaml`: ready-made presets combining simulator/model choices with training overrides.
+- `infrastructure/partition/*.yaml`: cluster/queue presets.
+- `infrastructure/launcher/*.yaml`: Hydra launcher wiring.
 
 ## Checkpoint handling
 
@@ -60,8 +60,8 @@ conf_train/
 ### Publish pretrained checkpoints
 
 Closely related variants can share one Hugging Face model repository. Each upload
-is stored in its own subfolder with a portable `config.yaml` and the selected
-Orbax checkpoint:
+is stored in its own subfolder with a portable `config.yaml`, a minimal
+`artifact.yaml` model manifest, and the selected Orbax checkpoint:
 
 ```python
 from dmri.train.utils import upload_checkpoint_to_hub
@@ -70,14 +70,14 @@ upload_checkpoint_to_hub(
     "results/b3s_2_4_6_64/<timestamp>",
     "manugloeck/dmri-pretrained",
     model_name="b3s_2_4_6_64",
-    which="best",
     private=False,
 )
 ```
 
 Authenticate once before uploading with `uv run hf auth login`. Repeat the call
-with another `model_name` to add variants to the same repository. `which` accepts
-`"best"` (recommended), `"latest"`, a training-step integer, or `"all"`.
+with another `model_name` to add variants to the same repository. Uploads include
+both the best and latest checkpoints by default. For specialized bundles,
+`which` also accepts `"best"`, `"latest"`, a training-step integer, or `"all"`.
 
 Load only the requested model subfolder from the Hub cache:
 
@@ -88,7 +88,7 @@ from dmri.train.utils import load_checkpoint
 checkpoint, model, simulators = load_checkpoint(
     repo_id="manugloeck/dmri-pretrained",
     model_name="b3s_2_4_6_64",
-    which="best",
+    which="latest",
 )
 params = checkpoint.get("params_ema", checkpoint["params"])
 nnx.update(model, params)
@@ -105,4 +105,4 @@ private repository, or `local_files_only=True` after the snapshot is cached.
 
 ## Recording more metrics
 
-Metrics are configured under `conf_train/train/` and `conf_train/experiment/`. Add your own callbacks or exporters, then document them with docstrings so they appear in the API reference.
+Metrics are configured under `conf/training/` and `conf/experiment/train/`. Add your own callbacks or exporters, then document them with docstrings so they appear in the API reference.

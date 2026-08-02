@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 import optax
 from flax import nnx
-from probjax.nn import CausalMask, GaussianFourierEmbedding, Transformer
+from probjax.nn import MLP, CausalMask, GaussianFourierEmbedding, Transformer
 from probjax.nn.layers.attention import flex_attention
 from probjax.utils.typing import Array, ArrayLike, DTypeLike, PrecisionLike, RngKey
 
@@ -31,6 +31,8 @@ class DMRIModelSelectionConfig:
     param_dtype: DTypeLike | None = None
     precision: PrecisionLike | None = None
     preferred_element_type: DTypeLike | None = None
+    outlayer: str = "linear"
+    outnorm: bool = True
 
 
 @dataclass
@@ -68,6 +70,8 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         param_dtype: DTypeLike | None = None,
         precision: PrecisionLike | None = None,
         preferred_element_type: DTypeLike | None = None,
+        outlayer: str = "linear",
+        outnorm: bool = True,
     ):
         self.model_dim = model_dim
         self.num_heads = num_heads
@@ -134,13 +138,24 @@ class BinaryAutoregressiveDecoder(nnx.Module):
             normalize_qk_cross_attn=normalize_qk_cross_attn,
             **precision_kwargs,
         )
-        self.out_norm = nnx.LayerNorm(model_dim, rngs=rngs)
-        self.output = nnx.Linear(
-            model_dim,
-            1,
-            rngs=rngs,
-            **precision_kwargs,
+        self.out_norm = (
+            nnx.LayerNorm(model_dim, rngs=rngs) if outnorm else lambda value: value
         )
+        if outlayer == "linear":
+            self.output = nnx.Linear(
+                model_dim,
+                1,
+                rngs=rngs,
+                **precision_kwargs,
+            )
+        elif outlayer == "mlp":
+            self.output = MLP(
+                [model_dim, widening_factor * model_dim, 1],
+                rngs=rngs,
+                **precision_kwargs,
+            )
+        else:
+            raise ValueError(f"Unknown outlayer type: {outlayer}")
 
     def __call__(
         self,
@@ -180,6 +195,8 @@ class BinaryAutoregressiveDecoder(nnx.Module):
         self, model_mask: ArrayLike, tokenizer: Tokenizer, **kwargs: Any
     ) -> Array:
         input_tokens = tokenizer.encode(model_mask=model_mask, **kwargs)
+        if hasattr(tokenizer, "embed_model_mask"):
+            input_tokens = tokenizer.embed_model_mask(input_tokens, model_mask)
         *_, _, model_dim = input_tokens.shape
 
         assert model_dim == self.model_dim, (

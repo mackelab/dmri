@@ -1,0 +1,8 @@
+defaults:
+  - _self_
+  - metrics@metrics.model_selection_calibration: model_selection_calibration
+  - metrics@metrics.model_selection_classification: model_selection_classification
+  - metrics@metrics.sbc_model_mask: sbc_model_mask
+
+name: "model_selection_metrics"
+type: "raw"

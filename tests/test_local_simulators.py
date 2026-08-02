@@ -38,6 +38,18 @@ from dmri.simulators.multi_compartment import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _deterministic_inputs():
+    """Seed the global RNG that these tests draw their acquisitions from.
+
+    The tests use unseeded ``np.random``, so their inputs depended on how much
+    randomness earlier tests had consumed. That made tolerance comparisons like
+    the one in ``test_jitable`` fail intermittently, and only when the suite ran
+    in a particular order.
+    """
+    np.random.seed(0)
+
+
 @pytest.fixture(
     params=[
         Dot,

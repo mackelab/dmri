@@ -1,0 +1,18 @@
+# Posterior negative log-likelihood metric configuration
+key: posterior_nll
+type: posterior_nll
+output_filename: metric_posterior_nll.nii.gz
+batch_size: 20000
+sample_reduction: mean
+sample_axis: 1
+requires_theta_samples: true
+write_summary: true
+summary_filename: posterior_nll_summary.json
+aggregations:
+  - type: mean
+    name: mean
+  - type: median
+    name: median
+  - type: percentile
+    q: [5, 50, 95]
+    name: p{q}

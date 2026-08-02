@@ -1,0 +1,15 @@
+# @package _global_
+
+defaults:
+- _self_
+- override /evaluation/export/theta: ball3stick
+- override /evaluation/export/model_selection: ball3stick
+- override /evaluation/theta: default
+- override /evaluation/selection: ball3stick_best
+evaluation:
+  sampling:
+    mask:
+      p_mask: 0.35
+  export:
+    theta:
+      name: ball3stick_inference_results_best_model_selection

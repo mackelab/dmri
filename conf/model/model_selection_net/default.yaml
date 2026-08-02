@@ -1,0 +1,15 @@
+name: DMRIModelSelectionConfig
+params:
+  num_layers: 3
+  num_heads: 4
+  widening_factor: 4
+  use_flash_attention: false
+  use_flash_cross_attention: true
+  attn_size: 16
+  normalize_qk_attn: false
+  normalize_qk_cross_attn: false
+  dropout_rate: 0.0
+  mask_prior_dim: 0  # Model prior input dim
+  precision: null
+  dtype: null
+  preferred_element_type: null

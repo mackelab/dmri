@@ -31,13 +31,14 @@ dependencies = [
     "jupyter>=1.1",
     "wandb>=0.23",
     "matplotlib>=3.7.0",
-    "tqdm>=4.65.0",
+    "rich>=13.7",
     "dipy>=1.7.0",
     "nibabel>=5.1.0",
     "pandas>=2.0.0",
     "probjax @ git+https://github.com/mackelab/probjax.git",
     "orbax-checkpoint>=0.11",
     "plotly>=6.4",
+    "prompt-toolkit>=3.0",
     "optax>=0.2",
     "absl-py>=2.3",
     "huggingface-hub>=0.34",
@@ -62,6 +63,11 @@ dev = [
 ]
 cuda = [
     "jax[cuda12]"
+]
+# For CUDA 13 drivers. The plugin version must match jaxlib exactly; the extra
+# pins it, so install this rather than the plugin on its own.
+cuda13 = [
+    "jax[cuda13]"
 ]
 docs = [
     "zensical>=0.0.51,<0.1",
@@ -103,10 +109,11 @@ venv = ".venv"
 testpaths = ["tests"]
 
 [tool.setuptools.packages.find]
-include = ["dmri*", "conf_train*", "conf_eval*"]
+include = ["dmri*", "conf*"]
 
 [tool.setuptools.package-data]
 "conf_train" = ["**/*.yaml"]
 "conf_eval" = ["**/*.yaml"]
+"conf" = ["**/*.yaml"]
 "dmri.simulators" = ["data/*"]
 "dmri.utils" = ["*.mplstyle"]

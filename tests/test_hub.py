@@ -45,11 +45,12 @@ def test_load_pretrained_uses_defaults_and_ema(monkeypatch):
     assert calls["load"] == {
         "repo_id": DEFAULT_REPO_ID,
         "model_name": DEFAULT_MODEL_NAME,
-        "which": "best",
+        "which": "latest",
         "revision": None,
         "cache_dir": None,
         "token": None,
         "local_files_only": False,
+        "precision": None,
     }
     assert calls["update"] == (model, "ema")
     assert result == PretrainedModel(model, simulator, model.cfg, 12)
@@ -78,6 +79,7 @@ def test_load_pretrained_forwards_options_and_falls_back_to_params(monkeypatch):
         cache_dir="cache",
         token="secret",
         local_files_only=True,
+        precision="bf16",
     )
 
     assert calls["load"] == {
@@ -88,6 +90,7 @@ def test_load_pretrained_forwards_options_and_falls_back_to_params(monkeypatch):
         "cache_dir": "cache",
         "token": "secret",
         "local_files_only": True,
+        "precision": "bf16",
     }
     assert calls["update"] == (model, "params")
     assert result.step is None

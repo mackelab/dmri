@@ -2,6 +2,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from dmri.eval.autobatch import make_cache_key, resolve_batch_size
+from dmri.eval.precision import normalize_precision
 from dmri.eval.sampling_methods import eval_in_batches
 
 
@@ -55,9 +57,13 @@ def select_models(
 
     elif incorporate_models == "best":
         logger.info("Sampling best model only")
-        feasible_models = jnp.array(
-            cfg.model_selection.feasible_models, dtype=jnp.bool_
-        )
+        feasible_models = np.asarray(cfg.model_selection.feasible_models)
+        if feasible_models.ndim != 2 or feasible_models.shape[1] != num_comp:
+            raise ValueError(
+                "Best-model candidates must each contain exactly "
+                f"{num_comp} component values; got shape {feasible_models.shape}."
+            )
+        feasible_models = jnp.asarray(feasible_models, dtype=jnp.bool_)
         p_mask = cfg.mask_sample.p_mask
         p_mask_arr = jnp.array([p_mask])
 
@@ -68,11 +74,31 @@ def select_models(
             return model_logpmf
 
         batched_logpmf = jax.jit(jax.vmap(eval_feasible_log_probs, in_axes=(0,)))
-        batch_size = getattr(cfg.model_selection, "eval_batch_size", 10_000)
 
         def _eval_fn(keys, batch_data):
             del keys  # Deterministic computation; keys are unused.
             return batched_logpmf(batch_data)
+
+        configured = getattr(cfg.model_selection, "eval_batch_size", None)
+        cache_key = make_cache_key(
+            "model_selection",
+            cfg.model_name,
+            data.shape[-1],
+            len(feasible_models),
+            normalize_precision(cfg.get("precision")),
+            len(devices) if devices else 1,
+        )
+        batch_size = resolve_batch_size(
+            _eval_fn,
+            data,
+            key_example=key,
+            configured=configured,
+            devices=devices,
+            num_voxels=data.shape[0],
+            cache_key=cache_key,
+            logger=logger,
+            override=cfg.get("batch_size"),
+        )
 
         logpmf = eval_in_batches(
             _eval_fn,
@@ -81,6 +107,8 @@ def select_models(
             batch_size=batch_size,
             logger=logger,
             devices=devices,
+            cache_key=cache_key,
+            desc="Selecting models",
         )
 
         best_mask_idx = logpmf.argmax(axis=-1)

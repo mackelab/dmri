@@ -1,0 +1,21 @@
+# @package _global_
+
+hydra:
+  sweeper:
+    params:
+      training.continue_training: true
+      model.embedding_net.params.num_layers: 3
+      model.inference_net.params.num_layers: 8
+      model.model_selection_net.params.num_layers: 6
+      tracking.wandb.project: all_conv
+defaults:
+- _self_
+- override /infrastructure/partition: 2h100_long
+- override /simulator: all_models
+- override /training/dataloader: datastream_multigpu
+- override /simulator/acquisition_scheme: multi
+- override /model: dmri
+run:
+  name: all_3_6_8_128_model_prior_with_convs_2gpus
+tracking:
+  enabled: true

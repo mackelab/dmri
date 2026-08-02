@@ -1,0 +1,26 @@
+# @package _global_
+
+data:
+  slice:
+    x: null
+    y: null
+    z: 52
+defaults:
+- _self_
+- override /evaluation/export/model_selection: raw
+- override /evaluation/selection: average
+export_model_selection:
+  name: test_real_mask
+run:
+  seed: 42424242
+evaluation:
+  pipeline:
+    sample_mask: true
+    sample_theta: false
+    select_models: true
+    default_mask:
+    - true
+    - true
+    - true
+    - true
+    - true

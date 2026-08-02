@@ -1,0 +1,24 @@
+# @package _global_
+
+hydra:
+  sweeper:
+    params:
+      training.continue_training: true
+      model.model_dim: 128
+      model.embedding_net.params.num_layers: 2
+      model.inference_net.params.num_layers: 6
+      model.model_selection_net.params.num_layers: 4
+      training.ema_decay: 0.9999
+      training.permute_order: true
+      training.label_smoothing: 0.0
+      tracking.wandb.project: b3s
+defaults:
+- _self_
+- override /infrastructure/partition: h100_long
+- override /simulator: ball3stick_shared
+- override /simulator/acquisition_scheme: multi
+- override /model: dmri
+run:
+  name: b3s_2_4_6_128_permute
+tracking:
+  enabled: true

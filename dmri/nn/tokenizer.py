@@ -795,3 +795,58 @@ class DMRITokenizerPP(DMRITokenizer):
             theta_mask = mask_fn(model_mask)
             out = jnp.where(theta_mask, out, 0.0)
         return out
+
+
+class DMRITokenizerPPP(DMRITokenizerPP):
+    """Legacy mask-aware tokenizer retained for published checkpoints."""
+
+    def __init__(
+        self,
+        simulator,
+        rngs,
+        token_dim=64,
+        theta_encode_nets=None,
+        theta_decode_nets=None,
+        dtype: DTypeLike | None = None,
+        param_dtype: DTypeLike | None = None,
+        precision: PrecisionLike | None = None,
+        preferred_element_type: DTypeLike | None = None,
+    ):
+        super().__init__(
+            simulator,
+            rngs,
+            token_dim=token_dim,
+            theta_encode_nets=theta_encode_nets,
+            theta_decode_nets=theta_decode_nets,
+            dtype=dtype,
+            param_dtype=param_dtype,
+            precision=precision,
+            preferred_element_type=preferred_element_type,
+        )
+        self.start_end_token = nnx.Embed(2, token_dim // 2, rngs=rngs)
+        self.model_mask_emb = nnx.Embed(2, token_dim, rngs=rngs)
+        self.cfg_emb = nnx.Linear(
+            token_dim, token_dim - token_dim // 2, rngs=rngs, **self._linear_kwargs
+        )
+
+    def embed_model_mask(self, tokens_cfg: Array, model_mask: Array) -> Array:
+        tokens_cfg = self.cfg_emb(tokens_cfg[..., 1:, :])
+        batch_shape = tokens_cfg.shape[:-2]
+        start_value = self.start_end_token(jnp.array(0, dtype=jnp.int32))
+        end_value = self.start_end_token(jnp.array(1, dtype=jnp.int32))
+        start = jnp.broadcast_to(start_value, batch_shape + (start_value.shape[-1],))
+        end = jnp.broadcast_to(end_value, batch_shape + (end_value.shape[-1],))
+        adjacent = jnp.concatenate(
+            [tokens_cfg[..., :-1, :], tokens_cfg[..., 1:, :]], axis=-1
+        )
+        first = jnp.concatenate([tokens_cfg[..., 0, :], start], axis=-1)
+        last = jnp.concatenate([tokens_cfg[..., -1, :], end], axis=-1)
+        tokens = jnp.concatenate(
+            [first[..., None, :], adjacent, last[..., None, :]], axis=-2
+        )
+        mask_embedding = self.model_mask_emb(model_mask.astype(jnp.int32))
+        padding = jnp.zeros(
+            mask_embedding.shape[:-2] + (1, mask_embedding.shape[-1]),
+            dtype=mask_embedding.dtype,
+        )
+        return tokens + jnp.concatenate([padding, mask_embedding], axis=-2)

@@ -86,7 +86,7 @@ class MetricContext:
     model_mask: np.ndarray | None
     model_mask_samples: np.ndarray | None
     brain_mask_flat: np.ndarray
-    data_norm: np.ndarray
+    brain_shape: tuple
     orig_data: Any
     out_path: str | None = None
     true_model_parameters: np.ndarray | None = None
@@ -413,7 +413,7 @@ def _compute_ksd_metric(
         full_map = embed_in_full_brain_array(
             p_values,
             context.brain_mask_flat.astype(np.bool_),
-            context.data_norm.shape[:-1],
+            context.brain_shape,
         )
         export_nifti(full_map, context.orig_data, context.out_path, pvalue_filename)
 
@@ -1168,7 +1168,7 @@ def _export_metric_map(
     out_path: str,
 ) -> str:
     brain_mask = context.brain_mask_flat.astype(np.bool_)
-    brain_shape = context.data_norm.shape[:-1]
+    brain_shape = context.brain_shape
     full_metric_map = embed_in_full_brain_array(metric_values, brain_mask, brain_shape)
     filename = spec.output_filename or DEFAULT_OUTPUT_FILENAMES.get(spec.type)
     if filename is None:
@@ -1387,7 +1387,7 @@ def compute_swd_to_reference(
     model_parameters_brain,
     model_mask,
     brain_mask_flat,
-    data_norm,
+    brain_shape,
     orig_data,
     out_path,
 ):
@@ -1413,7 +1413,7 @@ def compute_swd_to_reference(
         model_mask=model_mask,
         model_mask_samples=None,
         brain_mask_flat=brain_mask_flat,
-        data_norm=data_norm,
+        brain_shape=brain_shape,
         orig_data=orig_data,
         out_path=out_path,
     )
@@ -1437,7 +1437,7 @@ def compute_swd_to_reference(
     full_map = embed_in_full_brain_array(
         distances,
         brain_mask_flat.astype(np.bool_),
-        data_norm.shape[:-1],
+        brain_shape,
     )
     export_nifti(full_map, orig_data, out_path, output_filename)
     return os.path.join(out_path, output_filename)

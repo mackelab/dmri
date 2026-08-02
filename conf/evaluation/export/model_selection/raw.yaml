@@ -1,0 +1,9 @@
+defaults:
+  - _self_
+  - metrics@metrics.model_selection_calibration: model_selection_calibration
+  - metrics@metrics.model_selection_classification: model_selection_classification
+
+name: "raw_model_selection_results"
+type: "raw"
+export_samples: true
+samples_name: "raw_model_selection_mask_samples"

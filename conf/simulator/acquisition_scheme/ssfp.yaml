@@ -1,0 +1,9 @@
+name: multi_ssfp
+params:
+  schemes:
+    - name: ssfp
+      params:
+        num_acquisitions: 120
+    - name: ssfp
+      params:
+        num_acquisitions: 60

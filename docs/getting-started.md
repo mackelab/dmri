@@ -41,7 +41,7 @@ Then run:
 dmri predict FOLDER
 ```
 
-The default model is `b3s_2_4_6_128` from the public `manugloeck/dmri-pretrained` Hugging Face repository. `huggingface_hub` downloads and caches it automatically. Outputs are placed below `FOLDER/dmri_output/` in `ball3stick_inference_results/` and `ball3stick_model_selection_results/`. Prediction does not compute metrics that require ground truth.
+The default model is `msb3s_2_4_6_128`, a multi-shell Ball3Stick model from the public `manugloeck/dmri-pretrained` Hugging Face repository. `huggingface_hub` downloads and caches it automatically. Outputs are placed below `FOLDER/dmri_output/` in `ball3stick_inference_results/` and `ball3stick_model_selection_results/`. Prediction does not compute metrics that require ground truth.
 
 See the [prediction guide](guides/prediction.md) for model, cache, offline, local-checkpoint, output, and sampling options.
 
@@ -50,26 +50,26 @@ See the [prediction guide](guides/prediction.md) for model, cache, offline, loca
 
 ## Run a training job
 
-1. Pick an experiment preset in `conf_train/experiment/` or compose your own by editing `conf_train/*`.
+1. Pick an experiment preset in `conf/experiment/train/` or compose your own under `conf/`.
 2. Launch on a local machine with a GPU, without SLURM or W&B:
 
    ```bash
-   dmri train +experiment=b3s_2_4_6_128 launcher=local partition=none use_wandb=false
+   dmri train +experiment/train=b3s_2_4_6_128 infrastructure/launcher=local infrastructure/partition=none tracking.enabled=false
    ```
 
-   The local launcher requests one GPU. For a cluster, select launcher and partition profiles that match your site instead of relying on the repository defaults. Remove `use_wandb=false` after logging into Weights & Biases.
-3. Monitor `results/<run_name>/<timestamp>/` for checkpoints, Hydra configs (`.hydra/`), and logs. If you are logged into Weights & Biases and left `use_wandb=true`, online logging starts automatically.
+   The local launcher requests one GPU. For a cluster, select launcher and partition profiles that match your site instead of relying on the repository defaults. Set `tracking.enabled=true` after logging into Weights & Biases.
+3. Monitor `results/<run_name>/<timestamp>/` for checkpoints, `artifact.yaml`, Hydra configs (`.hydra/`), and logs.
 
 ## Evaluate a trained model
 
 ```bash
-dmri eval +experiment=eval_b3s_best_model_selection \
-  model_name=<run_name>/<timestamp> \
-  data.data_folder=<data_folder>
+dmri eval +experiment/eval=eval_b3s_best_model_selection \
+  checkpoint.model_name=<run_name>/<timestamp> \
+  evaluation.input.data_folder=<data_folder>
 ```
 
-- `model_name` is the timestamped training path relative to `results/`.
-- Evaluation requires an input path. Set `data.data_folder` or the preset's `data.path`.
+- `checkpoint.model_name` is the timestamped training path relative to `results/`.
+- Evaluation requires an input path. Set `evaluation.input.data_folder` or `evaluation.input.path`.
 - Full evaluation is intended for advanced workflows, including configurable exports and ground-truth metrics. Use `dmri predict` for inference without ground-truth metrics.
 - The deprecated `dmri_eval` executable remains as a compatibility alias.
 
@@ -81,6 +81,6 @@ Hydra powers `dmri train` and `dmri eval`. Use `--help` to see overrides for a s
 - [Training CLI reference](reference/cli_train.md)
 - [Evaluation CLI reference](reference/cli_eval.md)
 
-Common tweaks live in `train.optimizer`, `model.*`, and simulator definitions under `conf_train/simulator/`.
+Common tweaks live in `training.optimizer`, `model.*`, and simulator definitions under `conf/simulator/`.
 
 The [example notebooks](examples/) provide executable demonstrations of the simulation, training, and evaluation interfaces.
