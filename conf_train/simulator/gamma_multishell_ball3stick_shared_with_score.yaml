@@ -1,6 +1,0 @@
-prior_mask_alpha: 1.
-prior_mask_beta: 1.
-with_posterior_score: true
-defaults:
-  - sim_type: gamma_multi_shell_ball3stick_shared_diffusity
-  - acquisition_scheme: hcp

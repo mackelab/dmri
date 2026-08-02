@@ -109,11 +109,9 @@ venv = ".venv"
 testpaths = ["tests"]
 
 [tool.setuptools.packages.find]
-include = ["dmri*", "conf*"]
+include = ["dmri*", "conf"]
 
 [tool.setuptools.package-data]
-"conf_train" = ["**/*.yaml"]
-"conf_eval" = ["**/*.yaml"]
 "conf" = ["**/*.yaml"]
 "dmri.simulators" = ["data/*"]
 "dmri.utils" = ["*.mplstyle"]

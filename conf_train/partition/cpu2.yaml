@@ -1,7 +1,0 @@
-hydra:
-  mode: MULTIRUN
-  launcher:
-    partition: 2080-galvani
-    gres: null
-    cpus_per_task: 8
-    mem_gb: 16
