@@ -19,6 +19,8 @@ All notable changes to this project will be documented in this file.
   as `NaN` instead of aborting after sampling; outside-brain voxels remain zero.
 - Added prediction model modes for posterior per-sample masks, best model per
   voxel, and fixed B1S/B2S/B3S models.
+- Changed the fast prediction preset to use fp16 and skip theta correction by
+  default, with explicit precision and corrector flags taking precedence.
 
 ## 0.1.0
 

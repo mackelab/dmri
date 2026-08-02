@@ -73,10 +73,12 @@ It only prompts on a terminal, so scripts and CI keep working unchanged; pass
 dmri predict FOLDER --model b3s_2_4_6_128 --quality fast
 ```
 
-`--quality` sets the sampling budget: `fast` (20 steps x 25 samples),
-`balanced` (40 x 50, the default and what earlier releases did) and `high`
-(60 x 100). Cost is exactly linear in `steps x samples`; the accuracy cost is
-data-dependent, so validate a reduced setting against `high` on your own scans.
+`--quality` sets the sampling pipeline: `fast` uses 20 steps x 25 samples, fp16,
+and no theta corrector; `balanced` uses 40 x 50, fp32, and automatic correction;
+`high` uses 60 x 100, fp32, and automatic correction. Network sampling cost is
+linear in `steps x samples`, while fast saves additional time by skipping the
+corrector. The accuracy cost is data-dependent, so validate fast against a
+higher-quality setting on your own scans.
 
 During the run, compilation stages show spinners and sampling stages show voxel
 progress bars. `--verbose` adds the detailed evaluation log without removing the
@@ -186,9 +188,10 @@ dmri predict FOLDER --batch-size 8192 --memory-fraction 0.5
 dmri predict FOLDER --precision bf16
 ```
 
-`--precision` accepts `fp32` (default), `bf16` and `fp16`. Half precision halves
-the activation memory — which by itself allows a roughly 25% larger batch — and
-is faster on tensor-core GPUs.
+`--precision` accepts `fp32`, `bf16` and `fp16`. It defaults to `fp16` for fast
+quality and `fp32` otherwise; an explicit flag overrides the preset. Half
+precision halves the activation memory — which by itself allows a roughly 25%
+larger batch — and is faster on tensor-core GPUs.
 
 Only the network's matmul inputs are half precision. Weights stay float32,
 results accumulate in float32, and the diffusion sampler, the correctors and

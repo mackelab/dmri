@@ -30,9 +30,9 @@ Model  (from manugloeck/dmri-pretrained)
 Choose [1]:
 
 Quality
-  1) fast             20 steps x 25 samples  (~4x faster than balanced)
-  2) balanced         40 steps x 50 samples  (default) <-
-  3) high             60 steps x 100 samples  (~3x slower than balanced)
+  1) fast             20 steps x 25 samples, fp16, no corrector
+  2) balanced         40 steps x 50 samples, fp32, corrected  (default) <-
+  3) high             60 steps x 100 samples, fp32, corrected
 Choose [2]:
 ```
 
@@ -49,6 +49,8 @@ never block; `--non-interactive` suppresses them explicitly.
 - `--seed INTEGER`: sampling seed; default `1`.
 - `--mask-samples INTEGER`: number of model-mask samples. Overrides `--quality`.
 - `--theta-samples INTEGER`: number of parameter samples. Overrides `--quality`.
+- `--corrector {auto,none}`: theta correction policy. Defaults to `none` for
+  fast quality and `auto` otherwise.
 - `--model-mode {per-sample,best,fixed}`: choose a posterior model separately
   for every voxel and parameter sample (default), choose one best feasible model
   per voxel, or use one fixed model everywhere.
@@ -77,10 +79,11 @@ dmri predict FOLDER --fixed-model B2S
 For Ball3Stick checkpoints, `B1S`, `B2S`, and `B3S` mean ball plus one, two,
 or three sticks respectively. All include the configured noise model.
 
-The presets differ only in cost, which is exactly linear in
-`num_steps x samples`: `fast` is 4x cheaper than `balanced` and `high` is 3x
-dearer. How much accuracy that costs depends on the data, so check a reduced
-setting against a `high` run before relying on it.
+Network sampling cost is linear in `num_steps x samples`: fast uses one quarter
+of balanced's network evaluations and high uses three times as many. Fast also
+uses fp16 and skips theta correction, reducing runtime further. How much accuracy
+that costs depends on the data, so check a fast run against a higher-quality run
+before relying on it.
 
 ## Hardware and batching
 
@@ -171,7 +174,8 @@ against a full-step run on your own data before relying on a lower setting.
 ## Precision
 
 - `--precision {fp32,bf16,fp16}`: numeric precision for the network forward pass;
-  default `fp32`.
+  defaults to `fp16` for fast quality and `fp32` otherwise. An explicit flag
+  overrides the quality preset.
 
 Half precision halves the activation memory (which admits a larger batch) and is
 faster on tensor-core GPUs. It applies to the network's matmul inputs only:

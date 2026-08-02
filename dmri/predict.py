@@ -10,13 +10,27 @@ from dmri.hub import DEFAULT_MODEL_NAME, DEFAULT_REPO_ID, list_pretrained_models
 
 STANDARD_FILES = ("data.nii.gz", "nodif_brain_mask.nii.gz", "bvals", "bvecs")
 
-#: Sampling presets. Cost is exactly linear in ``num_steps x samples``, so the
-#: relative figures below are exact; the accuracy trade-off is not quantified
-#: here and should be checked against a `high` run on your own data.
+#: Sampling presets. Network work is linear in ``num_steps x samples``; precision
+#: and correction add further quality/runtime trade-offs.
 QUALITY_PRESETS = {
-    "fast": {"num_steps": 20, "samples": 25},
-    "balanced": {"num_steps": 40, "samples": 50},
-    "high": {"num_steps": 60, "samples": 100},
+    "fast": {
+        "num_steps": 20,
+        "samples": 25,
+        "precision": "fp16",
+        "corrector": "none",
+    },
+    "balanced": {
+        "num_steps": 40,
+        "samples": 50,
+        "precision": "fp32",
+        "corrector": "auto",
+    },
+    "high": {
+        "num_steps": 60,
+        "samples": 100,
+        "precision": "fp32",
+        "corrector": "auto",
+    },
 }
 DEFAULT_QUALITY = "balanced"
 
@@ -36,11 +50,19 @@ def _preset_cost(name):
 
 def _quality_description(name):
     preset = QUALITY_PRESETS[name]
-    summary = f"{preset['num_steps']} steps x {preset['samples']} samples"
+    correction = "no corrector" if preset["corrector"] == "none" else "corrected"
+    summary = (
+        f"{preset['num_steps']} steps x {preset['samples']} samples, "
+        f"{preset['precision']}, {correction}"
+    )
     if name == DEFAULT_QUALITY:
         return f"{summary}  (default)"
     ratio = _preset_cost(name) / _preset_cost(DEFAULT_QUALITY)
-    comparison = f"~{1 / ratio:.0f}x faster" if ratio < 1 else f"~{ratio:.0f}x slower"
+    comparison = (
+        f"~{1 / ratio:.0f}x less network work"
+        if ratio < 1
+        else f"~{ratio:.0f}x more network work"
+    )
     return f"{summary}  ({comparison} than {DEFAULT_QUALITY})"
 
 
@@ -106,7 +128,9 @@ def _parser():
             "Sampling preset: "
             + "; ".join(
                 f"{name} ({QUALITY_PRESETS[name]['num_steps']} steps x "
-                f"{QUALITY_PRESETS[name]['samples']} samples)"
+                f"{QUALITY_PRESETS[name]['samples']} samples, "
+                f"{QUALITY_PRESETS[name]['precision']}, "
+                f"{'no corrector' if QUALITY_PRESETS[name]['corrector'] == 'none' else 'corrected'})"
                 for name in QUALITY_PRESETS
             )
             + f". Defaults to {DEFAULT_QUALITY}."
@@ -170,11 +194,16 @@ def _parser():
     parser.add_argument(
         "--precision",
         choices=PRECISION_CHOICES,
-        default="fp32",
         help=(
             "Numeric precision for the network forward pass. Half precision is "
-            "faster and uses less memory; parameters and the sampler stay fp32."
+            "faster and uses less memory. Defaults to fp16 for fast quality and "
+            "fp32 otherwise; parameters and the sampler stay fp32."
         ),
+    )
+    parser.add_argument(
+        "--corrector",
+        choices=("auto", "none"),
+        help="Theta correction; defaults to none for fast quality and auto otherwise.",
     )
     return parser
 
@@ -297,6 +326,10 @@ def _apply_defaults(args) -> None:
         args.theta_samples = preset["samples"]
     if args.mask_samples is None:
         args.mask_samples = max(preset["samples"], args.theta_samples)
+    if args.precision is None:
+        args.precision = preset["precision"]
+    if args.corrector is None:
+        args.corrector = preset["corrector"]
 
 
 def _validate_model_mode(args) -> None:
@@ -378,6 +411,9 @@ def _hydra_overrides(args, folder: Path, output_dir: Path) -> list[str]:
     overrides.append(
         f"evaluation.precision={getattr(args, 'precision', None) or 'fp32'}"
     )
+    overrides.append(
+        f"evaluation/theta/corrector={getattr(args, 'corrector', None) or 'auto'}"
+    )
     num_steps = getattr(args, "num_steps", None)
     if num_steps is not None:
         overrides.append(f"evaluation.sampling.theta.params.num_steps={num_steps}")
@@ -442,7 +478,8 @@ def main(argv=None):
             (
                 "Sampling",
                 f"{args.quality}, {args.num_steps} steps x "
-                f"{args.theta_samples} samples, {args.precision}",
+                f"{args.theta_samples} samples, {args.precision}, "
+                f"{'no corrector' if args.corrector == 'none' else 'corrected'}",
             ),
             (
                 "Model mode",

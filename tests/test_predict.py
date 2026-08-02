@@ -87,9 +87,12 @@ def test_defaults_are_unchanged_without_a_quality_flag():
     assert args.num_steps == 40
     assert args.theta_samples == 50
     assert args.mask_samples == 50
+    assert args.precision == "fp32"
+    assert args.corrector == "auto"
     assert args.model_mode == "per-sample"
     assert args.fixed_model is None
-    assert QUALITY_PRESETS[DEFAULT_QUALITY] == {"num_steps": 40, "samples": 50}
+    assert QUALITY_PRESETS[DEFAULT_QUALITY]["num_steps"] == 40
+    assert QUALITY_PRESETS[DEFAULT_QUALITY]["samples"] == 50
 
 
 @pytest.mark.parametrize("quality", ["fast", "balanced", "high"])
@@ -106,9 +109,28 @@ def test_quality_presets_are_ordered_and_consistent(quality):
 
 
 def test_explicit_flags_win_over_the_preset():
-    args = _resolved(["folder", "--quality", "fast", "--num-steps", "5"])
+    args = _resolved([
+        "folder",
+        "--quality",
+        "fast",
+        "--num-steps",
+        "5",
+        "--precision",
+        "fp32",
+        "--corrector",
+        "auto",
+    ])
     assert args.num_steps == 5, "an explicit flag must override the preset"
     assert args.theta_samples == 25, "unset values still come from the preset"
+    assert args.precision == "fp32"
+    assert args.corrector == "auto"
+
+
+def test_fast_quality_uses_fp16_without_a_corrector():
+    args = _resolved(["folder", "--quality", "fast"])
+
+    assert args.precision == "fp16"
+    assert args.corrector == "none"
 
 
 def test_preset_reaches_the_hydra_overrides(input_folder):
@@ -123,6 +145,8 @@ def test_preset_reaches_the_hydra_overrides(input_folder):
     assert "evaluation.sampling.theta.params.num_steps=20" in overrides
     assert "evaluation.sampling.theta.num_samples=25" in overrides
     assert "evaluation.sampling.mask.n_samples=25" in overrides
+    assert "evaluation.precision=fp16" in overrides
+    assert "evaluation/theta/corrector=none" in overrides
 
 
 def test_best_model_mode_uses_one_model_per_voxel(input_folder):
