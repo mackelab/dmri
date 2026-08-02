@@ -19,27 +19,13 @@ from flax import nnx
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, ListConfig, OmegaConf
 
+from dmri import console
 from dmri.config import build_artifact_config, runtime_config
 from dmri.train.build_model import build_model
 from dmri.train.build_simulator import build_simulator
 from dmri.train.checkpointing import CheckpointManager
 from dmri.train.dataset import instantiate_dataloader
 from dmri.train.evaluator import build_pure_eval_fns
-
-# Backends
-
-
-logo = r"""
-
- /$$$$$$$  /$$      /$$ /$$$$$$$  /$$$$$$
-| $$__  $$| $$$    /$$$| $$__  $$|_  $$_/
-| $$  \ $$| $$$$  /$$$$| $$  \ $$  | $$
-| $$  | $$| $$ $$/$$ $$| $$$$$$$/  | $$
-| $$  | $$| $$  $$$| $$| $$__  $$  | $$
-| $$  | $$| $$\  $ | $$| $$  \ $$  | $$
-| $$$$$$$/| $$ \/  | $$| $$  | $$ /$$$$$$
-|_______/ |__/     |__/|__/  |__/|______/
-"""
 
 
 @dataclass
@@ -849,7 +835,7 @@ def train_loop(
 
 def main():
     """Main script function."""
-    print(logo)
+    console.print_logo()
     _main()
 
 

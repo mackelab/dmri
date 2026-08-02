@@ -488,17 +488,23 @@ def test_code_fingerprint_is_cheap():
 
 def test_progress_bar_only_appears_for_a_terminal(monkeypatch):
     """A bar in a log file or a pipe is noise, so only draw it for a person."""
+    from dmri import console
     from dmri.eval.sampling_methods import _voxel_progress
 
     monkeypatch.setattr("sys.stderr.isatty", lambda: False, raising=False)
-    assert _voxel_progress("Sampling", 100) is None
+    console.configure(enabled=True)
+    plain = _voxel_progress("Sampling", 100)
+    assert plain is not None
+    plain.close()
 
     monkeypatch.setattr("sys.stderr.isatty", lambda: True, raising=False)
+    console.configure(enabled=True)
     assert _voxel_progress(None, 100) is None, "no description means no bar"
 
     bar = _voxel_progress("Sampling", 100)
     assert bar is not None
     bar.close()
+    console.set_enabled(False)
 
 
 def test_batching_falls_back_to_log_lines_without_a_bar(monkeypatch):
@@ -521,3 +527,36 @@ def test_batching_falls_back_to_log_lines_without_a_bar(monkeypatch):
         desc="Sampling",
     )
     assert sum("Evaluating batch" in line for line in lines) == 3
+
+
+def test_batching_closes_progress_after_an_error(monkeypatch):
+    from dmri.eval import sampling_methods
+
+    class Progress:
+        closed = False
+
+        def update(self, advance):
+            pass
+
+        def reset(self):
+            pass
+
+        def close(self):
+            self.closed = True
+
+    progress = Progress()
+    monkeypatch.setattr(sampling_methods, "_voxel_progress", lambda *args: progress)
+
+    def fail(keys, x):
+        raise RuntimeError("compiler failure")
+
+    with pytest.raises(RuntimeError, match="compiler failure"):
+        eval_in_batches(
+            fail,
+            jax.random.PRNGKey(0),
+            np.ones((4, 2), dtype=np.float32),
+            batch_size=2,
+            min_batch_size=1,
+            desc="Sampling",
+        )
+    assert progress.closed

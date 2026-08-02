@@ -4,6 +4,7 @@ import os
 import jax
 import numpy as np
 
+from dmri import console
 from dmri.simulators.local_signal_models.ball import MultiShellStaticBall
 from dmri.utils.dmriutils import export_nifti, make_dyads, reorder_angles_3fib
 
@@ -49,6 +50,16 @@ def _divide_safe(numerator, denominator, eps=1e-8):
     """Elementwise division that yields 0 where the denominator vanishes."""
     out = np.zeros_like(numerator, dtype=np.float32)
     return np.divide(numerator, denominator, out=out, where=np.abs(denominator) > eps)
+
+
+def _valid_fraction_samples(fractions):
+    """Return validity per simplex-valued posterior draw."""
+    fractions = np.asarray(fractions)
+    return (
+        np.all(np.isfinite(fractions), axis=-1)
+        & np.all(fractions >= 0.0, axis=-1)
+        & np.isclose(np.sum(fractions, axis=-1), 1.0, rtol=1e-5, atol=1e-6)
+    )
 
 
 def _cfg_flag(cfg, name, default):
@@ -161,10 +172,15 @@ def export_thetas_to_files_ball3stick(
 
     if not os.path.exists(out_path):
         os.makedirs(out_path)
+    thetas = np.asarray(thetas)
+    theta_valid_samples = np.all(np.isfinite(thetas), axis=-1)
+    safe_thetas = np.where(theta_valid_samples[..., None], thetas, 0.0)
     logging.info(f"Exporting raw inferred parameters to {out_path}")
     # Export raw samples
     full_thetas = embed_in_full_brain_array(
-        thetas, brain_mask_flat, brain_shape
+        np.where(theta_valid_samples[..., None], thetas, np.nan),
+        brain_mask_flat,
+        brain_shape,
     ).astype(np.float32)
     export_nifti(full_thetas, orig_data, out_path, "raw_thetas.nii.gz")
 
@@ -210,9 +226,47 @@ def export_thetas_to_files_ball3stick(
         return out
 
     # A single vmapped call over every brain voxel exhausts a small GPU.
-    extracted = map_over_voxels(extract, thetas, model_mask, batch_size=batch_size)
+    extracted = map_over_voxels(extract, safe_thetas, model_mask, batch_size=batch_size)
+    extracted = jax.tree_util.tree_map(
+        lambda values: np.where(
+            theta_valid_samples.reshape(
+                theta_valid_samples.shape + (1,) * (values.ndim - 2)
+            ),
+            values,
+            np.nan,
+        ).astype(np.float32),
+        extracted,
+    )
 
     fractions = extracted["fractions"]
+    signal_active = np.any(model_mask[..., : len(sim_type.model_types)], axis=-1)
+    fraction_math_valid = _valid_fraction_samples(fractions)
+    fraction_valid_samples = theta_valid_samples & signal_active & fraction_math_valid
+    noise_only_samples = theta_valid_samples & ~signal_active
+    malformed_fraction_samples = (
+        theta_valid_samples & signal_active & ~fraction_math_valid
+    )
+
+    def warn_samples(samples, description):
+        if not np.any(samples):
+            return
+        sample_count = int(np.count_nonzero(samples))
+        affected_voxels = int(np.count_nonzero(np.any(samples, axis=1)))
+        message = (
+            f"{sample_count} posterior draws across {affected_voxels} in-brain "
+            f"voxels {description}; affected fraction outputs will be NaN."
+        )
+        if console.enabled():
+            console.warning(message)
+        else:
+            logging.warning(message)
+
+    warn_samples(noise_only_samples, "are noise-only and have no signal fractions")
+    warn_samples(malformed_fraction_samples, "have malformed signal fractions")
+
+    # Noise-only masks are valid, but signal fractions are not defined for them.
+    # Embedding later still leaves every outside-brain voxel at zero.
+    fractions = np.where(fraction_valid_samples[..., None], fractions, np.nan)
     diffusitivity = extracted["diffusitivity"]
     mu1 = extracted["mu1"]
     mu2 = extracted["mu2"]
@@ -245,18 +299,6 @@ def export_thetas_to_files_ball3stick(
         mus = np.take_along_axis(mus, order[..., None], axis=-2)
         mu1, mu2, mu3 = mus[..., 0, :], mus[..., 1, :], mus[..., 2, :]
 
-        # Check that fraction still sums to 1
-        assert np.allclose(np.sum(fractions, axis=-1), 1.0), (
-            "Fraction does not sum to 1"
-        )
-
-        # Check that sorting worked
-        assert np.all(fractions[..., 1] >= fractions[..., 2]), (
-            "f1 should be greater than f2"
-        )
-        assert np.all(fractions[..., 2] >= fractions[..., 3]), (
-            "f2 should be greater than f3"
-        )
     logging.info("Exporting moments and processed inferred parameters.")
 
     # Moments
@@ -270,7 +312,7 @@ def export_thetas_to_files_ball3stick(
 
     # A sample that drops the ball renormalises to f0 = 0, pinning its f_sum at
     # 1; conditioning on an active ball keeps the map comparable to a fit that
-    # always has one. See conf_eval/export/ball3stick.yaml.
+    # always has one. See conf/evaluation/export/theta/ball3stick.yaml.
     ball_active = np.asarray(model_mask[..., 0], dtype=np.bool_)  # (V, S)
     fsum_samples = fractions[..., 1:].sum(axis=-1)  # (V, S)
     fsum_mean_all = fsum_samples.mean(axis=1)
@@ -280,6 +322,8 @@ def export_thetas_to_files_ball3stick(
         fsum_mean = _conditional_mean(fsum_samples, ball_active, fsum_mean_all)
     else:
         fsum_mean = fsum_mean_all
+    fraction_voxels_valid = np.all(fraction_valid_samples, axis=1)
+    fsum_mean = np.where(fraction_voxels_valid, fsum_mean, np.nan)
 
     if cfg.export.export_stds:
         fractions_std = np.std(fractions, axis=1)
@@ -295,6 +339,7 @@ def export_thetas_to_files_ball3stick(
             fsum_std = _conditional_std(fsum_samples, ball_active, fsum_std_all)
         else:
             fsum_std = fsum_std_all
+        fsum_std = np.where(fraction_voxels_valid, fsum_std, np.nan)
 
     # Export diffusitivity
     full_diffusitivity_mean = embed_in_full_brain_array(
@@ -347,6 +392,9 @@ def export_thetas_to_files_ball3stick(
     # in every sample, so guard the division.
     f2_f1_ratio = _divide_safe(f2_mean, f1_mean)
     f3_f1_ratio = _divide_safe(f3_mean, f1_mean)
+    num_fib_pred = np.where(fraction_voxels_valid, num_fib_pred, np.nan)
+    f2_f1_ratio = np.where(fraction_voxels_valid, f2_f1_ratio, np.nan)
+    f3_f1_ratio = np.where(fraction_voxels_valid, f3_f1_ratio, np.nan)
     full_f2_f1_ratio = embed_in_full_brain_array(
         f2_f1_ratio, brain_mask_flat, brain_shape
     )
@@ -540,9 +588,6 @@ def export_thetas_to_files_ball3stick(
                 f3_reordered[..., None],
             ],
             axis=-1,
-        )
-        assert np.allclose(np.sum(fractions_reordered, axis=-1), 1.0), (
-            "Fraction does not sum to 1"
         )
         # Export reordered
         full_fractions_reordered = embed_in_full_brain_array(

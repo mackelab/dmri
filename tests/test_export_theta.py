@@ -13,6 +13,7 @@ from dmri.eval.export_theta import (
     _conditional_mean,
     _conditional_std,
     _divide_safe,
+    _valid_fraction_samples,
     export_thetas_to_files_ball3stick,
     map_over_voxels,
     spherical_to_cartesian,
@@ -208,3 +209,109 @@ def test_map_over_voxels_chunks_without_changing_results():
     for key in ("doubled", "summed"):
         np.testing.assert_allclose(whole[key], chunked[key])
     np.testing.assert_allclose(chunked["doubled"], values * 2)
+
+
+def test_fraction_validity_checks_the_whole_simplex_draw():
+    fractions = np.array(
+        [[[0.4, 0.6], [0.4, 0.5], [-0.1, 1.1], [np.nan, np.nan]]],
+        dtype=np.float32,
+    )
+    np.testing.assert_array_equal(
+        _valid_fraction_samples(fractions), [[True, False, False, False]]
+    )
+
+
+@pytest.mark.parametrize("invalid", [np.nan, np.inf])
+def test_non_finite_theta_samples_export_as_nan_inside_brain(tmp_path, invalid):
+    sim_type = Ball3StickSharedDiffusivity
+    thetas = np.zeros((2, 3, sim_type.theta_dim), dtype=np.float32)
+    thetas[0, 1, 0] = invalid
+    thetas[1, :, 0] = invalid
+    model_mask = np.ones((2, 3, 5), dtype=bool)
+    brain_shape = (2, 1, 1)
+    cfg = OmegaConf.create({
+        "export": {
+            "sort_by_fractions": True,
+            "reorder_dyads": True,
+            "export_stds": True,
+            "condition_fsum_on_ball": True,
+        }
+    })
+    orig_data = SimpleNamespace(
+        affine=np.eye(4), shape=brain_shape + (1,), volume_slice=None
+    )
+    out_path = tmp_path / "non_finite"
+
+    export_thetas_to_files_ball3stick(
+        cfg,
+        thetas,
+        sim_type,
+        model_mask,
+        np.ones(2, dtype=bool),
+        brain_shape,
+        str(out_path),
+        orig_data,
+    )
+
+    raw = np.asarray(nb.load(out_path / "raw_thetas.nii.gz").dataobj)
+    assert np.all(np.isnan(raw[0, 0, 0, 1]))
+    assert np.all(np.isnan(raw[1]))
+
+    for name in (
+        "mean_f0samples.nii.gz",
+        "mean_dsamples.nii.gz",
+        "mean_snrsamples.nii.gz",
+    ):
+        values = np.asarray(nb.load(out_path / name).dataobj)
+        assert np.isnan(values[1, 0, 0])
+
+
+def test_noise_only_fractions_export_as_nan_while_outside_stays_zero(tmp_path, caplog):
+    sim_type = Ball3StickSharedDiffusivity
+    thetas = np.zeros((2, 3, sim_type.theta_dim), dtype=np.float32)
+    model_mask = np.ones((2, 3, 5), dtype=bool)
+    model_mask[0, 1, :4] = False  # Noise-only has no valid fraction simplex.
+    brain_shape = (3, 1, 1)  # The final spatial voxel is outside the brain.
+    cfg = OmegaConf.create({
+        "export": {
+            "sort_by_fractions": True,
+            "reorder_dyads": True,
+            "export_stds": True,
+            "condition_fsum_on_ball": True,
+        }
+    })
+    orig_data = SimpleNamespace(
+        affine=np.eye(4), shape=brain_shape + (1,), volume_slice=None
+    )
+    out_path = tmp_path / "invalid_fractions"
+
+    with caplog.at_level("WARNING"):
+        export_thetas_to_files_ball3stick(
+            cfg,
+            thetas,
+            sim_type,
+            model_mask,
+            np.array([True, True, False]),
+            brain_shape,
+            str(out_path),
+            orig_data,
+        )
+
+    merged = [
+        np.asarray(nb.load(out_path / f"merged_f{i}samples.nii.gz").dataobj)
+        for i in range(4)
+    ]
+    assert all(np.isnan(values[0, 0, 0, 1]) for values in merged)
+    assert all(np.all(np.isfinite(values[1, 0, 0])) for values in merged)
+    assert all(np.all(values[2, 0, 0] == 0.0) for values in merged)
+
+    for name in (
+        "mean_f0samples.nii.gz",
+        "mean_num_fib_predsamples.nii.gz",
+        "mean_f2_f1_ratiosamples.nii.gz",
+    ):
+        values = np.asarray(nb.load(out_path / name).dataobj)
+        assert np.isnan(values[0, 0, 0])
+        assert np.isfinite(values[1, 0, 0])
+        assert values[2, 0, 0] == 0.0
+    assert "1 posterior draws across 1 in-brain voxels are noise-only" in caplog.text

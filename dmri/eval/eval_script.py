@@ -15,8 +15,8 @@ import numpy as np
 from flax import nnx
 from omegaconf import DictConfig, ListConfig, OmegaConf
 
+from dmri import console
 from dmri.config import runtime_config
-from dmri.eval import console
 from dmri.eval.autobatch import (
     available_devices,
     cache_dir,
@@ -56,18 +56,6 @@ jax.config.update("jax_persistent_cache_min_compile_time_secs", 0.5)
 jax.config.update(
     "jax_persistent_cache_enable_xla_caches", "xla_gpu_per_fusion_autotune_cache_dir"
 )
-
-logo = r"""
-
- /$$$$$$$  /$$      /$$ /$$$$$$$  /$$$$$$
-| $$__  $$| $$$    /$$$| $$__  $$|_  $$_/
-| $$  \ $$| $$$$  /$$$$| $$  \ $$  | $$
-| $$  | $$| $$ $$/$$ $$| $$$$$$$/  | $$
-| $$  | $$| $$  $$$| $$| $$__  $$  | $$
-| $$  | $$| $$\  $ | $$| $$  \ $$  | $$
-| $$$$$$$/| $$ \/  | $$| $$  | $$ /$$$$$$
-|_______/ |__/     |__/|__/  |__/|______/
-"""
 
 
 def _first_device(kind: str):
@@ -559,7 +547,8 @@ def _resolve_checkpoint_root(cfg):
 
 def main():
     """Main script function"""
-    print(logo)
+    if not console.enabled():
+        console.print_logo()
     _main()
 
 
@@ -801,7 +790,15 @@ def _run_eval_pipeline(
         default_mask = true_model_mask
     elif default_mask is not None:
         log.info("Using default model mask from config.")
-        default_mask = jnp.array(default_mask, dtype=jnp.bool)
+        default_mask = np.asarray(default_mask)
+        expected_components = sim_type.num_compartments()
+        if default_mask.ndim != 1 or default_mask.shape[0] != expected_components:
+            raise ValueError(
+                "evaluation.pipeline.default_mask must contain exactly "
+                f"{expected_components} component values for {sim_type.__name__}; "
+                f"got shape {default_mask.shape}."
+            )
+        default_mask = jnp.asarray(default_mask, dtype=jnp.bool_)
 
     # Sample theta
     key, key_theta = jax.random.split(key)
@@ -1033,7 +1030,7 @@ def _warn_on_non_finite_thetas(thetas, precision, logger):
     fraction = non_finite / thetas.size
     message = (
         f"{non_finite} non-finite theta values ({fraction:.2%} of samples). "
-        "The affected voxels will export as zeros."
+        "Affected in-brain outputs will export as NaN."
     )
     if is_half(precision):
         logger.warning(
@@ -1284,31 +1281,33 @@ def _autotune_batch_sizes(cfg, key, model, acq, sim_type, data, log, devices):
             pending.append(stage)
 
     if not pending:
-        log.info(
-            "Using cached batch sizes: %s",
-            ", ".join(f"{name}={size}" for name, size in resolved.items()),
+        cached_summary = ", ".join(
+            f"{name}={size:,}" for name, size in resolved.items()
         )
+        log.info("Using cached batch sizes: %s", cached_summary)
+        console.say(f"Batch sizes loaded from cache ({cached_summary})\n")
         return resolved
 
     message = (
         f"Autotuning batch sizes for this device (one-time; cached in {cache_dir()})"
     )
     log.info(message)
-    console.say(f"\n{message}")
+    console.say(message)
     started = time.perf_counter()
     for index, stage in enumerate(pending, start=1):
         stage_started = time.perf_counter()
-        resolved[stage.name] = resolve_batch_size(
-            stage.build(),
-            *stage.probe_args(data),
-            key_example=key,
-            configured=stage.configured(cfg),
-            devices=devices,
-            num_voxels=data.shape[0],
-            cache_key=stage.cache_key(cfg, data, devices),
-            logger=log,
-            override=override,
-        )
+        with console.status(f"Autotuning {stage.label} [{index}/{len(pending)}]"):
+            resolved[stage.name] = resolve_batch_size(
+                stage.build(),
+                *stage.probe_args(data),
+                key_example=key,
+                configured=stage.configured(cfg),
+                devices=devices,
+                num_voxels=data.shape[0],
+                cache_key=stage.cache_key(cfg, data, devices),
+                logger=log,
+                override=override,
+            )
         summary = (
             f"  [{index}/{len(pending)}] {stage.label:<36} "
             f"{resolved[stage.name]:>7,} vox/batch  "

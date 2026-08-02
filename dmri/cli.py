@@ -1,4 +1,11 @@
+import os
 import sys
+
+# XLA writes compiler diagnostics directly to the native stderr file descriptor,
+# bypassing Python and Hydra logging. Keep the user-facing CLI readable unless a
+# backend developer explicitly asks for the raw stream.
+if os.environ.get("DMRI_SHOW_NATIVE_LOGS", "").lower() not in {"1", "true", "yes"}:
+    os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
 USAGE = """usage: dmri <command> [options]
 

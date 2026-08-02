@@ -87,6 +87,8 @@ def test_defaults_are_unchanged_without_a_quality_flag():
     assert args.num_steps == 40
     assert args.theta_samples == 50
     assert args.mask_samples == 50
+    assert args.model_mode == "per-sample"
+    assert args.fixed_model is None
     assert QUALITY_PRESETS[DEFAULT_QUALITY] == {"num_steps": 40, "samples": 50}
 
 
@@ -121,6 +123,69 @@ def test_preset_reaches_the_hydra_overrides(input_folder):
     assert "evaluation.sampling.theta.params.num_steps=20" in overrides
     assert "evaluation.sampling.theta.num_samples=25" in overrides
     assert "evaluation.sampling.mask.n_samples=25" in overrides
+
+
+def test_best_model_mode_uses_one_model_per_voxel(input_folder):
+    args = _resolved([str(input_folder), "--model-mode", "best"])
+    overrides = _hydra_overrides(args, input_folder, input_folder / "out")
+
+    assert "evaluation/selection=ball3stick_best" in overrides
+    assert "evaluation.pipeline.sample_mask=false" in overrides
+    assert "evaluation.pipeline.select_models=true" in overrides
+    assert "evaluation.pipeline.default_mask=null" in overrides
+
+
+@pytest.mark.parametrize(
+    ("name", "mask"),
+    [
+        ("B1S", "[true,true,false,false,true]"),
+        ("B2S", "[true,true,true,false,true]"),
+        ("B3S", "[true,true,true,true,true]"),
+    ],
+)
+def test_fixed_model_mode_emits_the_selected_mask(input_folder, name, mask):
+    args = _resolved([str(input_folder), "--fixed-model", name.lower()])
+    overrides = _hydra_overrides(args, input_folder, input_folder / "out")
+
+    assert args.model_mode == "fixed"
+    assert args.fixed_model == name
+    assert "evaluation/selection=none" in overrides
+    assert "evaluation.pipeline.sample_mask=false" in overrides
+    assert "evaluation.pipeline.select_models=false" in overrides
+    assert f"evaluation.pipeline.default_mask={mask}" in overrides
+
+
+def test_model_mode_validation_is_strategy_specific():
+    from dmri.predict import _validate_model_mode
+
+    with pytest.raises(ValueError, match="--fixed-model is required"):
+        _validate_model_mode(
+            Namespace(
+                model_mode="fixed",
+                fixed_model=None,
+                mask_samples=1,
+                theta_samples=2,
+            )
+        )
+
+    with pytest.raises(ValueError, match="--mask-samples"):
+        _validate_model_mode(
+            Namespace(
+                model_mode="per-sample",
+                fixed_model=None,
+                mask_samples=1,
+                theta_samples=2,
+            )
+        )
+
+    _validate_model_mode(
+        Namespace(
+            model_mode="best",
+            fixed_model=None,
+            mask_samples=1,
+            theta_samples=2,
+        )
+    )
 
 
 def test_prompting_is_skipped_when_nothing_can_answer(monkeypatch):
@@ -175,8 +240,33 @@ def test_interactive_setup_only_fills_what_is_missing(monkeypatch):
     args = Namespace(model="m2", quality=None, repo_id="r", revision=None)
     predict._interactive_setup(args)
     assert args.model == "m2", "an explicitly chosen model is not re-asked"
-    assert [t for t in asked if t.startswith("Model")] == []
+    assert not any(t.startswith("Model  (") for t in asked)
     assert any(t.startswith("Quality") for t in asked)
+    assert any(t.startswith("Model mode") for t in asked)
+
+
+def test_interactive_fixed_mode_asks_for_the_fixed_model(monkeypatch):
+    from dmri import predict
+
+    asked = []
+
+    def record(title, options, default_index, **kwargs):
+        asked.append(title)
+        return options[default_index][0]
+
+    monkeypatch.setattr(predict, "_choose", record)
+    args = Namespace(
+        model="m",
+        quality="fast",
+        model_mode="fixed",
+        fixed_model=None,
+        repo_id="r",
+        revision=None,
+    )
+    predict._interactive_setup(args)
+
+    assert args.fixed_model == "B3S"
+    assert asked == ["Fixed model"]
 
 
 def test_model_listing_failure_does_not_break_the_prompt(monkeypatch):
@@ -214,3 +304,14 @@ def test_verbose_keeps_the_full_log():
 
     assert _parser().parse_args(["f"]).verbose is False
     assert _parser().parse_args(["f", "--verbose"]).verbose is True
+
+
+def test_predict_logo_precedes_help(capsys):
+    from dmri import console
+    from dmri.predict import main
+
+    with pytest.raises(SystemExit, match="0"):
+        main(["--help"])
+    output = capsys.readouterr().out
+    assert output.startswith(console.LOGO)
+    assert output.index(console.LOGO) < output.index("usage: dmri predict")

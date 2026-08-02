@@ -57,9 +57,13 @@ def select_models(
 
     elif incorporate_models == "best":
         logger.info("Sampling best model only")
-        feasible_models = jnp.array(
-            cfg.model_selection.feasible_models, dtype=jnp.bool_
-        )
+        feasible_models = np.asarray(cfg.model_selection.feasible_models)
+        if feasible_models.ndim != 2 or feasible_models.shape[1] != num_comp:
+            raise ValueError(
+                "Best-model candidates must each contain exactly "
+                f"{num_comp} component values; got shape {feasible_models.shape}."
+            )
+        feasible_models = jnp.asarray(feasible_models, dtype=jnp.bool_)
         p_mask = cfg.mask_sample.p_mask
         p_mask_arr = jnp.array([p_mask])
 

@@ -78,8 +78,39 @@ dmri predict FOLDER --model b3s_2_4_6_128 --quality fast
 (60 x 100). Cost is exactly linear in `steps x samples`; the accuracy cost is
 data-dependent, so validate a reduced setting against `high` on your own scans.
 
-During the run each stage shows a progress bar. `--verbose` swaps the summary and
-bars for the full evaluation log.
+During the run, compilation stages show spinners and sampling stages show voxel
+progress bars. `--verbose` adds the detailed evaluation log without removing the
+summary or progress display. Redirected output automatically uses stable text
+lines instead of terminal animation.
+
+Native XLA compiler chatter is hidden in normal and verbose modes. Set
+`DMRI_SHOW_NATIVE_LOGS=1` only when debugging the JAX/XLA backend itself.
+
+### Choose how models vary
+
+By default, model uncertainty is retained: every parameter draw in every voxel
+uses a posterior model-mask draw.
+
+```bash
+dmri predict FOLDER --model-mode per-sample
+```
+
+Choose one highest-probability feasible model per voxel instead:
+
+```bash
+dmri predict FOLDER --model-mode best
+```
+
+Or use one fixed Ball-and-Stick model throughout the brain:
+
+```bash
+dmri predict FOLDER --fixed-model B1S
+dmri predict FOLDER --fixed-model B2S
+dmri predict FOLDER --fixed-model B3S
+```
+
+Named fixed choices depend on the checkpoint's simulator family. The current
+Ball3Stick-family checkpoints provide B1S, B2S, and B3S.
 
 ## Select a checkpoint
 

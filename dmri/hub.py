@@ -4,8 +4,6 @@ from typing import Any
 from flax import nnx
 from huggingface_hub import HfApi
 
-from dmri.train.utils import load_checkpoint
-
 DEFAULT_REPO_ID = "manugloeck/dmri-pretrained"
 DEFAULT_MODEL_NAME = "b3s_2_4_6_128"
 
@@ -16,6 +14,13 @@ class PretrainedModel:
     simulator: Any
     config: Any
     step: int | None
+
+
+def load_checkpoint(**kwargs):
+    """Load the heavy checkpoint implementation only when a model is requested."""
+    from dmri.train.utils import load_checkpoint as load
+
+    return load(**kwargs)
 
 
 def load_pretrained(

@@ -1,4 +1,3 @@
-import sys
 from collections.abc import Sequence
 from functools import partial
 
@@ -8,6 +7,7 @@ import numpy as np
 from blackjax import hmc, tempered_smc
 from blackjax.smc.resampling import systematic
 
+from dmri import console
 from dmri.eval.autobatch import (
     available_devices,
     batch_sharding_for,
@@ -50,21 +50,8 @@ def _is_oom(error) -> bool:
 
 
 def _voxel_progress(desc, total):
-    """A progress bar over voxels, or None when nothing would see it."""
-    if not desc or not sys.stderr.isatty():
-        return None
-    try:
-        from tqdm.auto import tqdm
-    except ImportError:
-        return None
-    return tqdm(
-        total=total,
-        desc=desc,
-        unit="vox",
-        unit_scale=True,
-        leave=False,
-        bar_format="  {desc:<22} {percentage:3.0f}%|{bar:24}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
-    )
+    """A progress display over voxels when user-facing output is enabled."""
+    return console.voxel_progress(desc, total)
 
 
 def _pad_to(batch_data, target_size):
@@ -140,67 +127,68 @@ def eval_in_batches(
     pending_result = None
     progress = _voxel_progress(desc, expected_total_size)
 
-    while batch_start < data[0].shape[0]:
-        try:
-            if progress is None:
-                shards = (
-                    f" ({current_batch_size // num_devices} per device across "
-                    f"{num_devices} devices)"
-                    if num_devices > 1
-                    else ""
+    try:
+        while batch_start < data[0].shape[0]:
+            try:
+                if progress is None:
+                    shards = (
+                        f" ({current_batch_size // num_devices} per device across "
+                        f"{num_devices} devices)"
+                        if num_devices > 1
+                        else ""
+                    )
+                    print_fn(
+                        f"Evaluating batch {batch_start} with batch size "
+                        f"{current_batch_size}{shards}"
+                    )
+                batch_end = min(batch_start + current_batch_size, data[0].shape[0])
+                batch_data = jax.tree_util.tree_map(
+                    lambda x, start=batch_start, end=batch_end: x[start:end], data
                 )
-                print_fn(
-                    f"Evaluating batch {batch_start} with batch size "
-                    f"{current_batch_size}{shards}"
-                )
-            batch_end = min(batch_start + current_batch_size, data[0].shape[0])
-            batch_data = jax.tree_util.tree_map(
-                lambda x, start=batch_start, end=batch_end: x[start:end], data
-            )
-            # Pad up to the full batch so only one shape is ever traced, keeping
-            # the total divisible by the device count so the shards stay even.
-            original_batch_size = batch_data[0].shape[0]
-            pad_target = min(current_batch_size, expected_total_size)
-            pad_target += (-pad_target) % num_devices
-            batch_data = _pad_to(batch_data, pad_target)
+                # Pad up to the full batch so only one shape is ever traced, keeping
+                # the total divisible by the device count so the shards stay even.
+                original_batch_size = batch_data[0].shape[0]
+                pad_target = min(current_batch_size, expected_total_size)
+                pad_target += (-pad_target) % num_devices
+                batch_data = _pad_to(batch_data, pad_target)
 
-            batch_keys = _pad_to((all_keys[batch_start:batch_end],), pad_target)[0]
-            # Sharding the leading axis lets jit partition the work.
-            batch_data_device = jax.device_put(batch_data, batch_sharding)
-            batch_keys_device = jax.device_put(batch_keys, batch_sharding)
+                batch_keys = _pad_to((all_keys[batch_start:batch_end],), pad_target)[0]
+                # Sharding the leading axis lets jit partition the work.
+                batch_data_device = jax.device_put(batch_data, batch_sharding)
+                batch_keys_device = jax.device_put(batch_keys, batch_sharding)
 
-            # Dispatch computation; fetch previous result while this runs to overlap host/device work.
-            batch_res = fn(batch_keys_device, *batch_data_device)
-            if pending_result is not None:
-                eval_results.append(_finalize(*pending_result))
-            pending_result = (batch_res, original_batch_size)
-            if progress is not None:
-                progress.update(batch_end - batch_start)
-            batch_start = batch_end
-        except Exception as e:
-            if _is_oom(e) and current_batch_size > min_batch_size * num_devices:
-                reduced = max(current_batch_size // 2, min_batch_size * num_devices)
-                reduced -= reduced % num_devices
-                print_fn(
-                    f"Out of memory error, reducing batch size from {current_batch_size} to {reduced}"
-                )
-                # Clear caches
-                jax.clear_caches()
-                current_batch_size = reduced
-                _record_batch_size(current_batch_size)
-                if progress is not None:
-                    progress.reset()
-                    progress.update(batch_start)
-                continue
-            else:
+                # Dispatch computation; fetch the previous result while this runs.
+                batch_res = fn(batch_keys_device, *batch_data_device)
                 if pending_result is not None:
                     eval_results.append(_finalize(*pending_result))
-                raise e
+                pending_result = (batch_res, original_batch_size)
+                if progress is not None:
+                    progress.update(batch_end - batch_start)
+                batch_start = batch_end
+            except Exception as error:
+                if _is_oom(error) and current_batch_size > min_batch_size * num_devices:
+                    reduced = max(current_batch_size // 2, min_batch_size * num_devices)
+                    reduced -= reduced % num_devices
+                    print_fn(
+                        "Out of memory error, reducing batch size from "
+                        f"{current_batch_size} to {reduced}"
+                    )
+                    jax.clear_caches()
+                    current_batch_size = reduced
+                    _record_batch_size(current_batch_size)
+                    if progress is not None:
+                        progress.reset()
+                        progress.update(batch_start)
+                    continue
+                if pending_result is not None:
+                    eval_results.append(_finalize(*pending_result))
+                raise
 
-    if pending_result is not None:
-        eval_results.append(_finalize(*pending_result))
-    if progress is not None:
-        progress.close()
+        if pending_result is not None:
+            eval_results.append(_finalize(*pending_result))
+    finally:
+        if progress is not None:
+            progress.close()
 
     if len(eval_results) == 1:
         result = eval_results[0]
@@ -241,7 +229,12 @@ def build_mask_sample_fn(method, num_samples, model, acq, p_mask, feasible_model
         y_ctx, y = model._encode_observations(acq, x)
         keys = jax.random.split(key, num_samples)
         masks = jax.vmap(model.sample_mask, in_axes=(0, None, None, None, None, None))(
-            keys, acq, x, prior, y_ctx, y
+            keys,
+            acq,
+            x,
+            prior,
+            y_ctx,
+            y,
         )
         if feasible is None:
             return masks

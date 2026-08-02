@@ -4,6 +4,7 @@ import shutil
 import sys
 from pathlib import Path
 
+from dmri import console
 from dmri.eval.precision import PRECISION_CHOICES
 from dmri.hub import DEFAULT_MODEL_NAME, DEFAULT_REPO_ID, list_pretrained_models
 
@@ -18,6 +19,14 @@ QUALITY_PRESETS = {
     "high": {"num_steps": 60, "samples": 100},
 }
 DEFAULT_QUALITY = "balanced"
+
+MODEL_MODES = ("per-sample", "best", "fixed")
+DEFAULT_MODEL_MODE = "per-sample"
+FIXED_MODELS = {
+    "B1S": (True, True, False, False, True),
+    "B2S": (True, True, True, False, True),
+    "B3S": (True, True, True, True, True),
+}
 
 
 def _preset_cost(name):
@@ -46,6 +55,15 @@ def _unit_float(value):
     value = float(value)
     if not 0.0 < value <= 1.0:
         raise argparse.ArgumentTypeError("must be in (0, 1]")
+    return value
+
+
+def _fixed_model(value):
+    value = value.upper()
+    if value not in FIXED_MODELS:
+        raise argparse.ArgumentTypeError(
+            f"choose one of {', '.join(FIXED_MODELS)} for this model family"
+        )
     return value
 
 
@@ -97,7 +115,10 @@ def _parser():
     parser.add_argument(
         "--mask-samples",
         type=_positive_int,
-        help="Number of model-mask samples. Overrides --quality.",
+        help=(
+            "Number of posterior model-mask samples in per-sample mode. "
+            "Overrides --quality."
+        ),
     )
     parser.add_argument(
         "--theta-samples",
@@ -105,9 +126,23 @@ def _parser():
         help="Number of parameter samples. Overrides --quality.",
     )
     parser.add_argument(
+        "--model-mode",
+        choices=MODEL_MODES,
+        help=(
+            "Model conditioning: posterior model per voxel/sample, best model "
+            "per voxel, or one fixed model. Defaults to per-sample."
+        ),
+    )
+    parser.add_argument(
+        "--fixed-model",
+        type=_fixed_model,
+        metavar="{B1S,B2S,B3S}",
+        help="Fixed Ball-and-Stick model; implies --model-mode=fixed.",
+    )
+    parser.add_argument(
         "--verbose",
         action="store_true",
-        help="Show the full evaluation log instead of the summary and progress bars.",
+        help="Add detailed evaluation logs while keeping the progress display.",
     )
     parser.add_argument(
         "--non-interactive",
@@ -214,11 +249,46 @@ def _interactive_setup(args) -> None:
             list(QUALITY_PRESETS).index(DEFAULT_QUALITY),
         )
 
+    if getattr(args, "model_mode", None) is None:
+        args.model_mode = (
+            "fixed"
+            if getattr(args, "fixed_model", None) is not None
+            else _choose(
+                "Model mode",
+                [
+                    (
+                        "per-sample",
+                        "posterior model per voxel and parameter sample (default)",
+                    ),
+                    ("best", "highest-probability model per voxel"),
+                    ("fixed", "one chosen model for every voxel"),
+                ],
+                0,
+            )
+        )
+
+    if args.model_mode == "fixed" and getattr(args, "fixed_model", None) is None:
+        args.fixed_model = _choose(
+            "Fixed model",
+            [
+                ("B1S", "ball + 1 stick"),
+                ("B2S", "ball + 2 sticks"),
+                ("B3S", "ball + 3 sticks"),
+            ],
+            2,
+        )
+
 
 def _apply_defaults(args) -> None:
     """Resolve the quality preset, letting explicit flags win over it."""
     args.model = args.model or DEFAULT_MODEL_NAME
     args.quality = args.quality or DEFAULT_QUALITY
+    if (
+        getattr(args, "fixed_model", None) is not None
+        and getattr(args, "model_mode", None) is None
+    ):
+        args.model_mode = "fixed"
+    args.model_mode = getattr(args, "model_mode", None) or DEFAULT_MODEL_MODE
     preset = QUALITY_PRESETS[args.quality]
 
     if args.num_steps is None:
@@ -227,6 +297,18 @@ def _apply_defaults(args) -> None:
         args.theta_samples = preset["samples"]
     if args.mask_samples is None:
         args.mask_samples = max(preset["samples"], args.theta_samples)
+
+
+def _validate_model_mode(args) -> None:
+    if args.model_mode == "fixed" and args.fixed_model is None:
+        raise ValueError("--fixed-model is required when --model-mode=fixed")
+    if args.model_mode != "fixed" and args.fixed_model is not None:
+        raise ValueError("--fixed-model can only be used with --model-mode=fixed")
+    if args.model_mode == "per-sample" and args.mask_samples < args.theta_samples:
+        raise ValueError(
+            "--mask-samples must be greater than or equal to --theta-samples "
+            "when --model-mode=per-sample"
+        )
 
 
 def _validate_input(folder: Path) -> Path:
@@ -255,18 +337,41 @@ def _prepare_output(folder: Path, name: str, overwrite: bool) -> Path:
 
 
 def _hydra_overrides(args, folder: Path, output_dir: Path) -> list[str]:
+    model_mode = getattr(args, "model_mode", None) or DEFAULT_MODEL_MODE
     overrides = [
         f"evaluation.input.path={folder}",
         f"run.output_dir={output_dir}",
         f"checkpoint.model_name={args.model}",
         "checkpoint.which=best",
         f"run.seed={args.seed}",
-        "evaluation/selection=average",
         f"evaluation.sampling.mask.n_samples={args.mask_samples}",
         f"evaluation.sampling.theta.num_samples={args.theta_samples}",
         "~evaluation.export.theta.metrics",
         f"hydra.run.dir={output_dir / '.hydra'}",
     ]
+    if model_mode == "per-sample":
+        overrides.extend([
+            "evaluation/selection=average",
+            "evaluation.pipeline.sample_mask=true",
+            "evaluation.pipeline.select_models=true",
+            "evaluation.pipeline.default_mask=null",
+        ])
+    elif model_mode == "best":
+        overrides.extend([
+            "evaluation/selection=ball3stick_best",
+            "evaluation.pipeline.sample_mask=false",
+            "evaluation.pipeline.select_models=true",
+            "evaluation.pipeline.default_mask=null",
+        ])
+    else:
+        fixed_model = getattr(args, "fixed_model", None)
+        mask = ",".join(str(value).lower() for value in FIXED_MODELS[fixed_model])
+        overrides.extend([
+            "evaluation/selection=none",
+            "evaluation.pipeline.sample_mask=false",
+            "evaluation.pipeline.select_models=false",
+            f"evaluation.pipeline.default_mask=[{mask}]",
+        ])
     batch_size = getattr(args, "batch_size", None)
     if batch_size is not None:
         overrides.append(f"evaluation.batch_size={batch_size}")
@@ -302,6 +407,7 @@ def _hydra_overrides(args, folder: Path, output_dir: Path) -> list[str]:
 
 def main(argv=None):
     """Run prediction using the simple public interface."""
+    console.print_logo()
     args = _parser().parse_args(argv)
     if args.list_models:
         for model_name in list_pretrained_models(args.repo_id, revision=args.revision):
@@ -316,10 +422,7 @@ def main(argv=None):
             print(f"\nInput:  {args.folder.expanduser().resolve()}")
             _interactive_setup(args)
         _apply_defaults(args)
-        if args.mask_samples < args.theta_samples:
-            raise ValueError(
-                "--mask-samples must be greater than or equal to --theta-samples"
-            )
+        _validate_model_mode(args)
         output_dir = _prepare_output(folder, args.output_subdir, args.overwrite)
         overrides = _hydra_overrides(args, folder, output_dir)
     except ValueError as error:
@@ -330,22 +433,26 @@ def main(argv=None):
         # yet -- importing jax alone does not create a backend.
         os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = str(args.memory_fraction)
 
-    print()
-    print(f"Input:     {folder}")
-    print(f"Model:     {args.local_checkpoint or f'{args.repo_id}/{args.model}'}")
-    print(
-        f"Sampling:  {args.quality} "
-        f"({args.num_steps} steps x {args.theta_samples} samples), {args.precision}"
+    console.configure(enabled=True, verbose=args.verbose)
+    console.summary(
+        "Prediction",
+        [
+            ("Input", folder),
+            ("Model", args.local_checkpoint or f"{args.repo_id}/{args.model}"),
+            (
+                "Sampling",
+                f"{args.quality}, {args.num_steps} steps x "
+                f"{args.theta_samples} samples, {args.precision}",
+            ),
+            (
+                "Model mode",
+                f"fixed ({args.fixed_model})"
+                if args.model_mode == "fixed"
+                else args.model_mode,
+            ),
+            ("Output", output_dir),
+        ],
     )
-    print(f"Output:    {output_dir}")
-    print(
-        "\nThe first run on a new machine autotunes batch sizes, which takes a few "
-        "minutes.\nThe result is cached, so later runs skip it."
-    )
-
-    from dmri.eval import console
-
-    console.set_enabled(True)
     if not args.verbose:
         # Set at runtime, not through the environment: huggingface_hub reads
         # HF_HUB_DISABLE_PROGRESS_BARS when it is imported, which already
@@ -369,4 +476,4 @@ def main(argv=None):
     finally:
         sys.argv = original_argv
 
-    print(f"Prediction complete. Results are in {output_dir}")
+    console.say(f"Prediction complete. Results are in {output_dir}")

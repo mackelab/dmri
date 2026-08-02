@@ -49,11 +49,33 @@ never block; `--non-interactive` suppresses them explicitly.
 - `--seed INTEGER`: sampling seed; default `1`.
 - `--mask-samples INTEGER`: number of model-mask samples. Overrides `--quality`.
 - `--theta-samples INTEGER`: number of parameter samples. Overrides `--quality`.
-- `--verbose`: show the full evaluation log instead of the summary and progress bars.
+- `--model-mode {per-sample,best,fixed}`: choose a posterior model separately
+  for every voxel and parameter sample (default), choose one best feasible model
+  per voxel, or use one fixed model everywhere.
+- `--fixed-model {B1S,B2S,B3S}`: fixed Ball-and-Stick model. This implies
+  `--model-mode=fixed` and is currently available for Ball3Stick-family checkpoints.
+- `--verbose`: add detailed evaluation logs while keeping the summary and progress display.
 - `--non-interactive`: never prompt.
 
-`--mask-samples` must be greater than or equal to `--theta-samples` because
-each parameter sample is conditioned on a sampled model mask.
+In `per-sample` mode, `--mask-samples` must be greater than or equal to
+`--theta-samples` because each parameter sample is conditioned on a sampled
+model mask. Best and fixed modes do not sample posterior masks.
+
+Examples:
+
+```bash
+# Posterior model uncertainty: one model draw per voxel and parameter draw.
+dmri predict FOLDER --model-mode per-sample
+
+# One highest-probability model (B1S, B2S, or B3S) per voxel.
+dmri predict FOLDER --model-mode best
+
+# B2S for every voxel and every parameter draw.
+dmri predict FOLDER --fixed-model B2S
+```
+
+For Ball3Stick checkpoints, `B1S`, `B2S`, and `B3S` mean ball plus one, two,
+or three sticks respectively. All include the configured noise model.
 
 The presets differ only in cost, which is exactly linear in
 `num_steps x samples`: `fast` is 4x cheaper than `balanced` and `high` is 3x
@@ -67,7 +89,8 @@ the device's free memory, refined against XLA's memory analysis of the compiled
 sampler, then validated by a compile at the chosen size. If a batch still runs
 out of memory the size is halved and retried.
 
-This autotuning happens once, up front, in a single labelled step:
+This autotuning happens once, up front. On a terminal each compilation has a
+spinner, followed by a permanent result line:
 
 ```
 Autotuning batch sizes for this device (one-time; cached in .jax_cache)
@@ -76,6 +99,15 @@ Autotuning batch sizes for this device (one-time; cached in .jax_cache)
   [3/3] corrector                          4800 voxels/batch     8.0s
 Autotuning done in 68.0s - later runs on this machine reuse it and skip this step.
 ```
+
+When output is redirected, animations and terminal styling are replaced by
+stable text lines. Set [`NO_COLOR`](https://no-color.org/) to disable colour on
+an interactive terminal.
+
+XLA compiler diagnostics are suppressed in both normal and verbose CLI output.
+They bypass Python logging and are generally not useful during a successful run.
+For low-level backend debugging, set `DMRI_SHOW_NATIVE_LOGS=1` before invoking
+the command; `TF_CPP_MIN_LOG_LEVEL` can then select the native log level.
 
 It is genuinely a one-time cost: the result is cached in
 `.jax_cache/dmri_batch_size.json` alongside the compilation cache. On the
