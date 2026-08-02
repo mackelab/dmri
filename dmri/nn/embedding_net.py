@@ -215,7 +215,7 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
                 "max_bval must be greater than min_bval for normalization."
             )
         bvals = jnp.asarray(bvals)
-        bvals = jnp.clip(bvals, a_min=self.min_bval, a_max=self.max_bval)
+        bvals = jnp.clip(bvals, min=self.min_bval, max=self.max_bval)
         bvals = (bvals - self.min_bval) / (self.max_bval - self.min_bval)
         return bvals * 2.0 - 1.0
 
@@ -230,7 +230,7 @@ class BvalBvecSignalEmbeddingNet(nnx.Module):
             normalized = soft_squash(normalized)
         transformed = self.min_signal + normalized * (self.max_signal - self.min_signal)
         if self.log_transform_signals:
-            transformed = jnp.log(jnp.clip(transformed, a_min=1e-8))
+            transformed = jnp.log(jnp.clip(transformed, min=1e-8))
         return transformed
 
     def global_summary_token(self, bvals, bvecs, signals) -> Array:
