@@ -1,4 +1,6 @@
-import os
+import base64
+import io
+from collections.abc import Mapping
 from typing import Any
 
 import jax
@@ -7,27 +9,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import plotly.graph_objects as go
 from dipy.data import get_sphere
-from jax.typing import ArrayLike
 from matplotlib.patches import Circle
 from plotly.subplots import make_subplots
 
 from dmri.utils.dmriutils import cart2sph, sph2cart
 
 sphere_default = get_sphere(name="symmetric724")
-
-
-def set_style(style="dark"):
-    # Directory where this file lives
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-
-    if style == "white":
-        style_path = os.path.join(base_dir, "pyloric.mplstyle")
-    elif style == "dark":
-        style_path = os.path.join(base_dir, "pyloric_black.mplstyle")
-    else:
-        raise ValueError("Style must be 'white' or 'dark'")
-
-    plt.style.use(style_path)
 
 
 def _ensure_axis(
@@ -50,221 +37,7 @@ def _ensure_axis(
     return fig, ax
 
 
-def orthoview_quiver_plotly(
-    data,
-    fractions,
-    step=1,
-    colors=None,
-    xy_slice=None,
-    xz_slice=None,
-    yz_slice=None,
-    height=None,
-    width=None,
-):
-    if data.ndim != 5 or data.shape[-1] != 3:
-        raise ValueError(
-            "Data must have shape (x, y, z, channels, 3) where last dim is vector (u, v, w)"
-        )
-
-    x_max, y_max, z_max, channels, _ = data.shape
-    fractions = fractions.reshape(x_max, y_max, z_max, channels)
-
-    # Pad to cube
-    max_dim = max(x_max, y_max, z_max)
-    x_pad = (max_dim - x_max) // 2
-    y_pad = (max_dim - y_max) // 2
-    z_pad = (max_dim - z_max) // 2
-
-    data = np.pad(
-        data,
-        ((x_pad, x_pad), (y_pad, y_pad), (z_pad, z_pad), (0, 0), (0, 0)),
-        mode="constant",
-    )
-    fractions = np.pad(
-        fractions,
-        ((x_pad, x_pad), (y_pad, y_pad), (z_pad, z_pad), (0, 0)),
-        mode="constant",
-    )
-    x_max, y_max, z_max, _, _ = data.shape
-
-    data = fractions[..., None] * data
-    fsum = np.sum(fractions, axis=-1)
-
-    def create_line_quiver_2d_vectorized(X, Y, U, V, color="white", scale=1.0):
-        x0 = X - U * scale
-        x1 = X + U * scale
-        y0 = Y - V * scale
-        y1 = Y + V * scale
-
-        x_lines = np.vstack([
-            x0.flatten(),
-            x1.flatten(),
-            np.full(X.size, np.nan),
-        ]).T.flatten()
-        y_lines = np.vstack([
-            y0.flatten(),
-            y1.flatten(),
-            np.full(X.size, np.nan),
-        ]).T.flatten()
-
-        return [
-            go.Scatter(
-                x=x_lines,
-                y=y_lines,
-                mode="lines",
-                line=dict(color=color, width=1),
-                showlegend=False,
-            )
-        ]
-
-    fig = make_subplots(
-        rows=2,
-        cols=2,
-        column_widths=[0.35, 0.65],
-        specs=[[{}, {"rowspan": 2}], [{"colspan": 1}, None]],
-        vertical_spacing=0.0,
-        horizontal_spacing=0.0,
-    )
-
-    if colors is None:
-        colors = ["red", "blue", "green"]
-
-    # --- Generalized slice plotting with per-axis control ---
-    all_trace_groups = {"XY": [], "XZ": [], "YZ": []}
-
-    def handle_axis(axis_name, axis_size, slice_selector, plot_func, row, col):
-        if slice_selector is None:
-            return
-
-        if isinstance(slice_selector, int):
-            slice_list = [slice_selector]
-        elif isinstance(slice_selector, (tuple, list)) and len(slice_selector) == 2:
-            slice_list = list(range(slice_selector[0], slice_selector[1] + 1))
-        else:
-            raise ValueError(f"{axis_name}_slice must be int or (start, end) tuple")
-
-        trace_groups = []
-        for idx in slice_list:
-            traces = plot_func(idx)
-            for trace in traces:
-                fig.add_trace(trace, row=row, col=col)
-            trace_groups.append([
-                len(fig.data) - len(traces) + i for i in range(len(traces))
-            ])
-        all_trace_groups[axis_name] = trace_groups
-
-        if len(slice_list) > 1:
-            steps = []
-            for i, group in enumerate(trace_groups):
-                vis = [trace.visible for trace in fig.data]
-                # Turn off only this axis' traces
-                for g in trace_groups:
-                    for idx_ in g:
-                        vis[idx_] = False
-                # Turn on selected group
-                for idx_ in group:
-                    vis[idx_] = True
-                steps.append({
-                    "method": "update",
-                    "label": f"{slice_list[i]}",
-                    "args": [{"visible": vis}],
-                })
-            fig.update_layout(
-                sliders=list(fig.layout.sliders)
-                + [
-                    {
-                        "active": 0,
-                        "currentvalue": {"prefix": f"{axis_name} Slice: "},
-                        "steps": steps,
-                        "x": 0.05
-                        if axis_name == "XY"
-                        else 0.35
-                        if axis_name == "XZ"
-                        else 0.65,
-                        "y": 0.0,
-                        "len": 0.25,
-                    }
-                ]
-            )
-            # Set all but first slice of this axis invisible
-            for group in trace_groups[1:]:
-                for idx_ in group:
-                    fig.data[idx_].visible = False
-
-    # Define plotting functions per axis
-    def plot_xy(x_idx):
-        traces = [
-            go.Heatmap(
-                z=fsum[x_idx, :, :].T,
-                colorscale="gray",
-                zmin=0,
-                zmax=1,
-                showscale=False,
-            )
-        ]
-        for c in range(channels):
-            U = data[x_idx, :, :, c, 0]
-            V = data[x_idx, :, :, c, 1]
-            Y, Z = np.mgrid[0:y_max:step, 0:z_max:step]
-            traces += create_line_quiver_2d_vectorized(
-                Y, Z, U[::step, ::step], V[::step, ::step], colors[c % len(colors)]
-            )
-        return traces
-
-    def plot_xz(y_idx):
-        traces = [
-            go.Heatmap(
-                z=fsum[:, y_idx, :].T,
-                colorscale="gray",
-                zmin=0,
-                zmax=1,
-                showscale=False,
-            )
-        ]
-        for c in range(channels):
-            U = data[:, y_idx, :, c, 0]
-            V = data[:, y_idx, :, c, 2]
-            X, Z = np.mgrid[0:x_max:step, 0:z_max:step]
-            traces += create_line_quiver_2d_vectorized(
-                X, Z, U[::step, ::step], V[::step, ::step], colors[c % len(colors)]
-            )
-        return traces
-
-    def plot_yz(z_idx):
-        traces = [
-            go.Heatmap(
-                z=fsum[:, :, z_idx], colorscale="gray", zmin=0, zmax=1, showscale=False
-            )
-        ]
-        for c in range(channels):
-            U = data[:, :, z_idx, c, 0]
-            V = data[:, :, z_idx, c, 1]
-            X, Y_ = np.mgrid[0:x_max:step, 0:y_max:step]
-            traces += create_line_quiver_2d_vectorized(
-                X, Y_, U[::step, ::step].T, V[::step, ::step].T, colors[c % len(colors)]
-            )
-        return traces
-
-    # Process axes
-    handle_axis("XY", x_max, xy_slice, plot_xy, row=1, col=1)
-    handle_axis("XZ", y_max, xz_slice, plot_xz, row=2, col=1)
-    handle_axis("YZ", z_max, yz_slice, plot_yz, row=1, col=2)
-
-    fig.update_layout(
-        paper_bgcolor="black",
-        plot_bgcolor="black",
-        font=dict(color="white"),
-        margin=dict(l=0, r=0, t=10, b=20),
-        height=height,
-        width=width,
-    )
-    fig.update_xaxes(showticklabels=False, showgrid=False, zeroline=False)
-    fig.update_yaxes(showticklabels=False, showgrid=False, zeroline=False)
-
-    return fig
-
-
-def orthoview_quiver_ultracompact(
+def orthoview_quiver(
     data,
     fractions,
     colors=None,
@@ -281,7 +54,10 @@ def orthoview_quiver_ultracompact(
     width=None,
     show_all_channels=True,
 ):
-    """Ultra-optimized version of orthoview_quiver_plotly that produces minimal HTML files.
+    """Orthogonal slice views of a volume with fibre-direction arrows overlaid.
+
+    Produces compact HTML: the downsampling, quality and precision options
+    below trade rendering fidelity for file size, which matters in notebooks.
 
     Args:
         data: 5D numpy array (x, y, z, channels, 3) of vector data
@@ -850,288 +626,6 @@ def orthoview_quiver_ultracompact(
     return fig
 
 
-def plot_volume(data, vmin=None, vmax=None, color_map="gray"):
-    """Plot a 3D volume visualization of the data.
-
-    Args:
-        data: 3D numpy array to visualize
-        vmin: Minimum value for colorscale
-        vmax: Maximum value for colorscale
-        color_map: Colormap to use for visualization
-    """
-    # Create coordinate meshgrid
-    x = np.arange(data.shape[0])
-    y = np.arange(data.shape[1])
-    z = np.arange(data.shape[2])
-    X, Y, Z = np.meshgrid(x, y, z, indexing="ij")
-
-    # Create a 3D volume plot
-    fig = go.Figure(
-        data=go.Volume(
-            x=X.flatten(),
-            y=Y.flatten(),
-            z=Z.flatten(),
-            value=data.flatten(),
-            isomin=vmin
-            if vmin is not None
-            else 0.4,  # Increase minimum threshold to filter out noise
-            isomax=vmax if vmax is not None else np.max(data),
-            opacity=1.0,  # Increase opacity
-            opacityscale=[[0.4, 0.1], [0.5, 0.3], [0.8, 1.0]],
-            surface_count=10,  # Increase surface resolution
-            colorscale=color_map,
-            caps=dict(x_show=False, y_show=False, z_show=False),
-            showscale=False,  # Hide colorbar
-        )
-    )
-
-    # Update the layout
-    fig.update_layout(
-        scene=dict(
-            xaxis=dict(
-                showticklabels=False,
-                showgrid=False,
-                zeroline=False,
-                showline=False,
-                showspikes=False,
-                showbackground=False,
-                showaxeslabels=False,
-                title="",
-            ),
-            yaxis=dict(
-                showticklabels=False,
-                showgrid=False,
-                zeroline=False,
-                showline=False,
-                showspikes=False,
-                showbackground=False,
-                showaxeslabels=False,
-                title="",
-            ),
-            zaxis=dict(
-                showticklabels=False,
-                showgrid=False,
-                zeroline=False,
-                showline=False,
-                showspikes=False,
-                showbackground=False,
-                showaxeslabels=False,
-                title="",
-            ),
-            camera=dict(
-                eye=dict(x=2, y=2, z=2)  # Move camera further out
-            ),
-            aspectmode="data",  # Preserve data aspect ratio
-            bgcolor="black",  # Set background color to black
-        ),
-        paper_bgcolor="black",  # Set paper background to black
-        plot_bgcolor="black",  # Set plot background to black
-    )
-
-    fig.update_traces(hoverinfo="skip", hovertemplate=None)
-    return fig
-
-
-def plot_3d_quiver(
-    fractions,
-    directions,
-    step=1,
-    length_threshold=0.6,
-    fraction_threshold=0.15,
-    colors=None,
-    opacity=0.5,
-    line_width=1,
-    height=None,
-    width=None,
-):
-    """Plot a 3D quiver visualization of vector field data.
-
-    Args:
-        fractions: 4D numpy array (x, y, z, channels) of fraction weights
-        directions: 5D numpy array (x, y, z, channels, 3) of direction vectors
-        step: Step size for subsampling points
-        length_threshold: Minimum sum of fractions to show vector
-        fraction_threshold: Minimum fraction value to show vector
-        colors: List of colors for each channel
-        opacity: Opacity of the vectors
-        line_width: Width of the vector lines
-        height: Height of the figure in pixels
-        width: Width of the figure in pixels
-    """
-    if fractions.shape[:-1] != directions.shape[:-2]:
-        raise ValueError("Spatial dimensions of fractions and directions must match")
-    if fractions.shape[-1] != directions.shape[-2]:
-        raise ValueError("Number of channels in fractions and directions must match")
-    if directions.shape[-1] != 3:
-        raise ValueError("Directions must have 3 components (x,y,z)")
-
-    # Create coordinate meshgrid for vector field
-    x = np.arange(fractions.shape[0])
-    y = np.arange(fractions.shape[1])
-    z = np.arange(fractions.shape[2])
-    X, Y, Z = np.meshgrid(x, y, z, indexing="ij")
-
-    # Create a 3D vector field plot
-    fig = go.Figure()
-
-    # Define colors for each channel
-    if colors is None:
-        colors = ["red", "green", "blue", "yellow", "cyan", "magenta"]
-    colors = colors[: fractions.shape[-1]]  # Limit colors to number of channels
-
-    # Add vectors for each channel
-    for channel in range(fractions.shape[-1]):
-        # Scale vectors by their fractions and subsample to reduce data
-        channel_fractions = fractions[::step, ::step, ::step, channel : channel + 1][
-            ..., 0
-        ]
-        u = channel_fractions * directions[::step, ::step, ::step, channel, 0]
-        v = channel_fractions * directions[::step, ::step, ::step, channel, 1]
-        w = channel_fractions * directions[::step, ::step, ::step, channel, 2]
-
-        # Create mask for vectors above threshold length
-        fsum = fractions[::step, ::step, ::step].sum(axis=-1)
-        mask = (fsum > length_threshold) & (channel_fractions > fraction_threshold)
-
-        # Apply mask to coordinates and vectors
-        x_coords = X[::step, ::step, ::step][mask]
-        y_coords = Y[::step, ::step, ::step][mask]
-        z_coords = Z[::step, ::step, ::step][mask]
-        u = u[mask]
-        v = v[mask]
-        w = w[mask]
-
-        # Create start and end points for lines
-        x_start = x_coords - u * 2
-        y_start = y_coords - v * 2
-        z_start = z_coords - w * 2
-
-        x_end = x_start + u * 2
-        y_end = y_start + v * 2
-        z_end = z_start + w * 2
-
-        # Add lines connecting start and end points in a vectorized way
-        x_lines = np.vstack([x_start, x_end, np.full_like(x_start, np.nan)]).T.flatten()
-        y_lines = np.vstack([y_start, y_end, np.full_like(y_start, np.nan)]).T.flatten()
-        z_lines = np.vstack([z_start, z_end, np.full_like(z_start, np.nan)]).T.flatten()
-
-        fig.add_trace(
-            go.Scatter3d(
-                x=x_lines,
-                y=y_lines,
-                z=z_lines,
-                mode="lines",
-                line=dict(color=colors[channel], width=line_width),
-                opacity=opacity,
-                showlegend=False,
-            )
-        )
-
-    # Update the layout
-    fig.update_layout(
-        scene=dict(
-            xaxis=dict(
-                showticklabels=False,
-                showgrid=False,
-                zeroline=False,
-                showline=False,
-                showspikes=False,
-                showbackground=False,
-                showaxeslabels=False,
-                title="",
-            ),
-            yaxis=dict(
-                showticklabels=False,
-                showgrid=False,
-                zeroline=False,
-                showline=False,
-                showspikes=False,
-                showbackground=False,
-                showaxeslabels=False,
-                title="",
-            ),
-            zaxis=dict(
-                showticklabels=False,
-                showgrid=False,
-                zeroline=False,
-                showline=False,
-                showspikes=False,
-                showbackground=False,
-                showaxeslabels=False,
-                title="",
-            ),
-            camera=dict(eye=dict(x=2, y=2, z=2)),
-            aspectmode="data",
-            bgcolor="black",
-        ),
-        paper_bgcolor="black",
-        plot_bgcolor="black",
-        height=height,
-        width=width,
-    )
-
-    fig.update_traces(hoverinfo="skip", hovertemplate=None)
-    return fig
-
-
-def plot_spherical_function(
-    theta: ArrayLike,
-    phi: ArrayLike,
-    func_values: ArrayLike,
-    elev: float = 30,
-    azim: float = 30,
-    ax=None,
-    cmap: str = "viridis",
-    alpha: float = 0.7,
-    figsize: tuple[float, float] | None = (6, 6),
-    hide_axes: bool = True,
-    add_colorbar: bool = False,
-    surface_kwargs: dict[str, Any] | None = None,
-):
-    """Plot a scalar function that is defined on the sphere.
-
-    Returns:
-        tuple[matplotlib.figure.Figure, matplotlib.axes._subplots.Axes3DSubplot]
-    """
-    surface_kwargs = dict(surface_kwargs or {})
-    fig, ax = _ensure_axis(ax, projection="3d", figsize=figsize)
-
-    ax.view_init(elev=elev, azim=azim)
-
-    theta = np.asarray(theta)
-    phi = np.asarray(phi)
-    func_values = np.asarray(func_values)
-
-    x = np.sin(theta) * np.cos(phi)
-    y = np.sin(theta) * np.sin(phi)
-    z = np.cos(theta)
-
-    norm_vals = (func_values - func_values.min()) / (np.ptp(func_values) + 1e-15)
-    cmap_obj = plt.get_cmap(cmap)
-    facecolors = cmap_obj(norm_vals)
-
-    ax.plot_surface(
-        x,
-        y,
-        z,
-        facecolors=facecolors,
-        rstride=1,
-        cstride=1,
-        alpha=alpha,
-        **surface_kwargs,
-    )
-
-    if hide_axes:
-        ax.set_axis_off()
-
-    if add_colorbar:
-        mappable = plt.cm.ScalarMappable(cmap=cmap_obj)
-        mappable.set_array(func_values)
-        fig.colorbar(mappable, ax=ax, shrink=0.6)
-
-    return fig, ax
-
-
 def plot_spherical_distribution_polar(
     distribution,
     n_samples: int = 1000,
@@ -1375,27 +869,7 @@ def plot_spherical_distribution_fod(
     return fig, ax
 
 
-def save_orthoview_html(fig, filepath, include_plotlyjs="cdn"):
-    """Save orthoview figure to HTML file with optimized settings.
-
-    Args:
-        fig: plotly figure object
-        filepath: path to save HTML file
-        include_plotlyjs: plotly.js inclusion method
-            'cdn': use CDN (smallest file size)
-            'directory': save plotly.js in a directory
-            True: include plotly.js in the HTML file (largest file size)
-    """
-    fig.write_html(
-        filepath,
-        include_plotlyjs=include_plotlyjs,
-        full_html=True,
-        auto_play=False,
-        include_mathjax=False,
-    )
-
-
-def orthoview_ultracompact(
+def orthoview(
     data,
     vmin=None,
     vmax=None,
@@ -1409,7 +883,10 @@ def orthoview_ultracompact(
     height=None,
     width=None,
 ):
-    """Ultra-optimized version of orthoview that produces minimal HTML files.
+    """Orthogonal slice views of a scalar volume.
+
+    Produces compact HTML: the downsampling, quality and precision options
+    below trade rendering fidelity for file size, which matters in notebooks.
 
     Args:
         data: 3D or 4D numpy array (x, y, z, [channels])
@@ -1720,189 +1197,9 @@ def orthoview_ultracompact(
 
 
 # ---------------------- helpers ----------------------
-def normalize_rows(X: np.ndarray, eps: float = 1e-12):
-    n = np.linalg.norm(X, axis=1, keepdims=True) + eps
-    return X / n
-
-
-def fibonacci_sphere(n: int) -> np.ndarray:
-    # quasi-uniform points on S^2
-    i = np.arange(n)
-    phi = (1 + 5**0.5) / 2
-    z = 1 - 2 * (i + 0.5) / n
-    r = np.sqrt(1 - z * z)
-    theta = 2 * np.pi * i / phi
-    x = r * np.cos(theta)
-    y = r * np.sin(theta)
-    return np.vstack([x, y, z]).T
-
-
-def spherical_kde(
-    points: np.ndarray, grid: np.ndarray, kappa: float, axial: bool = True
-) -> np.ndarray:
-    # vMF KDE: sum_i exp(kappa * (μ_i · x)); for axial, also add exp(kappa * (-μ_i · x))
-    # All inputs assumed unit vectors.
-    MU = points  # (N,3)
-    X = grid  # (M,3)
-    dots = X @ MU.T  # (M,N)
-    s = np.exp(kappa * dots)
-    if axial:
-        s = s + np.exp(-kappa * dots)
-    f = s.sum(axis=1)
-    # normalize to [0,1] for display
-    f = (f - f.min()) / (f.max() - f.min() + 1e-12)
-    return f
-
-
-def orientation_rgb(dirs: np.ndarray) -> np.ndarray:
-    c = np.abs(dirs)
-    c = c / (np.linalg.norm(c, axis=1, keepdims=True) + 1e-12)
-    return c
-
-
-def nonmax_suppression_on_sphere(
-    values: np.ndarray, dirs: np.ndarray, k_neighbors: int = 12
-):
-    # crude NMS: keep points whose value is greater than their k nearest angular neighbors
-    # Use dot similarity to approximate neighbor search
-    D = dirs @ dirs.T  # cosine similarity
-    np.fill_diagonal(D, -np.inf)
-    idx = np.argpartition(-D, kth=k_neighbors, axis=1)[
-        :, :k_neighbors
-    ]  # neighbors with highest cosine
-    keep = np.ones(len(values), dtype=bool)
-    for i in range(len(values)):
-        if not np.all(values[i] >= values[idx[i]]):
-            keep[i] = False
-    return keep
-
-
-def _set_view(ax, view):
-    # Accept 'xy','xz','yz' or 3-vector
-    if isinstance(view, str):
-        view = view.lower()
-        if view == "xy":  # look along +z
-            elev, azim = 90, -90  # top-down
-        elif view == "xz":  # look along +y
-            elev, azim = 0, -90
-        elif view == "yz":  # look along +x
-            elev, azim = 0, 180
-        else:
-            # default nice isometric
-            elev, azim = 20, -60
-    else:
-        # view is a direction vector -> compute spherical angles
-        v = np.asarray(view, float)
-        v = v / (np.linalg.norm(v) + 1e-12)
-        # Matplotlib's view is defined by elev (degrees from xy) and azim (degrees CCW from x)
-        elev = np.degrees(np.arcsin(v[2]))  # z component -> elevation
-        azim = np.degrees(np.arctan2(v[1], v[0]))  # y,x -> azimuth
-    ax.view_init(elev=elev, azim=azim)
 
 
 # --------------------- plotting ----------------------
-def plot_glyph_from_sticks(
-    V: np.ndarray,
-    view: str | np.ndarray = "xy",
-    axial: bool = False,
-    kappa: float = 20.0,
-    grid_points: int = 4000,
-    r_scale: float = 1.0,
-    peak_nms_neighbors: int = 16,
-    show_peaks: bool = False,
-    ax=None,
-    figsize: tuple[float, float] | None = (7, 7),
-    surface_kwargs: dict[str, Any] | None = None,
-    peaks_kwargs: dict[str, Any] | None = None,
-    hide_axes: bool = True,
-):
-    """Render a spherical glyph built from discrete stick directions.
-
-    Returns:
-        Tuple of (Figure, Axes)
-    """
-    V = normalize_rows(np.asarray(V, float))
-    # grid on sphere
-    G = fibonacci_sphere(grid_points)
-    # KDE
-    f = spherical_kde(V, G, kappa=kappa, axial=axial)
-    # radius field
-    R = 0.2 + r_scale * f  # small base radius + scaled KDE
-    verts = R[:, None] * G
-    # orientation color
-    colors = orientation_rgb(G)
-
-    # crude triangulation for sphere: use matplotlib trisurf via spherical parameterization indices
-    # We'll parametrize with lon/lat sorted mapping to a Delaunay in 2D for nicer surface.
-    # Convert to spherical coords for triangulation
-    x, y, z = G.T
-    lon = np.arctan2(y, x)
-    lat = np.arcsin(z)
-    # stack as 2D points
-    P2 = np.vstack([lon, lat]).T
-
-    # Use matplotlib.tri for triangulation
-    import matplotlib.tri as mtri
-
-    tri = mtri.Triangulation(P2[:, 0], P2[:, 1])
-
-    fig, ax = _ensure_axis(ax, projection="3d", figsize=figsize)
-    surface_kwargs = dict(surface_kwargs or {})
-
-    base_surface_kwargs = dict(
-        triangles=tri.triangles,
-        linewidth=0.1,
-        antialiased=True,
-        shade=True,
-        alpha=1.0,
-        edgecolor="none",
-    )
-    base_surface_kwargs.update(surface_kwargs)
-
-    surf = ax.plot_trisurf(
-        verts[:, 0],
-        verts[:, 1],
-        verts[:, 2],
-        **base_surface_kwargs,
-    )
-    # set vertex colors via face colors approximation
-    # Map per-vertex RGB to per-triangle by averaging
-    face_rgb = colors[tri.triangles].mean(axis=1)
-    surf.set_facecolors(face_rgb)
-
-    # optional: show peak sticks
-    if show_peaks:
-        keep = nonmax_suppression_on_sphere(f, G, k_neighbors=peak_nms_neighbors)
-        peaks = G[keep]
-        # keep only top K peaks for cleanliness
-        K = min(6, len(peaks))
-        top_idx = np.argsort(f[keep])[-K:]
-        peaks = peaks[top_idx]
-        peaks_kwargs = dict(peaks_kwargs or {})
-        peaks_kwargs.setdefault("linewidth", 2)
-        peaks_kwargs.setdefault("color", "white")
-        for p in peaks:
-            ax.plot(
-                [-p[0], p[0]],
-                [-p[1], p[1]],
-                [-p[2], p[2]],
-                **peaks_kwargs,
-            )
-
-    # cosmetics
-    lim = 1.25 * (0.2 + r_scale)
-    ax.set_xlim([-lim, lim])
-    ax.set_ylim([-lim, lim])
-    ax.set_zlim([-lim, lim])
-    ax.set_box_aspect([1, 1, 1])
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.set_zticks([])
-    _set_view(ax, view)
-    if hide_axes:
-        ax.set_axis_off()
-
-    return fig, ax
 
 
 def _norm_rows(X, eps=1e-12):
@@ -2119,3 +1416,178 @@ def plot_stereographic_contour(
 
     _finish_stereographic_axis(fig, ax, created_axis)
     return fig, ax
+
+
+#: A restrained, chromeless palette: the image is the content, everything else
+#: should recede.
+_VIEWER_BACKGROUND = "#111111"
+_VIEWER_FOREGROUND = "#d0d0d0"
+_VIEWER_TRACK = "#2a2a2a"
+_VIEWER_FONT = "ui-sans-serif, -apple-system, Segoe UI, Helvetica, Arial, sans-serif"
+
+
+def _to_png_uri(plane: np.ndarray, vmin: float, vmax: float) -> str:
+    """One 2-D slice as a base64 PNG data URI.
+
+    Quantising to uint8 and letting PNG compress it is what makes this viewer
+    small: plotly serialises numeric arrays as JSON floats at ~12 bytes per
+    voxel, against well under one byte here.
+    """
+    from PIL import Image
+
+    span = (vmax - vmin) or 1.0
+    scaled = (np.nan_to_num(plane, nan=vmin) - vmin) / span
+    quantised = np.clip(scaled * 255.0, 0, 255).astype(np.uint8)
+    buffer = io.BytesIO()
+    Image.fromarray(np.flipud(quantised.T)).save(buffer, format="PNG", optimize=True)
+    return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
+
+
+def slice_viewer(
+    volumes,
+    axis: int = 2,
+    title: str | None = None,
+    height: int = 520,
+    width: int | None = None,
+):
+    """Browse volumes slice by slice, as a small self-contained figure.
+
+    An alternative to :func:`orthoview` for looking at output maps. Each slice
+    is embedded once as a compressed image rather than as a JSON float array,
+    which is roughly 16x smaller for a typical volume; a slider steps through
+    slices and, given several volumes, a dropdown switches between them.
+
+    The trade-off is quantisation: slices are mapped to 256 grey levels for
+    display, so this is a viewer, not a way to read exact voxel values. Each
+    volume is scaled by its own min/max, reported in the dropdown label.
+
+    Args:
+        volumes: a 3-D array, or a mapping of name -> 3-D array. Arrays with a
+            trailing singleton axis are accepted and squeezed.
+        axis: axis to slice along (0=sagittal, 1=coronal, 2=axial).
+        title: figure title.
+        height: figure height in pixels.
+        width: figure width in pixels, or None to let plotly decide.
+
+    Returns:
+        A plotly figure.
+    """
+    if not isinstance(volumes, Mapping):
+        volumes = {"volume": volumes}
+    if not volumes:
+        raise ValueError("No volumes to display")
+
+    prepared = {}
+    for name, volume in volumes.items():
+        array = np.asarray(volume)
+        if array.ndim == 4 and array.shape[-1] == 1:
+            array = array[..., 0]
+        if array.ndim != 3:
+            raise ValueError(f"{name!r} must be a 3-D volume, got shape {array.shape}")
+        prepared[name] = np.moveaxis(array, axis, -1)
+
+    depths = {name: array.shape[-1] for name, array in prepared.items()}
+    if len(set(depths.values())) != 1:
+        raise ValueError(f"Volumes disagree on the sliced axis: {depths}")
+    num_slices = next(iter(depths.values()))
+
+    ranges = {
+        name: (float(np.nanmin(array)), float(np.nanmax(array)))
+        for name, array in prepared.items()
+    }
+    names = list(prepared)
+
+    def images_for(index):
+        return [
+            go.Image(source=_to_png_uri(prepared[name][..., index], *ranges[name]))
+            for name in names
+        ]
+
+    initial = num_slices // 2
+    figure = go.Figure(
+        data=images_for(initial),
+        frames=[go.Frame(name=str(i), data=images_for(i)) for i in range(num_slices)],
+    )
+    for position, trace in enumerate(figure.data):
+        trace.visible = position == 0
+
+    figure.update_layout(
+        template="plotly_dark",
+        paper_bgcolor=_VIEWER_BACKGROUND,
+        plot_bgcolor=_VIEWER_BACKGROUND,
+        font=dict(family=_VIEWER_FONT, size=12, color=_VIEWER_FOREGROUND),
+        title=dict(text=title, x=0.01, xanchor="left", font=dict(size=13))
+        if title
+        else None,
+        height=height,
+        width=width,
+        margin=dict(l=8, r=8, t=34 if title else 8, b=8),
+        showlegend=False,
+        sliders=[
+            {
+                "active": initial,
+                "currentvalue": {
+                    "prefix": "",
+                    "font": {"size": 12, "color": _VIEWER_FOREGROUND},
+                    "offset": 6,
+                },
+                "len": 0.96,
+                "x": 0.02,
+                "pad": {"t": 6, "b": 6},
+                "bgcolor": _VIEWER_TRACK,
+                "activebgcolor": _VIEWER_FOREGROUND,
+                "bordercolor": _VIEWER_BACKGROUND,
+                "borderwidth": 0,
+                "tickcolor": _VIEWER_BACKGROUND,
+                "ticklen": 0,
+                "minorticklen": 0,
+                "font": {"size": 1, "color": _VIEWER_BACKGROUND},
+                "steps": [
+                    {
+                        "args": [
+                            [str(i)],
+                            {
+                                "mode": "immediate",
+                                "frame": {"redraw": True, "duration": 0},
+                            },
+                        ],
+                        # Labelling every slice turns the track into a smear of
+                        # numbers; the current value is shown above it instead.
+                        "label": f"{i + 1}/{num_slices}",
+                        "method": "animate",
+                    }
+                    for i in range(num_slices)
+                ],
+            }
+        ],
+    )
+    if len(names) > 1:
+        figure.update_layout(
+            updatemenus=[
+                {
+                    "buttons": [
+                        {
+                            "args": [{"visible": [n == name for n in names]}],
+                            "label": name,
+                            "method": "restyle",
+                        }
+                        for name in names
+                    ],
+                    "direction": "down",
+                    "showactive": True,
+                    "x": 0.0,
+                    "xanchor": "left",
+                    "y": 1.0,
+                    "yanchor": "bottom",
+                    "bgcolor": _VIEWER_TRACK,
+                    "bordercolor": _VIEWER_TRACK,
+                    "font": {"size": 12, "color": _VIEWER_FOREGROUND},
+                    "pad": {"l": 2, "r": 2, "t": 2, "b": 2},
+                }
+            ]
+        )
+    figure.update_xaxes(visible=False, showgrid=False, zeroline=False)
+    figure.update_yaxes(
+        visible=False, showgrid=False, zeroline=False, scaleanchor="x", scaleratio=1
+    )
+    return figure

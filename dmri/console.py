@@ -2,6 +2,7 @@
 
 import sys
 from contextlib import contextmanager
+from pathlib import Path
 
 from rich.console import Console
 from rich.progress import (
@@ -47,10 +48,12 @@ def set_enabled(enabled: bool) -> None:
 
 
 def enabled() -> bool:
+    """Whether command output is currently enabled."""
     return _enabled
 
 
 def verbose() -> bool:
+    """Whether detailed (verbose) output is requested."""
     return _verbose
 
 
@@ -63,6 +66,22 @@ def say(message: str = "", *args) -> None:
     """Write one stable line to stdout."""
     if _enabled:
         _output.print(Text(message % args if args else message))
+
+
+def link(label: str, target) -> None:
+    """Write a local path as a clickable link on one line.
+
+    Terminals only linkify a URI that is not broken across lines, so this
+    bypasses the usual wrapping. Where OSC 8 hyperlinks are supported the path
+    becomes directly clickable; elsewhere the plain file:// URI is still
+    recognised by most terminals.
+    """
+    if not _enabled:
+        return
+    uri = Path(target).resolve().as_uri()
+    text = Text(f"{label}{uri}")
+    text.stylize(f"link {uri}", len(label))
+    _output.print(text, no_wrap=True, overflow="ignore", crop=False)
 
 
 def warning(message: str) -> None:

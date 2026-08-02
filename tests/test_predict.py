@@ -1,5 +1,6 @@
 from argparse import Namespace
 
+import numpy as np
 import pytest
 
 from dmri.predict import _hydra_overrides, _prepare_output, _validate_input
@@ -371,3 +372,113 @@ def test_predict_logo_precedes_help(capsys):
     output = capsys.readouterr().out
     assert output.startswith(console.LOGO)
     assert output.index(console.LOGO) < output.index("usage: dmri predict")
+
+
+def _write_map(directory, name, array):
+    import nibabel as nb
+
+    directory.mkdir(parents=True, exist_ok=True)
+    nb.save(nb.Nifti1Image(array, np.eye(4)), directory / name)
+
+
+def test_write_viewer_collects_the_exported_maps(tmp_path):
+    import numpy as np
+
+    from dmri.predict import write_viewer
+
+    results = tmp_path / "ball3stick_inference_results"
+    volume = np.random.default_rng(0).random((8, 9, 6)).astype(np.float32)
+    for name in ("mean_fsumsamples.nii.gz", "mean_f0samples.nii.gz"):
+        _write_map(results, name, volume)
+    # Not in VIEWER_MAPS, so it must be ignored rather than break the viewer.
+    _write_map(results, "merged_f0samples.nii.gz", volume)
+
+    written = write_viewer(tmp_path)
+
+    assert written is not None and written.exists()
+    html = written.read_text()
+    assert "mean_fsumsamples" in html and "mean_f0samples" in html
+    # plotly escapes the "/" when embedding the JSON payload.
+    assert "base64" in html and "data:image" in html.replace("\\u002f", "/"), (
+        "slices are not embedded as images"
+    )
+
+
+def test_write_viewer_returns_none_without_maps(tmp_path):
+    from dmri.predict import write_viewer
+
+    assert write_viewer(tmp_path) is None
+
+
+def test_write_viewer_skips_non_volume_maps(tmp_path):
+    """4-D sample stacks must not be fed to the viewer."""
+    import numpy as np
+
+    from dmri.predict import write_viewer
+
+    results = tmp_path / "ball3stick_inference_results"
+    _write_map(
+        results,
+        "mean_fsumsamples.nii.gz",
+        np.zeros((4, 4, 3, 5), dtype=np.float32),
+    )
+    assert write_viewer(tmp_path) is None
+
+
+def test_no_viewer_flag_exists():
+    from dmri.predict import _parser
+
+    assert _parser().parse_args(["f"]).no_viewer is False
+    assert _parser().parse_args(["f", "--no-viewer"]).no_viewer is True
+
+
+def test_viewer_link_is_one_unbroken_uri(tmp_path, capsys):
+    """The link must not be wrapped, or the terminal cannot linkify it.
+
+    Console output is rendered through rich, which wraps to the terminal width
+    by default and would split a long path across lines.
+    """
+    import numpy as np
+
+    from dmri import console, predict
+
+    results = tmp_path / "ball3stick_inference_results"
+    _write_map(
+        results,
+        "mean_fsumsamples.nii.gz",
+        np.random.default_rng(0).random((6, 6, 4)).astype(np.float32),
+    )
+    viewer = predict.write_viewer(tmp_path)
+    assert viewer is not None
+
+    console.configure(enabled=True)
+    try:
+        console.link("Viewer:    ", viewer)
+    finally:
+        console.configure(enabled=False)
+
+    printed = capsys.readouterr().out
+    uri = viewer.resolve().as_uri()
+    assert uri in printed, f"the URI was broken up: {printed!r}"
+    assert printed.count("\n") == 1, "the link spans more than one line"
+
+
+def test_console_link_is_silent_when_disabled(tmp_path, capsys):
+    from dmri import console
+
+    target = tmp_path / "x.html"
+    target.write_text("")
+    console.configure(enabled=False)
+    console.link("Viewer: ", target)
+    assert capsys.readouterr().out == ""
+
+
+def test_predict_does_not_launch_a_browser():
+    """Opening a browser is intrusive over SSH and in CI; we only print a link."""
+    import inspect
+
+    from dmri import predict
+
+    source = inspect.getsource(predict)
+    assert "webbrowser" not in source
+    assert "--no-open" not in source

@@ -174,6 +174,11 @@ def _parser():
         help="Add detailed evaluation logs while keeping the progress display.",
     )
     parser.add_argument(
+        "--no-viewer",
+        action="store_true",
+        help="Skip writing view_results.html alongside the maps.",
+    )
+    parser.add_argument(
         "--non-interactive",
         action="store_true",
         help="Never prompt; use defaults for anything not given on the command line.",
@@ -434,7 +439,76 @@ def _validate_model_mode(args) -> None:
         )
 
 
+#: Maps written into the viewer, in the order they appear in its dropdown.
+#: Restricted to the scalar summaries a person actually eyeballs; the full set
+#: of ~35 NIfTIs stays on disk.
+VIEWER_MAPS = (
+    "mean_fsumsamples.nii.gz",
+    "mean_f0samples.nii.gz",
+    "mean_f1samples.nii.gz",
+    "mean_f2samples.nii.gz",
+    "mean_f3samples.nii.gz",
+    "mean_dsamples.nii.gz",
+    "mean_snrsamples.nii.gz",
+    "frac_ball_active.nii.gz",
+    "mean_num_fib_predsamples.nii.gz",
+)
+
+
+def write_viewer(output_dir: Path, filename: str = "view_results.html") -> Path | None:
+    """Write a self-contained HTML viewer for the exported maps.
+
+    Returns the path written, or None when there is nothing to show. Failing to
+    build a viewer must never fail a prediction that already succeeded, so all
+    errors here are swallowed after a warning.
+    """
+    import nibabel as nb
+    import numpy as np
+
+    from dmri.utils.viz import slice_viewer
+
+    volumes = {}
+    for results_dir in sorted(output_dir.glob("*inference_results")):
+        for name in VIEWER_MAPS:
+            path = results_dir / name
+            if not path.is_file():
+                continue
+            array = np.asanyarray(nb.load(path).dataobj, dtype=np.float32)
+            if array.ndim == 4 and array.shape[-1] == 1:
+                array = array[..., 0]
+            if array.ndim == 3:
+                volumes[name.replace(".nii.gz", "")] = array
+    if not volumes:
+        return None
+
+    figure = slice_viewer(volumes, title=f"dmri predict - {output_dir.name}")
+    destination = output_dir / filename
+    figure.write_html(
+        destination,
+        include_plotlyjs="cdn",
+        # The default toolbar offers a dozen controls that do nothing useful for
+        # a slice browser; keep only the ones that do.
+        config={
+            "displaylogo": False,
+            "displayModeBar": "hover",
+            "modeBarButtonsToRemove": [
+                "select2d",
+                "lasso2d",
+                "autoScale2d",
+                "hoverClosestCartesian",
+                "hoverCompareCartesian",
+                "toggleSpikelines",
+            ],
+        },
+    )
+    return destination
+
+
 def _validate_input(folder: Path) -> Path:
+    """Ensure the input folder exists and contains the required FSL/HCP files.
+
+    Returns the resolved folder path.
+    """
     folder = folder.expanduser().resolve()
     if not folder.is_dir():
         raise ValueError(f"Input folder does not exist: {folder}")
@@ -447,6 +521,11 @@ def _validate_input(folder: Path) -> Path:
 
 
 def _prepare_output(folder: Path, name: str, overwrite: bool) -> Path:
+    """Create or replace the output subdirectory inside ``folder``.
+
+    Raises ValueError when the name is invalid or the folder already exists
+    and ``overwrite`` is False.
+    """
     if not name or Path(name).name != name or name in {".", ".."}:
         raise ValueError("--output-subdir must be a single directory name")
     output_dir = folder / name
@@ -536,6 +615,7 @@ def main(argv=None):
     """Run prediction using the simple public interface."""
     console.print_logo()
     args = _parser().parse_args(argv)
+    console.configure(enabled=True, verbose=args.verbose)
     if args.list_models:
         for model_name in list_pretrained_models(args.repo_id, revision=args.revision):
             print(model_name)
@@ -560,7 +640,6 @@ def main(argv=None):
         # yet -- importing jax alone does not create a backend.
         os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = str(args.memory_fraction)
 
-    console.configure(enabled=True, verbose=args.verbose)
     console.summary(
         "Prediction",
         [
@@ -603,5 +682,14 @@ def main(argv=None):
         eval_main()
     finally:
         sys.argv = original_argv
+
+    if not args.no_viewer:
+        try:
+            viewer = write_viewer(output_dir)
+        except Exception as error:  # noqa: BLE001 - never fail a good prediction
+            console.say(f"Could not write the HTML viewer: {error}")
+            viewer = None
+        if viewer is not None:
+            console.link("Viewer:    ", viewer)
 
     console.say(f"Prediction complete. Results are in {output_dir}")
