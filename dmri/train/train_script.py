@@ -957,3 +957,7 @@ def _main(cfg: DictConfig):
         max_train_hours=max_train_hours,
         wandb_active=wandb_active,
     )
+
+
+if __name__ == "__main__":
+    main()

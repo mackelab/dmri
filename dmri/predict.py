@@ -821,3 +821,7 @@ def _run_with_overrides(overrides, folder, args):
         _run()
     finally:
         sys.argv = original_argv
+
+
+if __name__ == "__main__":
+    main()

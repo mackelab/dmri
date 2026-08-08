@@ -147,6 +147,13 @@ def test_normal_to_dirichlet_gradients(
 
 
 # Test configurations for roundtrip tests
+# These cases draw their inputs from the *global* numpy RNG at import time, so
+# without a seed the actual test vectors depend on how many np.random calls any
+# earlier-imported test module happened to make -- the case passes or fails
+# depending on collection order. Seed here rather than in a fixture: an autouse
+# fixture runs at test time, long after this list is built.
+np.random.seed(0)
+
 ROUNDTRIP_TEST_CONFIGS = [
     pytest.param(
         jnp.array([1.0, 1.0, 1.0]),  # alpha

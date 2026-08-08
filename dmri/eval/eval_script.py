@@ -1551,3 +1551,7 @@ def embed_in_full_brain_array(to_embed, brain_mask_flat, brain_shape):
     full_brain[brain_mask_flat, ...] = to_embed
     full_brain = full_brain.reshape(brain_shape + event_shape)
     return full_brain
+
+
+if __name__ == "__main__":
+    main()
