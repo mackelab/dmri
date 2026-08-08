@@ -1,167 +1,53 @@
-# DMRI: Diffusion MRI Model Selection
+# DMRI
 
 [![CI](https://github.com/mackelab/dmri/actions/workflows/ci.yml/badge.svg)](https://github.com/mackelab/dmri/actions/workflows/ci.yml)
 [![Docs](https://github.com/mackelab/dmri/actions/workflows/docs.yml/badge.svg)](https://github.com/mackelab/dmri/actions/workflows/docs.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENCE)
-[![Made with JAX](https://img.shields.io/badge/Made%20with-JAX-007acc.svg)](https://github.com/google/jax)
 
-> **Pre-release software.** DMRI is not yet stable. The API and CLI may change before a 1.0 release.
+DMRI provides diffusion MRI simulators and tools for model selection and
+parameter inference. The project is pre-release software, and its API and CLI
+may change.
 
-This package provides simulators and inference for diffusion MRI model selection. It combines microstructural signal compartments into configurable multicompartment models and infers both model composition and continuous parameters.
+> **Research use only.** DMRI has not been clinically validated and must not be
+> used for clinical decisions. Pretrained checkpoints are acquisition-specific;
+> verify compatibility with the input acquisition before interpreting results.
 
-**Docs:** https://www.mackelab.org/dmri/
+## Install
 
-## Quickstart
+DMRI requires Python 3.11 or newer. From a clone of the repository:
 
 ```bash
-# create a fresh env (uv is fast; pip/conda work too)
 uv venv -p 3.11
 source .venv/bin/activate
-
-# install editable package + dev tools; add --extra cuda for GPUs
-uv pip install -e '.[dev]'
-
-# run the default pretrained model on a standard dMRI folder
-dmri predict /path/to/dmri_folder
+uv pip install -e .
 ```
 
-Prefer pip? Use `pip install -e '.[dev]'`. CUDA users can opt into `.[cuda]`.
+See the [installation and quickstart](https://www.mackelab.org/dmri/getting-started/)
+for CUDA options and the required input layout.
 
-## CLI in one glance
-
-### Prediction
-
-`dmri predict` is the easiest way to apply a pretrained model to diffusion MRI data.
+## Predict
 
 ```bash
-dmri predict FOLDER
+dmri predict FOLDER --model msb3s_2_4_6_128 --quality balanced --non-interactive
 ```
 
-`FOLDER` must contain `data.nii.gz`, `nodif_brain_mask.nii.gz`, `bvals`, and `bvecs`. The default `msb3s_2_4_6_128` multi-shell Ball3Stick model is downloaded from the public [`manugloeck/dmri-pretrained`](https://huggingface.co/manugloeck/dmri-pretrained) repository and cached by `huggingface_hub`. Results are written below `FOLDER/dmri_output/` in `ball3stick_inference_results/` and `ball3stick_model_selection_results/`.
+`FOLDER` must contain `data.nii.gz`, `nodif_brain_mask.nii.gz`, `bvals`, and
+`bvecs`. Prediction writes results below `FOLDER/dmri_output/`.
 
-Pretrained models are acquisition-specific. Confirm that the selected checkpoint is compatible with the input acquisition scheme; the standard filenames alone do not establish compatibility. DMRI is research software and has not been clinically validated.
+- [Prediction documentation](https://www.mackelab.org/dmri/guides/prediction/)
+- [Training documentation](https://www.mackelab.org/dmri/guides/training/)
+- [Evaluation documentation](https://www.mackelab.org/dmri/guides/evaluation/)
 
-### Training
+## Development checks
+
+Install development dependencies with `uv pip install -e '.[dev]'`, then run:
 
 ```bash
-dmri train --help                      # discover overrides
-dmri train +experiment/train=b3s_2_4_6_128 infrastructure/launcher=local infrastructure/partition=none tracking.enabled=false
-dmri train training.optimizer.learning_rate=1e-3
+pytest
+ruff check .
+ruff format --check .
 ```
 
-Runs write to `results/<name>/<timestamp>/` with checkpoints and the frozen `.hydra/` config. Use `dmri.train.utils.load_checkpoint(...)` to restore in notebooks.
+Documentation: <https://www.mackelab.org/dmri/>
 
-### Evaluation
-
-```bash
-dmri eval --help
-dmri eval +experiment/eval=eval_b3s_no_selection \
-  checkpoint.model_name=<run_name>/<timestamp> \
-  evaluation.input.data_folder=<data_folder>
-```
-
-Full evaluation is the advanced Hydra interface for trained runs, custom samplers, exports, and ground-truth metrics. For routine inference without ground-truth metrics, use `dmri predict`. The deprecated `dmri_eval` command remains as a compatibility alias.
-
-## Configuration map
-
-Training and evaluation share the versioned Hydra tree in `conf/`.
-
-```
-conf/
-├── train.yaml            # training entry config
-├── eval.yaml             # evaluation entry config
-├── experiment/           # train/eval presets
-├── infrastructure/       # local/slurm and resource profiles
-├── model/                # dmri/ssfp architectures
-├── simulator/            # model classes + acquisition factories
-├── training/             # loop knobs
-    ├── dataloader/       # buffer sizes, batching, prefetch
-    ├── optimizer/        # optax configs, schedulers, EMA
-    └── default*.yaml     # inner steps, cadence, weights
-└── evaluation/           # inputs, sampling, selection, exports
-```
-
-Evaluation metrics are composed under `conf/evaluation/export/theta/metrics/` and pulled into exporter presets.
-
-A simulator is selected by importable class path. External models require no
-registry or repository config change:
-
-```bash
-dmri train simulator.model_class=my_package.models.MyModel
-```
-
-## Usage
-
-### Simulators by example
-
-Define acquisition schemes, build compartment models, and synthesize signals directly:
-
-```python
-import jax
-import jax.numpy as jnp
-import numpy as np
-import matplotlib.pyplot as plt
-
-from dmri.simulators import Ball, Stick, Zeppelin, MultiCompartment
-from dmri.simulators.acquisition_scheme import acquisition_scheme
-
-# Example acquisition scheme dMRI
-bvals = jnp.linspace(0, 4000, 100)
-bvecs = jax.random.normal(jax.random.key(0), (100, 3))
-bvecs = bvecs / jnp.linalg.norm(bvecs, axis=-1, keepdims=True)
-acq = acquisition_scheme(bvals, bvecs)
-
-# Example simulator for a single ball
-theta = np.random.randn(Ball.theta_dim)  # Theta will always be normal
-ball = Ball.from_theta(theta)  # Deterministically maps theta to physical parameters
-signal = ball.signal(acq)  # Simulate signal
-
-plt.plot(bvals, signal)  # Plot signal
-
-
-# But you can also combine multiple models
-class BallStickZeppelin(MultiCompartment):
-    model_types = [Ball, Stick, Zeppelin]
-    noise_types = []
-
-
-theta = np.random.randn(BallStickZeppelin.theta_dim)
-# With all models
-ball_stick_zeppelin = BallStickZeppelin.from_theta(theta)
-# With only ball and stick
-ball_stick = BallStickZeppelin.from_theta(
-    theta, model_mask=jnp.array([True, True, False])
-)
-
-# Simulate signal
-signal = ball_stick_zeppelin.signal(acq)
-signal_ball_stick = ball_stick.signal(acq)
-
-plt.plot(bvals, signal)
-plt.plot(bvals, signal_ball_stick)
-```
-
-You can also have a look at the notebooks in `docs/examples/` (rendered under **Examples** on the docs site) for more examples.
-
-## JAX and PyTorch notes
-
-- JAX grabs most GPU memory up front; if multiple jobs share a card, expect OOMs until you free memory (`nvidia-smi` is your friend).
-- JIT warmup makes the first steps slower; steady-state throughput improves after compilation.
-- Need PyTorch for notebooks? Install CPU-only wheels to avoid CUDA conflicts with JAX:
-  `pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu`
-
-## Development
-
-- Tests: `pytest`
-- Lint/format: `ruff check --fix` and `ruff format`
-- Docs preview: `uv pip install -e '.[docs]' && uv run python scripts/render_docs_notebooks.py && uv run zensical serve`
-
-## CI / docs deploy
-
-- GitHub Actions runs the test suite on Python 3.11.
-- Zensical deploys through the GitHub Pages workflow (see `zensical.toml`).
-
-
-## License
-
-This project is licensed under the MIT License; see `LICENCE` for details.
+License: [MIT](LICENCE)

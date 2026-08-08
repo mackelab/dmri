@@ -1426,21 +1426,71 @@ _VIEWER_TRACK = "#2a2a2a"
 _VIEWER_FONT = "ui-sans-serif, -apple-system, Segoe UI, Helvetica, Arial, sans-serif"
 
 
-def _to_png_uri(plane: np.ndarray, vmin: float, vmax: float) -> str:
+def _to_png_uri(plane: np.ndarray, value_range: tuple[float, float] | None) -> str:
     """One 2-D slice as a base64 PNG data URI.
 
     Quantising to uint8 and letting PNG compress it is what makes this viewer
     small: plotly serialises numeric arrays as JSON floats at ~12 bytes per
     voxel, against well under one byte here.
+
+    A ``value_range`` of None marks the plane as already-colour ``(H, W, 3)``
+    in [0, 1] -- direction-encoded maps carry their meaning in the hue, so
+    they must not be rescaled per slice.
     """
     from PIL import Image
 
-    span = (vmax - vmin) or 1.0
-    scaled = (np.nan_to_num(plane, nan=vmin) - vmin) / span
-    quantised = np.clip(scaled * 255.0, 0, 255).astype(np.uint8)
+    if value_range is None:
+        scaled = np.nan_to_num(plane, nan=0.0)
+        # Transposing the two spatial axes only; the channel axis stays last.
+        oriented = np.flipud(np.swapaxes(scaled, 0, 1))
+    else:
+        vmin, vmax = value_range
+        span = (vmax - vmin) or 1.0
+        scaled = (np.nan_to_num(plane, nan=vmin) - vmin) / span
+        oriented = np.flipud(scaled.T)
+
+    quantised = np.clip(oriented * 255.0, 0, 255).astype(np.uint8)
     buffer = io.BytesIO()
-    Image.fromarray(np.flipud(quantised.T)).save(buffer, format="PNG", optimize=True)
+    Image.fromarray(quantised).save(buffer, format="PNG", optimize=True)
     return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
+
+
+def direction_colour(vectors, weight=None):
+    """Direction-encoded colour for a field of unit vectors.
+
+    The standard dMRI convention: the absolute x/y/z components of a fibre
+    direction become red/green/blue, so left-right tracts read red, anterior-
+    posterior green and superior-inferior blue. Sign is dropped because a
+    fibre orientation is an axis, not an arrow -- ``v`` and ``-v`` are the same
+    fibre and must get the same colour.
+
+    Args:
+        vectors: ``(..., 3)`` array of directions; need not be normalised.
+        weight: optional ``(...)`` array scaling brightness, typically the
+            volume fraction of that fibre. Without it every voxel is fully
+            saturated and noise outside the brain looks like signal.
+
+    Returns:
+        ``(..., 3)`` float array in [0, 1].
+    """
+    vectors = np.asarray(vectors, dtype=np.float32)
+    if vectors.shape[-1] != 3:
+        raise ValueError(f"Expected a trailing axis of 3, got shape {vectors.shape}")
+
+    norm = np.linalg.norm(vectors, axis=-1, keepdims=True)
+    colour = np.abs(
+        np.divide(vectors, norm, out=np.zeros_like(vectors), where=norm > 0)
+    )
+
+    if weight is not None:
+        weight = np.nan_to_num(np.asarray(weight, dtype=np.float32))
+        # Scale against a high percentile rather than the maximum: a single
+        # outlier voxel would otherwise dim the entire volume. Values above it
+        # clip to full brightness, which is what display scaling should do.
+        span = float(np.percentile(weight, 99)) or float(np.max(weight)) or 1.0
+        colour = colour * np.clip(weight / span, 0.0, 1.0)[..., None]
+
+    return np.nan_to_num(colour)
 
 
 def slice_viewer(
@@ -1457,13 +1507,15 @@ def slice_viewer(
     which is roughly 16x smaller for a typical volume; a slider steps through
     slices and, given several volumes, a dropdown switches between them.
 
-    The trade-off is quantisation: slices are mapped to 256 grey levels for
-    display, so this is a viewer, not a way to read exact voxel values. Each
-    volume is scaled by its own min/max, reported in the dropdown label.
+    The trade-off is quantisation: slices are mapped to 256 levels per channel
+    for display, so this is a viewer, not a way to read exact voxel values.
+    Each scalar volume is scaled by its own min/max.
 
     Args:
-        volumes: a 3-D array, or a mapping of name -> 3-D array. Arrays with a
-            trailing singleton axis are accepted and squeezed.
+        volumes: a 3-D array, or a mapping of name -> array. Each is either a
+            3-D scalar volume (trailing singleton axis accepted and squeezed)
+            or a 4-D ``(X, Y, Z, 3)`` colour volume in [0, 1], as produced by
+            :func:`direction_colour`.
         axis: axis to slice along (0=sagittal, 1=coronal, 2=axial).
         title: figure title.
         height: figure height in pixels.
@@ -1478,28 +1530,35 @@ def slice_viewer(
         raise ValueError("No volumes to display")
 
     prepared = {}
+    ranges: dict[str, tuple[float, float] | None] = {}
     for name, volume in volumes.items():
         array = np.asarray(volume)
         if array.ndim == 4 and array.shape[-1] == 1:
             array = array[..., 0]
-        if array.ndim != 3:
-            raise ValueError(f"{name!r} must be a 3-D volume, got shape {array.shape}")
-        prepared[name] = np.moveaxis(array, axis, -1)
+        if array.ndim not in (3, 4) or (array.ndim == 4 and array.shape[-1] != 3):
+            raise ValueError(
+                f"{name!r} must be a 3-D volume or a 4-D (X, Y, Z, 3) colour "
+                f"volume, got shape {array.shape}"
+            )
+        # Move the sliced axis to position 2 for both kinds, so a slice is
+        # always `array[:, :, index]` and any channel axis stays trailing.
+        prepared[name] = np.moveaxis(array, axis, 2)
+        ranges[name] = (
+            None
+            if array.ndim == 4
+            else (float(np.nanmin(array)), float(np.nanmax(array)))
+        )
 
-    depths = {name: array.shape[-1] for name, array in prepared.items()}
+    depths = {name: array.shape[2] for name, array in prepared.items()}
     if len(set(depths.values())) != 1:
         raise ValueError(f"Volumes disagree on the sliced axis: {depths}")
     num_slices = next(iter(depths.values()))
 
-    ranges = {
-        name: (float(np.nanmin(array)), float(np.nanmax(array)))
-        for name, array in prepared.items()
-    }
     names = list(prepared)
 
     def images_for(index):
         return [
-            go.Image(source=_to_png_uri(prepared[name][..., index], *ranges[name]))
+            go.Image(source=_to_png_uri(prepared[name][:, :, index], ranges[name]))
             for name in names
         ]
 
@@ -1591,3 +1650,85 @@ def slice_viewer(
         visible=False, showgrid=False, zeroline=False, scaleanchor="x", scaleratio=1
     )
     return figure
+
+
+#: Plotly writes a bare document with an unstyled `<body>`, so a dark figure
+#: sits in a white page. Style the page to match and let the plot fill it.
+_VIEWER_PAGE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>{title}</title>
+<style>
+  html, body {{
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: {background};
+    color: {foreground};
+    font-family: {font};
+  }}
+  body {{ display: flex; align-items: center; justify-content: center; }}
+  .plotly-graph-div {{ width: 100%; height: 100%; }}
+  .modebar {{ opacity: 0.35; }}
+  .modebar:hover {{ opacity: 1; }}
+</style>
+</head>
+<body>
+{figure}
+</body>
+</html>
+"""
+
+#: The default toolbar offers a dozen controls that do nothing useful for a
+#: slice browser; keep only the ones that do.
+_VIEWER_CONFIG = {
+    "displaylogo": False,
+    "displayModeBar": "hover",
+    "responsive": True,
+    "modeBarButtonsToRemove": [
+        "select2d",
+        "lasso2d",
+        "autoScale2d",
+        "hoverClosestCartesian",
+        "hoverCompareCartesian",
+        "toggleSpikelines",
+    ],
+}
+
+
+def save_viewer(figure, destination, title: str = "dmri viewer"):
+    """Write a slice viewer as a standalone dark HTML page.
+
+    Args:
+        figure: a figure from :func:`slice_viewer`.
+        destination: path to write.
+        title: browser tab title.
+
+    Returns:
+        The path written, as a :class:`pathlib.Path`.
+    """
+    from pathlib import Path
+
+    destination = Path(destination)
+    # A standalone page should fill the window rather than sit in a fixed-size
+    # box; drop the figure's own sizing and let the page CSS drive it. Copy so
+    # the caller's figure keeps whatever size it was built with.
+    page_figure = go.Figure(figure)
+    page_figure.update_layout(autosize=True, width=None, height=None)
+    fragment = page_figure.to_html(
+        full_html=False, include_plotlyjs="cdn", config=_VIEWER_CONFIG
+    )
+    destination.write_text(
+        _VIEWER_PAGE.format(
+            title=title,
+            background=_VIEWER_BACKGROUND,
+            foreground=_VIEWER_FOREGROUND,
+            font=_VIEWER_FONT,
+            figure=fragment,
+        ),
+        encoding="utf-8",
+    )
+    return destination

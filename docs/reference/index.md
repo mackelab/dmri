@@ -1,24 +1,28 @@
 # Reference
 
-The reference covers the generated Python API. CLI documentation is under the [CLI](../cli/predict.md) tab.
+Use the reference pages for exact options, configuration keys, output files,
+and Python signatures. The Python API pages are generated from the source
+docstrings for the checked-out version of DMRI.
 
-<div class="card-grid">
-  <a class="doc-card" href="simulators/">
-    <span class="doc-card__number">API</span>
-    <h3>Simulation</h3>
-    <p>Acquisition schemes, signal compartments, priors, and mixtures.</p>
-  </a>
-  <a class="doc-card" href="nn/">
-    <span class="doc-card__number">API</span>
-    <h3>Networks and workflows</h3>
-    <p>Neural components plus training, evaluation, and utility modules.</p>
-  </a>
-  <a class="doc-card" href="hub/">
-    <span class="doc-card__number">API</span>
-    <h3>Pretrained models</h3>
-    <p>Load, inspect, and list pretrained model bundles from Python.</p>
-  </a>
-</div>
+## User reference
 
-!!! note
-    API pages are generated from the source docstrings and therefore reflect the checked-out version of DMRI.
+- [Configuration](configuration.md): configuration files, Hydra groups, and
+  command-line overrides.
+- [Outputs](outputs.md): prediction and evaluation output directories and files.
+- [Troubleshooting](troubleshooting.md): installation, device, memory, and input
+  problems.
+
+## Command-line interface
+
+- [`dmri predict`](../cli/predict.md)
+- [`dmri train`](../cli/train.md)
+- [`dmri eval`](../cli/eval.md)
+
+## Python API
+
+- [Pretrained models](hub.md)
+- [Simulators](simulators.md)
+- [Neural networks](nn.md)
+- [Training](train.md)
+- [Evaluation](eval.md)
+- [Utilities](utils.md)

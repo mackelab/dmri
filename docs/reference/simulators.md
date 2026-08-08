@@ -1,6 +1,8 @@
 # Simulators API
 
-Exact signatures for acquisition schemes, compartments, mixtures, priors, and noise models. Read the [simulator guide](../guides/simulators.md) first for the underlying concepts, or open the [component gallery](../examples/01_dmri_simulator_components.ipynb) for visual examples.
+Exact signatures for acquisition schemes, compartments, mixtures, priors, and
+noise models. Read the [simulator guide](../guides/simulators.md) first, or open
+the [component example](../examples/01_dmri_simulator_components.md).
 
 ## Acquisition schemes
 

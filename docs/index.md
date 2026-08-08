@@ -1,80 +1,44 @@
----
-hide:
-  - navigation
-  - toc
----
+# DMRI
 
-<div class="landing-hero">
-  <div class="landing-hero__copy">
-    <p class="landing-kicker"><span></span> Diffusion MRI model selection</p>
-    <h1>Model selection and parameter inference for diffusion MRI.</h1>
-    <p class="landing-lede">DMRI provides JAX implementations of composable tissue models and inference methods for estimating model structure and biophysical parameters.</p>
-    <div class="landing-actions">
-      <a class="md-button md-button--primary" href="getting-started/">Get started</a>
-      <a class="landing-text-link" href="examples/">Example notebooks <span aria-hidden="true">→</span></a>
-    </div>
-    <ul class="landing-tags" aria-label="Key capabilities">
-      <li>JIT + VMAP</li>
-      <li>Hydra experiments</li>
-      <li>Pretrained inference</li>
-    </ul>
-  </div>
+DMRI provides diffusion MRI simulators and tools for model selection and
+parameter inference. Use it to apply a pretrained model, train a model on
+simulated data, or evaluate a trained run.
 
-</div>
+> **Research use only.** DMRI has not been clinically validated and must not be
+> used for clinical decisions. Pretrained checkpoints are acquisition-specific.
+> Confirm that a checkpoint's training acquisition is compatible with your data
+> before interpreting its output; matching filenames is not enough.
 
-<section class="landing-section">
-  <div class="section-heading">
-    <p>Methodological workflow</p>
-    <h2>A unified pipeline for simulation and inference.</h2>
-  </div>
+## Install
 
-  <div class="workflow-rail">
-    <a href="examples/01_dmri_simulator_components/" class="workflow-step">
-      <span class="workflow-step__number">01</span>
-      <div><h3>Characterize</h3><p>Compare signal responses across tissue compartments.</p></div>
-    </a>
-    <a href="examples/02_dmri_multicompartment_model/" class="workflow-step">
-      <span class="workflow-step__number">02</span>
-      <div><h3>Construct</h3><p>Specify compartments, fractions, model masks, and noise.</p></div>
-    </a>
-    <a href="examples/04_train_standalone/" class="workflow-step">
-      <span class="workflow-step__number">03</span>
-      <div><h3>Estimate</h3><p>Train inference networks on simulated observations.</p></div>
-    </a>
-    <a href="guides/prediction/" class="workflow-step">
-      <span class="workflow-step__number">04</span>
-      <div><h3>Predict</h3><p>Apply a compatible pretrained model to a standard dMRI folder.</p></div>
-    </a>
-  </div>
-</section>
-
-!!! warning "Research use only"
-    DMRI has not been clinically validated. Pretrained checkpoints must be used only with compatible acquisition schemes; matching the required filenames is not sufficient to establish compatibility.
-
-<section class="landing-section landing-section--split">
-  <div class="capability-intro">
-    <p class="landing-kicker"><span></span> Joint model and parameter inference</p>
-    <h2>Inference over discrete model structure and continuous parameters.</h2>
-    <p>The active compartment model is treated as a latent variable, allowing uncertainty over model structure to be represented alongside uncertainty in continuous parameters.</p>
-    <a class="landing-text-link" href="guides/simulators/">Simulator methodology <span aria-hidden="true">→</span></a>
-  </div>
-  <div class="capability-list">
-    <div class="capability-row"><span>01</span><div><h3>Signal models</h3><p>Ball, stick, zeppelin, tensor, restricted, NODDI, and SANDI compartments.</p></div></div>
-    <div class="capability-row"><span>02</span><div><h3>Acquisition conditioning</h3><p>Inference may be conditioned on b-values, gradient directions, and acquisition metadata.</p></div></div>
-    <div class="capability-row"><span>03</span><div><h3>Experiment configuration</h3><p>Hydra configurations support local execution, parameter sweeps, and SLURM environments.</p></div></div>
-  </div>
-</section>
-
-<section class="quickstart-band" markdown>
-<div class="quickstart-band__copy">
-  <p>INSTALLATION</p>
-  <h2>Install from source.</h2>
-</div>
+DMRI requires Python 3.11 or newer. From a clone of the repository:
 
 ```bash
-git clone https://github.com/mackelab/dmri.git
-cd dmri && uv pip install -e '.[dev]'
+uv venv -p 3.11
+source .venv/bin/activate
+uv pip install -e .
 ```
 
-<a class="md-button md-button--primary" href="getting-started/">Installation instructions</a>
-</section>
+See [Installation and quickstart](getting-started.md) for GPU options and a
+complete prediction example.
+
+## Predict
+
+Put `data.nii.gz`, `nodif_brain_mask.nii.gz`, `bvals`, and `bvecs` in one
+folder, then run:
+
+```bash
+dmri predict FOLDER --model msb3s_2_4_6_128 --quality balanced --non-interactive
+```
+
+Results and an HTML viewer are written below `FOLDER/dmri_output/`. See the
+[prediction guide](guides/prediction.md) for checkpoint selection, output maps,
+and performance options.
+
+## Other workflows
+
+- [Train a model](guides/training.md)
+- [Evaluate a trained model](guides/evaluation.md)
+- [Build and use simulators](guides/simulators.md)
+- [Run the examples](examples/index.md)
+- [Look up CLI, configuration, output, and Python API details](reference/index.md)
