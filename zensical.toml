@@ -12,24 +12,29 @@ extra_javascript = [
   "javascripts/mathjax.js",
   "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js",
 ]
+extra_css = ["stylesheets/api.css"]
 nav = [
   { "Home" = "index.md" },
-  { "Installation / Quickstart" = "getting-started.md" },
-  { "Predict" = [
-    { "Guide" = "guides/prediction.md" },
-    { "CLI reference" = "cli/predict.md" },
+  { "Get started" = "getting-started.md" },
+  { "Guides" = [
+    { "Overview" = "guides/index.md" },
+    { "Predict" = "guides/prediction.md" },
+    { "Train" = "guides/training.md" },
+    { "Evaluate" = "guides/evaluation.md" },
+    { "Simulators" = "guides/simulators.md" },
   ] },
-  { "Train" = [
-    { "Guide" = "guides/training.md" },
-    { "CLI reference" = "cli/train.md" },
+  { "CLI" = [
+    { "Predict" = "cli/predict.md" },
+    { "Train" = "cli/train.md" },
+    { "Eval" = "cli/eval.md" },
   ] },
-  { "Evaluate" = [
-    { "Guide" = "guides/evaluation.md" },
-    { "CLI reference" = "cli/eval.md" },
-  ] },
-  { "Simulators" = [
-    { "Guide" = "guides/simulators.md" },
-    { "Python API" = "reference/simulators.md" },
+  { "Python API" = [
+    { "Predict" = "reference/hub.md" },
+    { "Train" = "reference/train.md" },
+    { "Eval" = "reference/eval.md" },
+    { "Simulators" = "reference/simulators.md" },
+    { "Neural networks" = "reference/nn.md" },
+    { "Utilities" = "reference/utils.md" },
   ] },
   { "Examples" = [
     { "Overview" = "examples/index.md" },
@@ -43,16 +48,8 @@ nav = [
     { "Configuration" = "reference/configuration.md" },
     { "Outputs" = "reference/outputs.md" },
     { "Troubleshooting" = "reference/troubleshooting.md" },
-    { "Python API" = [
-      { "Pretrained Models" = "reference/hub.md" },
-      { "Simulators" = "reference/simulators.md" },
-      { "Neural networks" = "reference/nn.md" },
-      { "Training" = "reference/train.md" },
-      { "Evaluation" = "reference/eval.md" },
-      { "Utilities" = "reference/utils.md" },
-    ] },
+    { "Development" = "development.md" },
   ] },
-  { "Development" = "development.md" },
 ]
 
 [project.theme]
@@ -104,6 +101,13 @@ show_if_no_docstring = true
 separate_signature = true
 merge_init_into_class = true
 signature_crossrefs = true
+show_source = false
+show_signature_annotations = true
+annotations_path = "brief"
+docstring_section_style = "table"
+members_order = "source"
+show_symbol_type_heading = true
+show_symbol_type_toc = true
 
 [project.markdown_extensions.admonition]
 [project.markdown_extensions.attr_list]

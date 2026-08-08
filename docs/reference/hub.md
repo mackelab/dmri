@@ -1,7 +1,9 @@
-# Pretrained Model API
+# Prediction Python API
 
-The package root exposes `dmri.load_pretrained`, `dmri.list_pretrained_models`,
-and `dmri.PretrainedModel`.
+Use [`dmri predict`](../cli/predict.md) for the complete folder-based prediction
+workflow. For Python code that manages model inputs and inference directly, the
+package root exposes `dmri.load_pretrained`, `dmri.list_pretrained_models`, and
+`dmri.PretrainedModel`.
 
 ```python
 import dmri

@@ -13,6 +13,12 @@ STANDARD_FILES = ("data.nii.gz", "nodif_brain_mask.nii.gz", "bvals", "bvecs")
 #: Sampling presets. Network work is linear in ``num_steps x samples``; precision
 #: and correction add further quality/runtime trade-offs.
 QUALITY_PRESETS = {
+    "very-fast": {
+        "num_steps": 8,
+        "samples": 10,
+        "precision": "fp16",
+        "corrector": "none",
+    },
     "fast": {
         "num_steps": 20,
         "samples": 25,

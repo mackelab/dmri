@@ -1,5 +1,7 @@
 # DMRI
 
+![DMRI logo: a stylized brain crossed by diffusion pathways](assets/logo.svg){ width="144" }
+
 DMRI provides diffusion MRI simulators and tools for model selection and
 parameter inference. Use it to apply a pretrained model, train a model on
 simulated data, or evaluate a trained run.
@@ -41,4 +43,6 @@ and performance options.
 - [Evaluate a trained model](guides/evaluation.md)
 - [Build and use simulators](guides/simulators.md)
 - [Run the examples](examples/index.md)
-- [Look up CLI, configuration, output, and Python API details](reference/index.md)
+- [Look up command options](cli/predict.md)
+- [Use the Python API](reference/index.md)
+- [Check configuration, outputs, and troubleshooting](reference/configuration.md)

@@ -53,6 +53,7 @@ The default repository is `manugloeck/dmri-pretrained`, and the default model is
 
 | Quality | ODE steps | Samples | Network precision | Corrector |
 | --- | ---: | ---: | --- | --- |
+| `very-fast` | 8 | 10 | fp16 on supported accelerators | none |
 | `fast` | 20 | 25 | fp16 on supported accelerators | none |
 | `balanced` | 40 | 50 | fp32 | auto |
 | `high` | 60 | 100 | fp32 | auto |

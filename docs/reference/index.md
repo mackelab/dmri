@@ -20,7 +20,7 @@ docstrings for the checked-out version of DMRI.
 
 ## Python API
 
-- [Pretrained models](hub.md)
+- [Prediction and pretrained models](hub.md)
 - [Simulators](simulators.md)
 - [Neural networks](nn.md)
 - [Training](train.md)

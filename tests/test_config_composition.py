@@ -134,7 +134,7 @@ def test_simulator_class_path_can_be_overridden_without_new_config_file():
 
 
 def test_score_experiment_uses_scalar_instead_of_duplicate_simulator_recipe():
-    cfg = compose_config("train", ["+experiment/train=b3s_2_4_6_128_score"])
+    cfg = compose_config("train", ["+experiment/train=msb3s_2_4_6_128"])
 
     assert cfg.simulator.posterior_score is True
     assert cfg.simulator.model_class.endswith("Ball3StickSharedDiffusivity")

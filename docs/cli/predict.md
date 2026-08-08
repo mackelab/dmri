@@ -24,7 +24,7 @@ dmri predict --list-models [--repo-id REPOSITORY] [--revision REVISION]
 
 ## Sampling
 
-- `--quality {fast,balanced,high}`: named sampling settings. Default:
+- `--quality {very-fast,fast,balanced,high}`: named sampling settings. Default:
   `balanced`.
 - `--num-steps INTEGER`: ODE steps per theta sample.
 - `--mask-samples INTEGER`: posterior mask samples.

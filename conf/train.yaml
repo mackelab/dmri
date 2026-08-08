@@ -23,8 +23,8 @@ hydra:
 
 defaults:
   - _self_
-  - simulator: ball_stick_zeppelin
-  - simulator/acquisition: hardi
+  - simulator: ball3stick_shared
+  - simulator/acquisition: multi
   - model: dmri
   - training: default
   - infrastructure/launcher: slurm

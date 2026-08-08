@@ -96,7 +96,7 @@ def test_defaults_are_unchanged_without_a_quality_flag():
     assert QUALITY_PRESETS[DEFAULT_QUALITY]["samples"] == 50
 
 
-@pytest.mark.parametrize("quality", ["fast", "balanced", "high"])
+@pytest.mark.parametrize("quality", ["very-fast", "fast", "balanced", "high"])
 def test_quality_presets_are_ordered_and_consistent(quality):
     from dmri.predict import QUALITY_PRESETS, _preset_cost
 
@@ -106,7 +106,12 @@ def test_quality_presets_are_ordered_and_consistent(quality):
     assert args.theta_samples == preset["samples"]
     # Each parameter sample is conditioned on a mask sample.
     assert args.mask_samples >= args.theta_samples
-    assert _preset_cost("fast") < _preset_cost("balanced") < _preset_cost("high")
+    assert (
+        _preset_cost("very-fast")
+        < _preset_cost("fast")
+        < _preset_cost("balanced")
+        < _preset_cost("high")
+    )
 
 
 def test_explicit_flags_win_over_the_preset():
@@ -127,8 +132,9 @@ def test_explicit_flags_win_over_the_preset():
     assert args.corrector == "auto"
 
 
-def test_fast_quality_uses_fp16_without_a_corrector():
-    args = _resolved(["folder", "--quality", "fast"])
+@pytest.mark.parametrize("quality", ["very-fast", "fast"])
+def test_low_cost_quality_uses_fp16_without_a_corrector(quality):
+    args = _resolved(["folder", "--quality", quality])
 
     assert args.precision == "fp16"
     assert args.corrector == "none"
@@ -166,13 +172,13 @@ def test_preset_reaches_the_hydra_overrides(input_folder):
 
     from dmri.predict import _hydra_overrides
 
-    args = _resolved([str(input_folder), "--quality", "fast"])
+    args = _resolved([str(input_folder), "--quality", "very-fast"])
     args.local_checkpoint = None
     overrides = _hydra_overrides(args, input_folder, Path("/tmp/out"))
 
-    assert "evaluation.sampling.theta.params.num_steps=20" in overrides
-    assert "evaluation.sampling.theta.num_samples=25" in overrides
-    assert "evaluation.sampling.mask.n_samples=25" in overrides
+    assert "evaluation.sampling.theta.params.num_steps=8" in overrides
+    assert "evaluation.sampling.theta.num_samples=10" in overrides
+    assert "evaluation.sampling.mask.n_samples=10" in overrides
     assert "evaluation.precision=fp16" in overrides
     assert (
         "evaluation/theta/corrector@evaluation.sampling.theta.corrector=none"
