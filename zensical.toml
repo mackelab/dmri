@@ -1,6 +1,6 @@
 [project]
 site_name = "DMRI"
-site_description = "Composable JAX simulators and amortized inference for diffusion MRI"
+site_description = "Diffusion MRI simulation, model selection, and parameter inference"
 site_author = "Macke Lab"
 copyright = "Copyright &copy; 2026 Macke Lab"
 site_url = "https://www.mackelab.org/dmri/"
@@ -8,35 +8,41 @@ docs_dir = "docs"
 site_dir = "site"
 repo_name = "mackelab/dmri"
 repo_url = "https://github.com/mackelab/dmri"
-extra_css = ["stylesheets/extra.css"]
 extra_javascript = [
   "javascripts/mathjax.js",
   "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js",
 ]
 nav = [
   { "Home" = "index.md" },
-  { "Getting Started" = "getting-started.md" },
-  { "CLI" = [
-    { "dmri predict" = "cli/predict.md" },
-    { "dmri train" = "cli/train.md" },
-    { "dmri eval" = "cli/eval.md" },
+  { "Installation / Quickstart" = "getting-started.md" },
+  { "Predict" = [
+    { "Guide" = "guides/prediction.md" },
+    { "CLI reference" = "cli/predict.md" },
   ] },
-  { "Guides" = [
-    { "Overview" = "guides/index.md" },
-    { "Pretrained Prediction" = "guides/prediction.md" },
-    { "Simulators & Priors" = "guides/simulators.md" },
-    { "Training Runs" = "guides/training.md" },
-    { "Evaluation & Export" = "guides/evaluation.md" },
+  { "Train" = [
+    { "Guide" = "guides/training.md" },
+    { "CLI reference" = "cli/train.md" },
+  ] },
+  { "Evaluate" = [
+    { "Guide" = "guides/evaluation.md" },
+    { "CLI reference" = "cli/eval.md" },
+  ] },
+  { "Simulators" = [
+    { "Guide" = "guides/simulators.md" },
+    { "Python API" = "reference/simulators.md" },
   ] },
   { "Examples" = [
     { "Overview" = "examples/index.md" },
-    { "Simulator components" = "examples/01_dmri_simulator_components.ipynb" },
-    { "Multi-compartment model" = "examples/02_dmri_multicompartment_model.ipynb" },
-    { "Using pretrained models" = "examples/03_pretrained_models.ipynb" },
-    { "Train a small model" = "examples/04_train_standalone.ipynb" },
+    { "Simulator components" = "examples/01_dmri_simulator_components.md" },
+    { "Multi-compartment model" = "examples/02_dmri_multicompartment_model.md" },
+    { "Using pretrained models" = "examples/03_pretrained_models.md" },
+    { "Train a small model" = "examples/04_train_standalone.md" },
   ] },
   { "Reference" = [
     { "Overview" = "reference/index.md" },
+    { "Configuration" = "reference/configuration.md" },
+    { "Outputs" = "reference/outputs.md" },
+    { "Troubleshooting" = "reference/troubleshooting.md" },
     { "Python API" = [
       { "Pretrained Models" = "reference/hub.md" },
       { "Simulators" = "reference/simulators.md" },
@@ -46,6 +52,7 @@ nav = [
       { "Utilities" = "reference/utils.md" },
     ] },
   ] },
+  { "Development" = "development.md" },
 ]
 
 [project.theme]

@@ -1,28 +1,14 @@
 # Guides
 
-These guides describe the principal prediction, simulation, training, and evaluation workflows.
+Choose the workflow you need:
 
-<div class="card-grid">
-  <a class="doc-card" href="prediction/">
-    <span class="doc-card__number">Inference</span>
-    <h3>Pretrained prediction</h3>
-    <p>Run a compatible public or local checkpoint on a standard dMRI folder.</p>
-  </a>
-  <a class="doc-card" href="simulators/">
-    <span class="doc-card__number">Modeling</span>
-    <h3>Simulators and priors</h3>
-    <p>Compose signal compartments, masks, acquisition schemes, and noise models.</p>
-  </a>
-  <a class="doc-card" href="training/">
-    <span class="doc-card__number">Experiments</span>
-    <h3>Training runs</h3>
-    <p>Configure Hydra experiments, launch jobs, and manage checkpoints.</p>
-  </a>
-  <a class="doc-card" href="evaluation/">
-    <span class="doc-card__number">Analysis</span>
-    <h3>Evaluation and export</h3>
-    <p>Run posterior inference and export maps and summary metrics.</p>
-  </a>
-</div>
+- [Predict](prediction.md): apply a compatible pretrained or local checkpoint
+  to a four-file diffusion MRI input folder.
+- [Train](training.md): configure and run simulator-based training with Hydra.
+- [Evaluate](evaluation.md): evaluate trained runs, calculate metrics, and
+  export maps.
+- [Simulators](simulators.md): define acquisition schemes, signal compartments,
+  priors, mixtures, and noise models.
 
-For exact configuration keys and signatures, use the [CLI and Python reference](../reference/).
+For exact command options and Python signatures, use the
+[reference](../reference/index.md).

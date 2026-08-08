@@ -461,8 +461,8 @@ def _validate_model_mode(args) -> None:
 
 
 #: Maps written into the viewer, in the order they appear in its dropdown.
-#: Restricted to the scalar summaries a person actually eyeballs; the full set
-#: of ~35 NIfTIs stays on disk.
+#: Restricted to the summaries a person actually eyeballs; the full set of ~35
+#: NIfTIs stays on disk.
 VIEWER_MAPS = (
     "mean_fsumsamples.nii.gz",
     "mean_f0samples.nii.gz",
@@ -473,6 +473,18 @@ VIEWER_MAPS = (
     "mean_snrsamples.nii.gz",
     "frac_ball_active.nii.gz",
     "mean_num_fib_predsamples.nii.gz",
+    "dyads1_dispersion.nii.gz",
+    "dyads2_dispersion.nii.gz",
+    "dyads3_dispersion.nii.gz",
+)
+
+#: Fibre orientations, rendered as direction-encoded colour rather than as a
+#: raw 3-vector. Each is dimmed by its own volume fraction so that orientations
+#: estimated in near-empty voxels do not read as confident structure.
+VIEWER_DYADS = (
+    ("dyads1", "dyads1.nii.gz", "mean_f1samples.nii.gz"),
+    ("dyads2", "dyads2.nii.gz", "mean_f2samples.nii.gz"),
+    ("dyads3", "dyads3.nii.gz", "mean_f3samples.nii.gz"),
 )
 
 
@@ -486,43 +498,34 @@ def write_viewer(output_dir: Path, filename: str = "view_results.html") -> Path 
     import nibabel as nb
     import numpy as np
 
-    from dmri.utils.viz import slice_viewer
+    from dmri.utils.viz import direction_colour, save_viewer, slice_viewer
+
+    def load(path: Path):
+        if not path.is_file():
+            return None
+        array = np.asanyarray(nb.load(path).dataobj, dtype=np.float32)
+        if array.ndim == 4 and array.shape[-1] == 1:
+            array = array[..., 0]
+        return array
 
     volumes = {}
     for results_dir in sorted(output_dir.glob("*inference_results")):
         for name in VIEWER_MAPS:
-            path = results_dir / name
-            if not path.is_file():
-                continue
-            array = np.asanyarray(nb.load(path).dataobj, dtype=np.float32)
-            if array.ndim == 4 and array.shape[-1] == 1:
-                array = array[..., 0]
-            if array.ndim == 3:
+            array = load(results_dir / name)
+            if array is not None and array.ndim == 3:
                 volumes[name.replace(".nii.gz", "")] = array
+        for label, dyad_name, weight_name in VIEWER_DYADS:
+            dyads = load(results_dir / dyad_name)
+            if dyads is None or dyads.ndim != 4 or dyads.shape[-1] != 3:
+                continue
+            volumes[label] = direction_colour(dyads, load(results_dir / weight_name))
     if not volumes:
         return None
 
     figure = slice_viewer(volumes, title=f"dmri predict - {output_dir.name}")
-    destination = output_dir / filename
-    figure.write_html(
-        destination,
-        include_plotlyjs="cdn",
-        # The default toolbar offers a dozen controls that do nothing useful for
-        # a slice browser; keep only the ones that do.
-        config={
-            "displaylogo": False,
-            "displayModeBar": "hover",
-            "modeBarButtonsToRemove": [
-                "select2d",
-                "lasso2d",
-                "autoScale2d",
-                "hoverClosestCartesian",
-                "hoverCompareCartesian",
-                "toggleSpikelines",
-            ],
-        },
+    return save_viewer(
+        figure, output_dir / filename, title=f"dmri predict - {output_dir.name}"
     )
-    return destination
 
 
 def _validate_input(folder: Path) -> Path:
