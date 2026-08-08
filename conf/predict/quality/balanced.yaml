@@ -1,0 +1,15 @@
+# @package _global_
+# The default preset. These values match evaluation/theta/default.yaml and
+# evaluation/mask/default.yaml, so `balanced` is the plain evaluation default.
+defaults:
+  - override /evaluation/theta/corrector@evaluation.sampling.theta.corrector: auto
+
+evaluation:
+  precision: fp32
+  sampling:
+    theta:
+      num_samples: 50
+      params:
+        num_steps: 40
+    mask:
+      n_samples: 50

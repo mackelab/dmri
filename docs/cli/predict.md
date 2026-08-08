@@ -25,7 +25,8 @@ dmri predict --list-models [--repo-id REPOSITORY] [--revision REVISION]
 ## Sampling
 
 - `--quality {very-fast,fast,balanced,high}`: named sampling settings. Default:
-  `balanced`.
+  `balanced`. Each name selects a `conf/predict/quality/` group, so the numbers
+  behind it are visible in the tree and recorded in the run's `.hydra` output.
 - `--num-steps INTEGER`: ODE steps per theta sample.
 - `--mask-samples INTEGER`: posterior mask samples.
 - `--theta-samples INTEGER`: posterior parameter samples.
@@ -61,6 +62,26 @@ long time. Use a supported GPU accelerator when possible.
 
 Interactive selection is used only when stdin and stdout are terminals. Use
 arrow keys or `j`/`k`, Enter, or number keys.
+
+## Checkpoint and configuration
+
+- `--checkpoint-which {latest,best,STEP}`: which checkpoint to load. Default:
+  `latest`. The pretrained bundles on the Hub currently ship only `best`, so the
+  Hub path needs `--checkpoint-which best`.
+- `--set KEY=VALUE`: set any configuration key directly. Repeatable, and applied
+  last so it overrides both `--quality` and the other flags.
+
+`--set` is the escape hatch for anything without a dedicated flag:
+
+```bash
+dmri predict FOLDER --quality fast \
+  --set evaluation.sampling.theta.params.t_max=60 \
+  --set evaluation.export.theta.export_stds=true
+```
+
+Prediction composes `conf/predict.yaml`, which inherits the whole evaluation tree
+and layers the prediction presets on top. See
+[Configuration](../reference/configuration.md#prediction-tree).
 
 See the [prediction guide](../guides/prediction.md) for workflow and output
 details.

@@ -1,0 +1,12 @@
+# @package _global_
+# Use one model everywhere, skipping model selection entirely. Which model comes
+# from the predict/fixed_model group, referenced rather than duplicated so the
+# two cannot disagree.
+defaults:
+  - override /evaluation/selection: none
+
+evaluation:
+  pipeline:
+    sample_mask: false
+    select_models: false
+    default_mask: ${predict.fixed_model.mask}

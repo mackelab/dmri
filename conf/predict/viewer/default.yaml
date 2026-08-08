@@ -1,0 +1,35 @@
+# @package predict.viewer
+# The self-contained HTML slice viewer written next to the exported maps.
+enabled: true
+filename: view_results.html
+
+# Scalar maps, in the order they appear in the viewer's dropdown. Restricted to
+# the summaries a person actually eyeballs; the full set of ~35 NIfTIs stays on
+# disk regardless.
+maps:
+  - mean_fsumsamples.nii.gz
+  - mean_f0samples.nii.gz
+  - mean_f1samples.nii.gz
+  - mean_f2samples.nii.gz
+  - mean_f3samples.nii.gz
+  - mean_dsamples.nii.gz
+  - mean_snrsamples.nii.gz
+  - frac_ball_active.nii.gz
+  - mean_num_fib_predsamples.nii.gz
+  - dyads1_dispersion.nii.gz
+  - dyads2_dispersion.nii.gz
+  - dyads3_dispersion.nii.gz
+
+# Fibre orientations, rendered as direction-encoded colour rather than as a raw
+# 3-vector. Each is dimmed by `weight` so that orientations estimated in
+# near-empty voxels do not read as confident structure.
+dyads:
+  - label: dyads1
+    file: dyads1.nii.gz
+    weight: mean_f1samples.nii.gz
+  - label: dyads2
+    file: dyads2.nii.gz
+    weight: mean_f2samples.nii.gz
+  - label: dyads3
+    file: dyads3.nii.gz
+    weight: mean_f3samples.nii.gz

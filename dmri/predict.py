@@ -1,4 +1,5 @@
 import argparse
+import functools
 import os
 import shutil
 import sys
@@ -10,43 +11,78 @@ from dmri.hub import DEFAULT_MODEL_NAME, DEFAULT_REPO_ID, list_pretrained_models
 
 STANDARD_FILES = ("data.nii.gz", "nodif_brain_mask.nii.gz", "bvals", "bvecs")
 
-#: Sampling presets. Network work is linear in ``num_steps x samples``; precision
-#: and correction add further quality/runtime trade-offs.
-QUALITY_PRESETS = {
-    "very-fast": {
-        "num_steps": 8,
-        "samples": 10,
-        "precision": "fp16",
-        "corrector": "none",
-    },
-    "fast": {
-        "num_steps": 20,
-        "samples": 25,
-        "precision": "fp16",
-        "corrector": "none",
-    },
-    "balanced": {
-        "num_steps": 40,
-        "samples": 50,
-        "precision": "fp32",
-        "corrector": "auto",
-    },
-    "high": {
-        "num_steps": 60,
-        "samples": 100,
-        "precision": "fp32",
-        "corrector": "auto",
-    },
-}
-DEFAULT_QUALITY = "balanced"
+#: Root config for prediction. It inherits `eval.yaml` and layers the presets and
+#: policy that used to be Python constants in this module.
+CONFIG_NAME = "predict"
+CONFIG_MODULE = "conf"
 
-MODEL_MODES = ("per-sample", "best", "fixed")
+DEFAULT_QUALITY = "balanced"
 DEFAULT_MODEL_MODE = "per-sample"
-FIXED_MODELS = {
-    "B1S": (True, True, False, False, True),
-    "B2S": (True, True, True, False, True),
-    "B3S": (True, True, True, True, True),
-}
+
+
+@functools.lru_cache(maxsize=1)
+def _config_root() -> Path:
+    """Directory of the packaged Hydra config tree."""
+    import conf
+
+    return Path(conf.__file__).parent
+
+
+def _group_options(group: str) -> tuple[str, ...]:
+    """Names of the options in a config group, sorted by file name."""
+    return tuple(sorted(path.stem for path in (_config_root() / group).glob("*.yaml")))
+
+
+def _compose(overrides=None):
+    """Compose the prediction config without running anything.
+
+    Used for `--help` text and the interactive picker, which need the preset
+    numbers before Hydra takes over. The tree is the single source of truth, so
+    these are read from it rather than duplicated here.
+    """
+    from hydra import compose, initialize_config_module
+    from hydra.core.global_hydra import GlobalHydra
+
+    GlobalHydra.instance().clear()
+    try:
+        with initialize_config_module(version_base=None, config_module=CONFIG_MODULE):
+            return compose(config_name=CONFIG_NAME, overrides=list(overrides or []))
+    finally:
+        GlobalHydra.instance().clear()
+
+
+@functools.cache
+def _quality_preset(name: str) -> dict:
+    """The resolved numbers behind one `predict/quality` option."""
+    cfg = _compose([f"predict/quality={name}"])
+    theta = cfg.evaluation.sampling.theta
+    return {
+        "num_steps": theta.params.num_steps,
+        "samples": theta.num_samples,
+        "mask_samples": cfg.evaluation.sampling.mask.n_samples,
+        "precision": cfg.evaluation.precision,
+        "corrector": theta.corrector.name,
+    }
+
+
+def quality_choices() -> tuple[str, ...]:
+    """Quality presets, cheapest first."""
+    return tuple(sorted(_group_options("predict/quality"), key=_preset_cost))
+
+
+def model_mode_choices() -> tuple[str, ...]:
+    options = _group_options("predict/model_mode")
+    # Keep the documented order rather than the alphabetical one.
+    preferred = ("per-sample", "best", "fixed")
+    return tuple(name for name in preferred if name in options) + tuple(
+        name for name in options if name not in preferred
+    )
+
+
+def fixed_model_choices() -> tuple[str, ...]:
+    return _group_options("predict/fixed_model")
+
+
 MODEL_DESCRIPTIONS = {
     "b3s_2_4_6_64": "Ball3Stick model family - compact single-shell model",
     "b3s_2_4_6_128": "Ball3Stick model family - single-shell dMRI",
@@ -55,13 +91,13 @@ MODEL_DESCRIPTIONS = {
 
 
 def _preset_cost(name):
-    preset = QUALITY_PRESETS[name]
+    preset = _quality_preset(name)
     return preset["num_steps"] * preset["samples"]
 
 
 def _quality_description(name):
-    preset = QUALITY_PRESETS[name]
-    correction = "no corrector" if preset["corrector"] == "none" else "corrected"
+    preset = _quality_preset(name)
+    correction = "no corrector" if preset["corrector"] == "uncorrected" else "corrected"
     summary = (
         f"{preset['num_steps']} steps x {preset['samples']} samples, "
         f"{preset['precision']}, {correction}"
@@ -93,9 +129,19 @@ def _unit_float(value):
 
 def _fixed_model(value):
     value = value.upper()
-    if value not in FIXED_MODELS:
+    choices = fixed_model_choices()
+    if value not in choices:
         raise argparse.ArgumentTypeError(
-            f"choose one of {', '.join(FIXED_MODELS)} for this model family"
+            f"choose one of {', '.join(choices)} for this model family"
+        )
+    return value
+
+
+def _override(value):
+    """A raw `key=value` Hydra override from `--set`."""
+    if "=" not in value:
+        raise argparse.ArgumentTypeError(
+            f"expected key=value, got {value!r} (e.g. evaluation.batch_size=4096)"
         )
     return value
 
@@ -134,15 +180,11 @@ def _parser():
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument(
         "--quality",
-        choices=tuple(QUALITY_PRESETS),
+        choices=quality_choices(),
         help=(
             "Sampling preset: "
             + "; ".join(
-                f"{name} ({QUALITY_PRESETS[name]['num_steps']} steps x "
-                f"{QUALITY_PRESETS[name]['samples']} samples, "
-                f"{QUALITY_PRESETS[name]['precision']}, "
-                f"{'no corrector' if QUALITY_PRESETS[name]['corrector'] == 'none' else 'corrected'})"
-                for name in QUALITY_PRESETS
+                f"{name} ({_quality_description(name)})" for name in quality_choices()
             )
             + f". Defaults to {DEFAULT_QUALITY}."
         ),
@@ -162,7 +204,7 @@ def _parser():
     )
     parser.add_argument(
         "--model-mode",
-        choices=MODEL_MODES,
+        choices=model_mode_choices(),
         help=(
             "Model conditioning: posterior model per voxel/sample, best model "
             "per voxel, or one fixed model. Defaults to per-sample."
@@ -171,8 +213,28 @@ def _parser():
     parser.add_argument(
         "--fixed-model",
         type=_fixed_model,
-        metavar="{B1S,B2S,B3S}",
+        metavar="{" + ",".join(fixed_model_choices()) + "}",
         help="Fixed Ball-and-Stick model; implies --model-mode=fixed.",
+    )
+    parser.add_argument(
+        "--checkpoint-which",
+        help=(
+            "Which checkpoint to load: latest, best, or a step number. The "
+            "pretrained bundles on the Hub currently ship only 'best'."
+        ),
+    )
+    parser.add_argument(
+        "--set",
+        dest="overrides",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        type=_override,
+        help=(
+            "Set any config key directly, e.g. "
+            "--set evaluation.sampling.theta.params.t_max=60. Repeatable, and "
+            "applied last so it wins over --quality and the other flags."
+        ),
     )
     parser.add_argument(
         "--verbose",
@@ -373,10 +435,11 @@ def _interactive_setup(args) -> None:
         )
 
     if args.quality is None:
+        choices = quality_choices()
         args.quality = _choose(
             "Quality",
-            [(name, _quality_description(name)) for name in QUALITY_PRESETS],
-            list(QUALITY_PRESETS).index(DEFAULT_QUALITY),
+            [(name, _quality_description(name)) for name in choices],
+            choices.index(DEFAULT_QUALITY),
         )
 
     if getattr(args, "model_mode", None) is None:
@@ -410,7 +473,12 @@ def _interactive_setup(args) -> None:
 
 
 def _apply_defaults(args) -> None:
-    """Resolve the quality preset, letting explicit flags win over it."""
+    """Fill in the choices Hydra cannot make for us.
+
+    The quality preset itself is resolved by Hydra from `conf/predict/quality`,
+    so flags left unset stay None here and simply produce no override. What
+    remains are the two couplings that no static config can express.
+    """
     args.model = args.model or DEFAULT_MODEL_NAME
     args.quality = args.quality or DEFAULT_QUALITY
     if (
@@ -419,33 +487,35 @@ def _apply_defaults(args) -> None:
     ):
         args.model_mode = "fixed"
     args.model_mode = getattr(args, "model_mode", None) or DEFAULT_MODEL_MODE
-    preset = QUALITY_PRESETS[args.quality]
 
-    if args.num_steps is None:
-        args.num_steps = preset["num_steps"]
-    if args.theta_samples is None:
-        args.theta_samples = preset["samples"]
-    if args.mask_samples is None:
-        args.mask_samples = max(preset["samples"], args.theta_samples)
-    if args.precision is None:
-        args.precision = preset["precision"]
-    if args.corrector is None:
-        args.corrector = preset["corrector"]
+    # Mask samples follow theta samples unless asked for separately: drawing
+    # fewer model masks than parameter samples would leave samples without one.
+    if args.mask_samples is None and args.theta_samples is not None:
+        preset = _quality_preset(args.quality)
+        args.mask_samples = max(preset["mask_samples"], args.theta_samples)
 
 
-def _adapt_precision_for_backend(args, backend=None) -> None:
-    """Apply precision fallbacks and warn about impractical CPU runtimes."""
+def _adapt_precision_for_backend(cfg, backend=None) -> None:
+    """Apply precision fallbacks and warn about impractical CPU runtimes.
+
+    Operates on the composed config rather than the parsed arguments, because
+    the precision usually comes from the quality preset and so is only known
+    once Hydra has resolved it.
+    """
     if backend is None:
         import jax
 
         backend = jax.default_backend()
     backend = str(backend).lower()
 
-    requested_precision = args.precision
-    args.precision = resolve_precision_for_backend(requested_precision, backend)
-    if args.precision != requested_precision:
+    requested_precision = cfg.evaluation.precision
+    cfg.evaluation.precision = resolve_precision_for_backend(
+        requested_precision, backend
+    )
+    if cfg.evaluation.precision != requested_precision:
         console.warning(
-            f"{requested_precision} is unsupported on CPU; using {args.precision}."
+            f"{requested_precision} is unsupported on CPU; "
+            f"using {cfg.evaluation.precision}."
         )
     if backend == "cpu":
         console.warning(
@@ -454,48 +524,41 @@ def _adapt_precision_for_backend(args, backend=None) -> None:
         )
 
 
+def _effective_samples(args) -> tuple[int, int]:
+    """The mask and theta sample counts this run will use.
+
+    Flags left unset fall back to the quality preset, so validation sees the
+    same numbers Hydra will resolve.
+    """
+    preset = _quality_preset(args.quality)
+    mask = (
+        args.mask_samples if args.mask_samples is not None else preset["mask_samples"]
+    )
+    theta = args.theta_samples if args.theta_samples is not None else preset["samples"]
+    return mask, theta
+
+
 def _validate_model_mode(args) -> None:
     if args.model_mode == "fixed" and args.fixed_model is None:
         raise ValueError("--fixed-model is required when --model-mode=fixed")
     if args.model_mode != "fixed" and args.fixed_model is not None:
         raise ValueError("--fixed-model can only be used with --model-mode=fixed")
-    if args.model_mode == "per-sample" and args.mask_samples < args.theta_samples:
+    mask_samples, theta_samples = _effective_samples(args)
+    if args.model_mode == "per-sample" and mask_samples < theta_samples:
         raise ValueError(
             "--mask-samples must be greater than or equal to --theta-samples "
             "when --model-mode=per-sample"
         )
 
 
-#: Maps written into the viewer, in the order they appear in its dropdown.
-#: Restricted to the summaries a person actually eyeballs; the full set of ~35
-#: NIfTIs stays on disk.
-VIEWER_MAPS = (
-    "mean_fsumsamples.nii.gz",
-    "mean_f0samples.nii.gz",
-    "mean_f1samples.nii.gz",
-    "mean_f2samples.nii.gz",
-    "mean_f3samples.nii.gz",
-    "mean_dsamples.nii.gz",
-    "mean_snrsamples.nii.gz",
-    "frac_ball_active.nii.gz",
-    "mean_num_fib_predsamples.nii.gz",
-    "dyads1_dispersion.nii.gz",
-    "dyads2_dispersion.nii.gz",
-    "dyads3_dispersion.nii.gz",
-)
-
-#: Fibre orientations, rendered as direction-encoded colour rather than as a
-#: raw 3-vector. Each is dimmed by its own volume fraction so that orientations
-#: estimated in near-empty voxels do not read as confident structure.
-VIEWER_DYADS = (
-    ("dyads1", "dyads1.nii.gz", "mean_f1samples.nii.gz"),
-    ("dyads2", "dyads2.nii.gz", "mean_f2samples.nii.gz"),
-    ("dyads3", "dyads3.nii.gz", "mean_f3samples.nii.gz"),
-)
-
-
-def write_viewer(output_dir: Path, filename: str = "view_results.html") -> Path | None:
+def write_viewer(output_dir: Path, viewer_cfg=None) -> Path | None:
     """Write a self-contained HTML viewer for the exported maps.
+
+    Args:
+        output_dir: the prediction output folder, holding `*inference_results`.
+        viewer_cfg: the `predict.viewer` config node -- which maps to show, how
+            to render the dyads, and the file name. Defaults to the packaged
+            `predict/viewer=default` group when omitted.
 
     Returns the path written, or None when there is nothing to show. Failing to
     build a viewer must never fail a prediction that already succeeded, so all
@@ -505,6 +568,9 @@ def write_viewer(output_dir: Path, filename: str = "view_results.html") -> Path 
     import numpy as np
 
     from dmri.utils.viz import direction_colour, save_viewer, slice_viewer
+
+    if viewer_cfg is None:
+        viewer_cfg = _compose().predict.viewer
 
     def load(path: Path):
         if not path.is_file():
@@ -516,22 +582,22 @@ def write_viewer(output_dir: Path, filename: str = "view_results.html") -> Path 
 
     volumes = {}
     for results_dir in sorted(output_dir.glob("*inference_results")):
-        for name in VIEWER_MAPS:
+        for name in viewer_cfg.maps:
             array = load(results_dir / name)
             if array is not None and array.ndim == 3:
-                volumes[name.replace(".nii.gz", "")] = array
-        for label, dyad_name, weight_name in VIEWER_DYADS:
-            dyads = load(results_dir / dyad_name)
+                volumes[str(name).replace(".nii.gz", "")] = array
+        for entry in viewer_cfg.dyads:
+            dyads = load(results_dir / entry.file)
             if dyads is None or dyads.ndim != 4 or dyads.shape[-1] != 3:
                 continue
-            volumes[label] = direction_colour(dyads, load(results_dir / weight_name))
+            weight = load(results_dir / entry.weight) if entry.weight else None
+            volumes[str(entry.label)] = direction_colour(dyads, weight)
     if not volumes:
         return None
 
-    figure = slice_viewer(volumes, title=f"dmri predict - {output_dir.name}")
-    return save_viewer(
-        figure, output_dir / filename, title=f"dmri predict - {output_dir.name}"
-    )
+    title = f"dmri predict - {output_dir.name}"
+    figure = slice_viewer(volumes, title=title)
+    return save_viewer(figure, output_dir / viewer_cfg.filename, title=title)
 
 
 def _validate_input(folder: Path) -> Path:
@@ -569,54 +635,52 @@ def _prepare_output(folder: Path, name: str, overwrite: bool) -> Path:
 
 
 def _hydra_overrides(args, folder: Path, output_dir: Path) -> list[str]:
+    """Translate parsed arguments into Hydra overrides for `conf/predict.yaml`.
+
+    Three kinds, in this order: per-run values that cannot live in config, the
+    group selections behind `--quality`/`--model-mode`, and finally the flags
+    and `--set` values that must beat whatever the preset chose.
+    """
     model_mode = getattr(args, "model_mode", None) or DEFAULT_MODEL_MODE
     overrides = [
         f"evaluation.input.path={folder}",
         f"run.output_dir={output_dir}",
         f"checkpoint.model_name={args.model}",
-        "checkpoint.which=latest",
         f"run.seed={args.seed}",
-        f"evaluation.sampling.mask.n_samples={args.mask_samples}",
-        f"evaluation.sampling.theta.num_samples={args.theta_samples}",
-        "~evaluation.export.theta.metrics",
         f"hydra.run.dir={output_dir / '.hydra'}",
+        # Policy lives in the tree; these just pick which option applies.
+        f"predict/quality={getattr(args, 'quality', None) or DEFAULT_QUALITY}",
+        f"predict/model_mode={model_mode}",
     ]
-    if model_mode == "per-sample":
-        overrides.extend([
-            "evaluation/selection=average",
-            "evaluation.pipeline.sample_mask=true",
-            "evaluation.pipeline.select_models=true",
-            "evaluation.pipeline.default_mask=null",
-        ])
-    elif model_mode == "best":
-        overrides.extend([
-            "evaluation/selection=ball3stick_best",
-            "evaluation.pipeline.sample_mask=false",
-            "evaluation.pipeline.select_models=true",
-            "evaluation.pipeline.default_mask=null",
-        ])
-    else:
-        fixed_model = getattr(args, "fixed_model", None)
-        mask = ",".join(str(value).lower() for value in FIXED_MODELS[fixed_model])
-        overrides.extend([
-            "evaluation/selection=none",
-            "evaluation.pipeline.sample_mask=false",
-            "evaluation.pipeline.select_models=false",
-            f"evaluation.pipeline.default_mask=[{mask}]",
-        ])
-    batch_size = getattr(args, "batch_size", None)
-    if batch_size is not None:
-        overrides.append(f"evaluation.batch_size={batch_size}")
-    overrides.append(
-        f"evaluation.precision={getattr(args, 'precision', None) or 'fp32'}"
-    )
-    overrides.append(
-        "evaluation/theta/corrector@evaluation.sampling.theta.corrector="
-        f"{getattr(args, 'corrector', None) or 'auto'}"
-    )
-    num_steps = getattr(args, "num_steps", None)
-    if num_steps is not None:
-        overrides.append(f"evaluation.sampling.theta.params.num_steps={num_steps}")
+    if model_mode == "fixed":
+        overrides.append(f"predict/fixed_model={args.fixed_model}")
+    if getattr(args, "no_viewer", False):
+        overrides.append("predict/viewer=none")
+
+    checkpoint_which = getattr(args, "checkpoint_which", None)
+    if checkpoint_which is not None:
+        overrides.append(f"checkpoint.which={checkpoint_which}")
+
+    # Explicit flags override the preset. Anything left as None is simply not
+    # emitted, so the value composed from `predict/quality` stands.
+    for value, key in (
+        (getattr(args, "mask_samples", None), "evaluation.sampling.mask.n_samples"),
+        (getattr(args, "theta_samples", None), "evaluation.sampling.theta.num_samples"),
+        (
+            getattr(args, "num_steps", None),
+            "evaluation.sampling.theta.params.num_steps",
+        ),
+        (getattr(args, "batch_size", None), "evaluation.batch_size"),
+        (getattr(args, "precision", None), "evaluation.precision"),
+    ):
+        if value is not None:
+            overrides.append(f"{key}={value}")
+    corrector = getattr(args, "corrector", None)
+    if corrector is not None:
+        overrides.append(
+            "evaluation/theta/corrector@evaluation.sampling.theta.corrector="
+            f"{corrector}"
+        )
     if args.local_checkpoint is not None:
         checkpoint = args.local_checkpoint.expanduser().resolve()
         if not checkpoint.is_dir():
@@ -638,6 +702,8 @@ def _hydra_overrides(args, folder: Path, output_dir: Path) -> list[str]:
                 "checkpoint.pretrained.cache_dir="
                 f"{args.cache_dir.expanduser().resolve()}"
             )
+    # Last, so an explicit --set wins over everything above.
+    overrides.extend(getattr(args, "overrides", None) or [])
     return overrides
 
 
@@ -669,32 +735,11 @@ def main(argv=None):
         # yet -- importing jax alone does not create a backend.
         os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = str(args.memory_fraction)
 
-    _adapt_precision_for_backend(args)
     try:
         overrides = _hydra_overrides(args, folder, output_dir)
     except ValueError as error:
         _parser().error(str(error))
 
-    console.summary(
-        "Prediction",
-        [
-            ("Input", folder),
-            ("Model", args.local_checkpoint or f"{args.repo_id}/{args.model}"),
-            (
-                "Sampling",
-                f"{args.quality}, {args.num_steps} steps x "
-                f"{args.theta_samples} samples, {args.precision}, "
-                f"{'no corrector' if args.corrector == 'none' else 'corrected'}",
-            ),
-            (
-                "Model mode",
-                f"fixed ({args.fixed_model})"
-                if args.model_mode == "fixed"
-                else args.model_mode,
-            ),
-            ("Output", output_dir),
-        ],
-    )
     if not args.verbose:
         # Set at runtime, not through the environment: huggingface_hub reads
         # HF_HUB_DISABLE_PROGRESS_BARS when it is imported, which already
@@ -709,22 +754,70 @@ def main(argv=None):
         # above, the autotuning block and progress bars instead.
         overrides.append("hydra/job_logging=disabled")
 
-    from dmri.eval.eval_script import main as eval_main
+    _run_with_overrides(overrides, folder, args)
+    console.say(f"Prediction complete. Results are in {output_dir}")
 
-    original_argv = sys.argv
-    try:
-        sys.argv = ["dmri eval", *overrides]
-        eval_main()
-    finally:
-        sys.argv = original_argv
 
-    if not args.no_viewer:
+def _summary_rows(cfg, folder, args):
+    """Report what Hydra actually resolved, not what the flags asked for."""
+    theta = cfg.evaluation.sampling.theta
+    corrected = "no corrector" if theta.corrector.name == "uncorrected" else "corrected"
+    mode = cfg.evaluation.selection.name
+    if not cfg.evaluation.pipeline.select_models:
+        mode = f"fixed ({cfg.predict.fixed_model.name})"
+    elif cfg.evaluation.pipeline.sample_mask:
+        mode = "per-sample"
+    return [
+        ("Input", folder),
+        (
+            "Model",
+            args.local_checkpoint or f"{args.repo_id}/{cfg.checkpoint.model_name}",
+        ),
+        (
+            "Sampling",
+            f"{args.quality or DEFAULT_QUALITY}, {theta.params.num_steps} steps x "
+            f"{theta.num_samples} samples, {cfg.evaluation.precision}, {corrected}",
+        ),
+        ("Model mode", mode),
+        ("Output", cfg.run.output_dir),
+    ]
+
+
+def _run_with_overrides(overrides, folder, args):
+    """Drive the Hydra entry point with a computed override list.
+
+    `@hydra.main` reads `sys.argv`, so this is how it is invoked
+    programmatically. Unlike the composition API it initialises `HydraConfig`,
+    which `eval.yaml` needs for its `${hydra:runtime.cwd}` interpolation.
+    """
+    import hydra
+    from omegaconf import DictConfig
+
+    from dmri.eval.eval_script import run_eval
+
+    @hydra.main(
+        config_path="../conf", config_name=CONFIG_NAME + ".yaml", version_base=None
+    )
+    def _run(cfg: DictConfig):
+        _adapt_precision_for_backend(cfg)
+        console.summary("Prediction", _summary_rows(cfg, folder, args))
+        run_eval(cfg)
+
+        viewer_cfg = cfg.predict.viewer
+        if not viewer_cfg.enabled:
+            return
+        output_dir = Path(cfg.run.output_dir)
         try:
-            viewer = write_viewer(output_dir)
+            viewer = write_viewer(output_dir, viewer_cfg)
         except Exception as error:  # noqa: BLE001 - never fail a good prediction
             console.say(f"Could not write the HTML viewer: {error}")
             viewer = None
         if viewer is not None:
             console.link("Viewer:    ", viewer)
 
-    console.say(f"Prediction complete. Results are in {output_dir}")
+    original_argv = sys.argv
+    try:
+        sys.argv = ["dmri predict", *overrides]
+        _run()
+    finally:
+        sys.argv = original_argv

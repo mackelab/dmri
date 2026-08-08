@@ -1,0 +1,11 @@
+# @package _global_
+# Condition on a posterior model mask drawn per voxel and per sample, then
+# average. The most faithful mode, and the default.
+defaults:
+  - override /evaluation/selection: average
+
+evaluation:
+  pipeline:
+    sample_mask: true
+    select_models: true
+    default_mask: null

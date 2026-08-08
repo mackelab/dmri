@@ -1,0 +1,11 @@
+# @package _global_
+# Pick the single most probable model per voxel instead of averaging over the
+# posterior, so no mask sampling is needed.
+defaults:
+  - override /evaluation/selection: ball3stick_best
+
+evaluation:
+  pipeline:
+    sample_mask: false
+    select_models: true
+    default_mask: null

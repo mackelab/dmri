@@ -1,7 +1,6 @@
 import os
 from typing import Any
 
-import jax
 import jax.numpy as jnp
 import nibabel as nb
 import numpy as np
@@ -80,69 +79,6 @@ def ssfp_signal_fn(
 
     signal = jnp.abs(S0 * Mminus_top / (Mminus_bottom + 1e-30))
     return jnp.nan_to_num(signal)
-
-
-def freed_ssfp_signal_fn(
-    adc: ArrayLike,
-    qval: ArrayLike,
-    TR: ArrayLike,
-    T1: ArrayLike,
-    T2: ArrayLike,
-    sa: ArrayLike,
-    ca: ArrayLike,
-    S0: ArrayLike = 1.0,
-    num_terms: int = 10,
-):
-    """Numerically-stable, shape-safe freed-diffusion SSFP signal."""
-
-    # ---------- helper exponentials ----------
-    def E1p(p):
-        return jnp.exp(-TR / T1 - adc * qval**2 * TR * p**2)
-
-    def E2p(p):
-        return jnp.exp(-TR / T2 - adc * qval**2 * ((p**2 + p + 1 / 3) * TR))
-
-    # ---------- short-hand symbols ----------
-    def Ap(p):
-        return 0.5 * (E1p(p) - 1) * (1 + ca)
-
-    def Bp(p):
-        return 0.5 * (E1p(p) + 1) * (1 - ca)
-
-    def Cp(p):
-        return E1p(p) - ca
-
-    def np_(p):
-        return -E2p(-p) * E2p(p - 1) * Ap(p) ** 2 * Bp(p - 1) / Bp(p)
-
-    def dp(p):
-        return (Ap(p) - Bp(p)) + E2p(-p - 1) * E2p(p) * Bp(p) * Cp(p + 1) / Bp(p + 1)
-
-    def ep(p):
-        return -E2p(p) * E2p(-p - 1) * Bp(p) * Cp(p + 1) / Bp(p + 1)
-
-    # ---------- scan body ----------
-    def scan_body(carry, k):
-        # choose the correct denominator while keeping shapes identical
-        denom = jax.lax.cond(
-            k == 1,
-            lambda _: dp(k) + ep(k),  # last recursion: base case
-            lambda _: dp(k) + carry,  # recursive case
-            operand=None,
-        )
-        new_carry = np_(k) / denom
-        return new_carry, None
-
-    # ---------- run backward recurrence ----------
-    k_values = jnp.arange(num_terms, 0, -1, dtype=jnp.int32)
-    init_carry = jnp.zeros_like(dp(1))  # <<< shape-correct seed
-    x1, _ = jax.lax.scan(scan_body, init_carry, k_values)
-
-    # ---------- finish analytical part ----------
-    r1 = x1 / (E2p(-1) * Bp(0)) + (E2p(0) * Cp(1)) / Bp(1)
-    S = r1 * sa * (1 - E1p(0)) * E2p(-1) / (Ap(0) - Bp(0) + E2p(-1) * Cp(0) * r1)
-
-    return jnp.nan_to_num(S0 * jnp.abs(S))
 
 
 def fit_diffusion_tensor_linearized(
@@ -376,18 +312,6 @@ def rotation_matrix_around_100(psi):
     return R
 
 
-def canonical_bingham_normalization_series(kappa, beta, max_terms=30):
-    """
-    Series expansion for Z(kappa, beta) using JAX.
-    Sums up to 'max_terms' to approximate.
-    """
-    A = kappa - beta
-    n = jnp.arange(max_terms)
-    terms = A**n / (jax.scipy.special.gamma(n + 1) * (n + 0.5))
-    summation = jnp.sum(terms)
-    return 2.0 * jnp.pi * jnp.exp(beta) * summation
-
-
 def make_dyads(
     theta_samples: Array, phi_samples: Array, percentile: float = None
 ) -> tuple[Array, Array]:
@@ -550,129 +474,3 @@ def reorder_angles_3fib(mu1, mu2, mu3, f1, f2, f3):
         new_fracs[:, 1],
         new_fracs[:, 2],
     )
-
-
-def export_sbi_estimates(
-    samples: ArrayLike,
-    mask: ArrayLike,
-    data_brain_orig: ArrayLike,
-    outPath: str,
-    nfib: int = 3,
-    modelnum: int = 1,
-) -> None:
-    """
-    Export SBI estimates to NIfTI files.
-
-    Args:
-        samples: Array of samples
-        mask: Brain mask
-        data_brain_orig: Original brain data for header information
-        outPath: Output directory path
-        nfib: Number of fiber components
-        modelnum: Model number
-    """
-    # d
-    export_nifti(samples[..., 0], data_brain_orig, outPath, "merged_dsamples.nii.gz")
-    export_nifti(
-        jnp.mean(samples[..., 0], axis=3),
-        data_brain_orig,
-        outPath,
-        "mean_dsamples.nii.gz",
-    )
-    export_nifti(
-        jnp.std(samples[..., 0], axis=3),
-        data_brain_orig,
-        outPath,
-        "std_dsamples.nii.gz",
-    )
-
-    # fibre components
-    fsum_samples = jnp.zeros(samples.shape[:4])
-    for i in range(nfib):
-        # f
-        export_nifti(
-            samples[..., 1 + 3 * i],
-            data_brain_orig,
-            outPath,
-            f"merged_f{i + 1}samples.nii.gz",
-        )
-        export_nifti(
-            jnp.mean(samples[..., 1 + 3 * i], axis=3),
-            data_brain_orig,
-            outPath,
-            f"mean_f{i + 1}samples.nii.gz",
-        )
-        export_nifti(
-            jnp.std(samples[..., 1 + 3 * i], axis=3),
-            data_brain_orig,
-            outPath,
-            f"std_f{i + 1}samples.nii.gz",
-        )
-        fsum_samples += samples[..., 1 + 3 * i]
-
-        # v
-        export_nifti(
-            samples[..., 2 + 3 * i],
-            data_brain_orig,
-            outPath,
-            f"merged_th{i + 1}samples.nii.gz",
-        )
-        export_nifti(
-            samples[..., 3 + 3 * i],
-            data_brain_orig,
-            outPath,
-            f"merged_ph{i + 1}samples.nii.gz",
-        )
-
-        v, disp = make_dyads(samples[..., 2 + 3 * i], samples[..., 3 + 3 * i])
-        export_nifti(v, data_brain_orig, outPath, f"dyads{i + 1}.nii.gz")
-        export_nifti(disp, data_brain_orig, outPath, f"dyads{i + 1}_dispersion.nii.gz")
-
-    # f_sum: mean of the summed fiber fractions, not the sum of per-fiber
-    # summaries -- the fractions are correlated, so the two differ.
-    export_nifti(fsum_samples, data_brain_orig, outPath, "merged_fsumsamples.nii.gz")
-    export_nifti(
-        jnp.mean(fsum_samples, axis=3),
-        data_brain_orig,
-        outPath,
-        "mean_fsumsamples.nii.gz",
-    )
-    export_nifti(
-        jnp.std(fsum_samples, axis=3),
-        data_brain_orig,
-        outPath,
-        "std_fsumsamples.nii.gz",
-    )
-
-    # SNR
-    export_nifti(samples[..., -1], data_brain_orig, outPath, "merged_SNRsamples.nii.gz")
-    export_nifti(
-        jnp.mean(samples[..., -1], axis=3),
-        data_brain_orig,
-        outPath,
-        "mean_SNRsamples.nii.gz",
-    )
-    export_nifti(
-        jnp.std(samples[..., -1], axis=3),
-        data_brain_orig,
-        outPath,
-        "std_SNRsamples.nii.gz",
-    )
-
-    if modelnum == 2:
-        # d_std
-        export_nifti(
-            samples[..., -2], data_brain_orig, outPath, "merged_d_stdsamples.nii.gz"
-        )
-        export_nifti(
-            jnp.mean(samples[..., -2], axis=3),
-            data_brain_orig,
-            outPath,
-            "mean_d_stdsamples.nii.gz",
-        )
-        export_nifti(
-            jnp.std(samples[..., -2], axis=3),
-            data_brain_orig,
-            outPath,
-            "std_d_stdsamples.nii.gz",
-        )

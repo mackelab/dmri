@@ -43,6 +43,25 @@ def test_default_configs_compose():
     assert evaluation.evaluation.sampling.theta.corrector.name == "auto"
 
 
+def test_predict_root_inherits_the_evaluation_tree():
+    """`conf/predict.yaml` lists `eval` in its defaults rather than restating it.
+
+    If that inheritance breaks, predict silently loses the whole evaluation
+    tree, so pin a key from each group eval.yaml composes.
+    """
+    predict = compose_config("predict")
+    evaluation = compose_config("eval")
+
+    assert predict.schema_version == 2
+    assert predict.evaluation.input.source == evaluation.evaluation.input.source
+    assert predict.evaluation.sampling.mask.method == "naive"
+    assert predict.evaluation.sampling.theta.params.t_max == 80
+    assert predict.checkpoint.params_name == "params_ema"
+    # And the predict-only layer is present on top.
+    assert predict.predict.viewer.enabled is True
+    assert predict.predict.fixed_model.name == "B3S"
+
+
 @pytest.mark.parametrize(
     "preset",
     sorted(path.stem for path in (ROOT / "experiment" / "train").glob("*.yaml")),
@@ -162,6 +181,15 @@ def test_score_experiment_uses_scalar_instead_of_duplicate_simulator_recipe():
             "evaluation/selection",
             "evaluation/export/theta",
             "evaluation/export/model_selection",
+        ),
+    )
+    + group_cases(
+        "predict",
+        (
+            "predict/quality",
+            "predict/model_mode",
+            "predict/fixed_model",
+            "predict/viewer",
         ),
     ),
 )

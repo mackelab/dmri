@@ -43,10 +43,10 @@ def test_remote_hydra_overrides(input_folder):
     )
     overrides = _hydra_overrides(args, input_folder, input_folder / "out")
     assert "checkpoint.pretrained.repo_id=owner/repo" in overrides
-    assert "checkpoint.which=latest" in overrides
-    assert "evaluation/selection=average" in overrides
     assert "evaluation.sampling.theta.num_samples=7" in overrides
-    assert "~evaluation.export.theta.metrics" in overrides
+    # Policy is a group selection now, not a pile of value strings.
+    assert "predict/quality=balanced" in overrides
+    assert "predict/model_mode=per-sample" in overrides
 
 
 def test_local_checkpoint_overrides_remote(input_folder):
@@ -79,33 +79,84 @@ def _resolved(argv):
     return args
 
 
+def _composed(argv, folder="/tmp/in", output="/tmp/out"):
+    """Resolve a command line all the way through Hydra composition.
+
+    Presets now live in `conf/predict/`, so the meaningful assertion is what the
+    config resolves to, not which override strings predict happened to emit.
+    """
+    from pathlib import Path
+
+    from hydra import compose, initialize_config_module
+    from hydra.core.global_hydra import GlobalHydra
+
+    from dmri.predict import _hydra_overrides
+
+    args = _resolved(argv)
+    overrides = _hydra_overrides(args, Path(folder), Path(output))
+    GlobalHydra.instance().clear()
+    try:
+        with initialize_config_module(version_base=None, config_module="conf"):
+            return compose(
+                config_name="predict",
+                overrides=[o for o in overrides if not o.startswith("hydra")],
+            )
+    finally:
+        GlobalHydra.instance().clear()
+
+
+def _sampling(cfg):
+    theta = cfg.evaluation.sampling.theta
+    return {
+        "num_steps": theta.params.num_steps,
+        "theta_samples": theta.num_samples,
+        "mask_samples": cfg.evaluation.sampling.mask.n_samples,
+        "precision": cfg.evaluation.precision,
+        "corrector": theta.corrector.name,
+    }
+
+
 def test_defaults_are_unchanged_without_a_quality_flag():
-    """Adding presets must not change what a plain invocation does."""
-    from dmri.predict import DEFAULT_QUALITY, QUALITY_PRESETS
+    """Moving the presets into config must not change a plain invocation.
 
-    args = _resolved(["folder"])
-    assert args.quality == DEFAULT_QUALITY
-    assert args.num_steps == 40
-    assert args.theta_samples == 50
-    assert args.mask_samples == 50
-    assert args.precision == "fp32"
-    assert args.corrector == "auto"
-    assert args.model_mode == "per-sample"
-    assert args.fixed_model is None
-    assert QUALITY_PRESETS[DEFAULT_QUALITY]["num_steps"] == 40
-    assert QUALITY_PRESETS[DEFAULT_QUALITY]["samples"] == 50
+    These are the numbers the Python `QUALITY_PRESETS` dict produced before the
+    presets became `conf/predict/quality/*.yaml`.
+    """
+    from dmri.predict import DEFAULT_QUALITY
+
+    cfg = _composed(["folder"])
+
+    assert DEFAULT_QUALITY == "balanced"
+    assert _sampling(cfg) == {
+        "num_steps": 40,
+        "theta_samples": 50,
+        "mask_samples": 50,
+        "precision": "fp32",
+        "corrector": "auto",
+    }
+    assert cfg.evaluation.selection.name == "average"
+    assert cfg.evaluation.pipeline.sample_mask is True
 
 
-@pytest.mark.parametrize("quality", ["very-fast", "fast", "balanced", "high"])
-def test_quality_presets_are_ordered_and_consistent(quality):
-    from dmri.predict import QUALITY_PRESETS, _preset_cost
+@pytest.mark.parametrize(
+    ("quality", "expected"),
+    [
+        ("very-fast", (8, 10, 10, "fp16", "uncorrected")),
+        ("fast", (20, 25, 25, "fp16", "uncorrected")),
+        ("balanced", (40, 50, 50, "fp32", "auto")),
+        ("high", (60, 100, 100, "fp32", "auto")),
+    ],
+)
+def test_quality_presets_resolve_to_their_documented_values(quality, expected):
+    """The contract each preset had before it moved into the config tree."""
+    from dmri.predict import _preset_cost
 
-    args = _resolved(["folder", "--quality", quality])
-    preset = QUALITY_PRESETS[quality]
-    assert args.num_steps == preset["num_steps"]
-    assert args.theta_samples == preset["samples"]
+    cfg = _composed(["folder", "--quality", quality])
+    resolved = _sampling(cfg)
+
+    assert tuple(resolved.values()) == expected
     # Each parameter sample is conditioned on a mask sample.
-    assert args.mask_samples >= args.theta_samples
+    assert resolved["mask_samples"] >= resolved["theta_samples"]
     assert (
         _preset_cost("very-fast")
         < _preset_cost("fast")
@@ -115,7 +166,7 @@ def test_quality_presets_are_ordered_and_consistent(quality):
 
 
 def test_explicit_flags_win_over_the_preset():
-    args = _resolved([
+    cfg = _composed([
         "folder",
         "--quality",
         "fast",
@@ -126,18 +177,51 @@ def test_explicit_flags_win_over_the_preset():
         "--corrector",
         "auto",
     ])
-    assert args.num_steps == 5, "an explicit flag must override the preset"
-    assert args.theta_samples == 25, "unset values still come from the preset"
-    assert args.precision == "fp32"
-    assert args.corrector == "auto"
+    resolved = _sampling(cfg)
+
+    assert resolved["num_steps"] == 5, "an explicit flag must override the preset"
+    assert resolved["theta_samples"] == 25, "unset values still come from the preset"
+    assert resolved["precision"] == "fp32"
+    assert resolved["corrector"] == "auto"
+
+
+def test_set_reaches_keys_with_no_flag_and_wins_over_everything():
+    """`--set` is the escape hatch; it is applied last on purpose."""
+    cfg = _composed([
+        "folder",
+        "--quality",
+        "fast",
+        "--num-steps",
+        "5",
+        "--set",
+        "evaluation.sampling.theta.params.num_steps=7",
+        "--set",
+        "evaluation.sampling.theta.params.t_max=60",
+    ])
+
+    assert cfg.evaluation.sampling.theta.params.num_steps == 7, "--set must win"
+    assert cfg.evaluation.sampling.theta.params.t_max == 60, "no flag exists for t_max"
+
+
+def test_set_rejects_a_value_without_an_equals_sign():
+    from dmri.predict import _parser
+
+    with pytest.raises(SystemExit):
+        _parser().parse_args(["folder", "--set", "not-an-override"])
 
 
 @pytest.mark.parametrize("quality", ["very-fast", "fast"])
 def test_low_cost_quality_uses_fp16_without_a_corrector(quality):
-    args = _resolved(["folder", "--quality", quality])
+    cfg = _composed(["folder", "--quality", quality])
 
-    assert args.precision == "fp16"
-    assert args.corrector == "none"
+    assert cfg.evaluation.precision == "fp16"
+    assert cfg.evaluation.sampling.theta.corrector.name == "uncorrected"
+
+
+def _precision_cfg(precision):
+    from omegaconf import OmegaConf
+
+    return OmegaConf.create({"evaluation": {"precision": precision}})
 
 
 def test_cpu_warns_about_slow_prediction_and_falls_back_from_fp16(monkeypatch):
@@ -145,11 +229,11 @@ def test_cpu_warns_about_slow_prediction_and_falls_back_from_fp16(monkeypatch):
 
     warnings = []
     monkeypatch.setattr(predict.console, "warning", warnings.append)
-    args = Namespace(precision="fp16")
+    cfg = _precision_cfg("fp16")
 
-    predict._adapt_precision_for_backend(args, "cpu")
+    predict._adapt_precision_for_backend(cfg, "cpu")
 
-    assert args.precision == "fp32"
+    assert cfg.evaluation.precision == "fp32"
     assert any("few thousand voxels" in warning for warning in warnings)
     assert any("unsupported on CPU" in warning for warning in warnings)
 
@@ -159,15 +243,16 @@ def test_gpu_keeps_fp16_without_a_cpu_warning(monkeypatch):
 
     warnings = []
     monkeypatch.setattr(predict.console, "warning", warnings.append)
-    args = Namespace(precision="fp16")
+    cfg = _precision_cfg("fp16")
 
-    predict._adapt_precision_for_backend(args, "gpu")
+    predict._adapt_precision_for_backend(cfg, "gpu")
 
-    assert args.precision == "fp16"
+    assert cfg.evaluation.precision == "fp16"
     assert warnings == []
 
 
-def test_preset_reaches_the_hydra_overrides(input_folder):
+def test_quality_is_selected_as_a_group_not_expanded_into_values(input_folder):
+    """The point of the config tree: one override carries the whole preset."""
     from pathlib import Path
 
     from dmri.predict import _hydra_overrides
@@ -176,44 +261,83 @@ def test_preset_reaches_the_hydra_overrides(input_folder):
     args.local_checkpoint = None
     overrides = _hydra_overrides(args, input_folder, Path("/tmp/out"))
 
-    assert "evaluation.sampling.theta.params.num_steps=8" in overrides
-    assert "evaluation.sampling.theta.num_samples=10" in overrides
-    assert "evaluation.sampling.mask.n_samples=10" in overrides
-    assert "evaluation.precision=fp16" in overrides
-    assert (
-        "evaluation/theta/corrector@evaluation.sampling.theta.corrector=none"
-        in overrides
-    )
+    assert "predict/quality=very-fast" in overrides
+    # None of the preset's numbers are emitted; the tree supplies them.
+    for key in (
+        "evaluation.sampling.theta.params.num_steps",
+        "evaluation.sampling.theta.num_samples",
+        "evaluation.sampling.mask.n_samples",
+        "evaluation.precision",
+    ):
+        assert not any(o.startswith(f"{key}=") for o in overrides), (
+            f"{key} should come from predict/quality, not an override"
+        )
 
 
-def test_best_model_mode_uses_one_model_per_voxel(input_folder):
-    args = _resolved([str(input_folder), "--model-mode", "best"])
-    overrides = _hydra_overrides(args, input_folder, input_folder / "out")
+def test_best_model_mode_uses_one_model_per_voxel():
+    cfg = _composed(["folder", "--model-mode", "best"])
 
-    assert "evaluation/selection=ball3stick_best" in overrides
-    assert "evaluation.pipeline.sample_mask=false" in overrides
-    assert "evaluation.pipeline.select_models=true" in overrides
-    assert "evaluation.pipeline.default_mask=null" in overrides
+    assert cfg.evaluation.selection.name == "best"
+    assert cfg.evaluation.pipeline.sample_mask is False
+    assert cfg.evaluation.pipeline.select_models is True
+    assert cfg.evaluation.pipeline.default_mask is None
 
 
 @pytest.mark.parametrize(
     ("name", "mask"),
     [
-        ("B1S", "[true,true,false,false,true]"),
-        ("B2S", "[true,true,true,false,true]"),
-        ("B3S", "[true,true,true,true,true]"),
+        ("B1S", [True, True, False, False, True]),
+        ("B2S", [True, True, True, False, True]),
+        ("B3S", [True, True, True, True, True]),
     ],
 )
-def test_fixed_model_mode_emits_the_selected_mask(input_folder, name, mask):
-    args = _resolved([str(input_folder), "--fixed-model", name.lower()])
-    overrides = _hydra_overrides(args, input_folder, input_folder / "out")
+def test_fixed_model_mode_resolves_the_selected_mask(name, mask):
+    cfg = _composed(["folder", "--fixed-model", name.lower()])
 
-    assert args.model_mode == "fixed"
-    assert args.fixed_model == name
-    assert "evaluation/selection=none" in overrides
-    assert "evaluation.pipeline.sample_mask=false" in overrides
-    assert "evaluation.pipeline.select_models=false" in overrides
-    assert f"evaluation.pipeline.default_mask={mask}" in overrides
+    assert cfg.predict.fixed_model.name == name
+    assert cfg.evaluation.selection.name == "none"
+    assert cfg.evaluation.pipeline.sample_mask is False
+    assert cfg.evaluation.pipeline.select_models is False
+    assert cfg.evaluation.pipeline.default_mask == mask
+
+
+def test_fixed_model_masks_match_the_best_selection_group():
+    """`predict/fixed_model` and `evaluation/selection=ball3stick_best` list the
+    same three models; a mismatch would mean predict and eval disagree."""
+    from hydra import compose, initialize_config_module
+    from hydra.core.global_hydra import GlobalHydra
+
+    GlobalHydra.instance().clear()
+    try:
+        with initialize_config_module(version_base=None, config_module="conf"):
+            best = compose(
+                config_name="eval", overrides=["evaluation/selection=ball3stick_best"]
+            )
+    finally:
+        GlobalHydra.instance().clear()
+
+    fixed = [
+        _composed(["folder", "--fixed-model", name]).evaluation.pipeline.default_mask
+        for name in ("B1S", "B2S", "B3S")
+    ]
+    assert [list(row) for row in best.evaluation.selection.feasible_models] == [
+        list(row) for row in fixed
+    ]
+
+
+def test_checkpoint_which_is_configurable_and_still_defaults_to_latest():
+    assert _composed(["folder"]).checkpoint.which == "latest"
+    assert (
+        _composed(["folder", "--checkpoint-which", "best"]).checkpoint.which == "best"
+    )
+
+
+def test_prediction_export_drops_the_metrics_it_cannot_compute():
+    """Prediction has no ground truth, so reconstruction_mse/ksd cannot run."""
+    cfg = _composed(["folder"])
+
+    assert cfg.evaluation.export.theta.name == "ball3stick_inference_results"
+    assert "metrics" not in cfg.evaluation.export.theta
 
 
 def test_model_mode_validation_is_strategy_specific():
@@ -224,6 +348,7 @@ def test_model_mode_validation_is_strategy_specific():
             Namespace(
                 model_mode="fixed",
                 fixed_model=None,
+                quality="balanced",
                 mask_samples=1,
                 theta_samples=2,
             )
@@ -234,6 +359,7 @@ def test_model_mode_validation_is_strategy_specific():
             Namespace(
                 model_mode="per-sample",
                 fixed_model=None,
+                quality="balanced",
                 mask_samples=1,
                 theta_samples=2,
             )
@@ -243,10 +369,20 @@ def test_model_mode_validation_is_strategy_specific():
         Namespace(
             model_mode="best",
             fixed_model=None,
+            quality="balanced",
             mask_samples=1,
             theta_samples=2,
         )
     )
+
+
+def test_validation_compares_against_the_preset_when_a_flag_is_absent():
+    """--mask-samples 1 with the preset's 50 theta samples must still fail."""
+    from dmri.predict import _validate_model_mode
+
+    args = _resolved(["folder", "--mask-samples", "1"])
+    with pytest.raises(ValueError, match="--mask-samples"):
+        _validate_model_mode(args)
 
 
 def test_prompting_is_skipped_when_nothing_can_answer(monkeypatch):
@@ -423,7 +559,7 @@ def test_write_viewer_collects_the_exported_maps(tmp_path):
     volume = np.random.default_rng(0).random((8, 9, 6)).astype(np.float32)
     for name in ("mean_fsumsamples.nii.gz", "mean_f0samples.nii.gz"):
         _write_map(results, name, volume)
-    # Not in VIEWER_MAPS, so it must be ignored rather than break the viewer.
+    # Not in the viewer config, so it must be ignored rather than break the viewer.
     _write_map(results, "merged_f0samples.nii.gz", volume)
 
     written = write_viewer(tmp_path)

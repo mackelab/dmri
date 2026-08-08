@@ -121,6 +121,57 @@ Important groups are:
 The default evaluation uses file input, samples masks and theta, uses no
 selection transform, and exports Ball3Stick theta and model-selection results.
 
+## Prediction tree
+
+`dmri predict` composes `conf/predict.yaml`, which lists `eval` in its defaults —
+so it inherits the whole evaluation tree above — and then layers the
+prediction-specific policy:
+
+```text
+conf/predict.yaml
+conf/predict/
+  quality/       very-fast, fast, balanced, high
+  model_mode/    per-sample, best, fixed
+  fixed_model/   B1S, B2S, B3S
+  viewer/        default, none
+```
+
+The CLI is a front end over this: `--quality fast` becomes
+`predict/quality=fast`, `--fixed-model B2S` becomes `predict/fixed_model=B2S`,
+and `--set key=value` passes anything else straight through. Because each preset
+is a group choice rather than a set of inlined numbers, the run's
+`.hydra/hydra.yaml` records *which* preset was used, not only its resolved
+values.
+
+A quality option sets the sampling keys and selects a corrector. It needs
+`override` on the corrector because `conf/evaluation/theta/default.yaml` already
+chooses one:
+
+```yaml
+# conf/predict/quality/fast.yaml
+# @package _global_
+defaults:
+  - override /evaluation/theta/corrector@evaluation.sampling.theta.corrector: none
+
+evaluation:
+  precision: fp16
+  sampling:
+    theta: {num_samples: 25, params: {num_steps: 20}}
+    mask: {n_samples: 25}
+```
+
+Prediction also selects `evaluation/export/theta: ball3stick_predict`, which is
+`ball3stick` without the metrics exporters — there is no ground truth at
+prediction time to score against.
+
+To run the same configuration through `dmri_eval` instead, compose `predict`
+directly:
+
+```bash
+dmri_eval --config-name predict predict/quality=fast --cfg job   # inspect
+dmri_eval --config-name predict predict/quality=fast             # run
+```
+
 ## Saved configuration
 
 Hydra writes these files in each run directory:

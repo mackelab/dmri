@@ -1,0 +1,6 @@
+# @package predict.viewer
+# Skip the HTML viewer; what `--no-viewer` selects.
+enabled: false
+filename: view_results.html
+maps: []
+dyads: []

@@ -1,0 +1,13 @@
+# @package _global_
+defaults:
+  - override /evaluation/theta/corrector@evaluation.sampling.theta.corrector: auto
+
+evaluation:
+  precision: fp32
+  sampling:
+    theta:
+      num_samples: 100
+      params:
+        num_steps: 60
+    mask:
+      n_samples: 100

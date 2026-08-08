@@ -1,0 +1,17 @@
+# @package evaluation.export.theta
+# As ball3stick, but without the metrics defaults. Prediction has no ground
+# truth to score against, so reconstruction_mse and ksd cannot be computed;
+# `dmri predict` used to strip them with `~evaluation.export.theta.metrics`,
+# which is now this group choice instead.
+defaults:
+  - _self_
+
+name: "ball3stick_inference_results"
+type: "ball3stick"
+sort_by_fractions: true
+reorder_dyads: true
+export_stds: false
+# Summarise f_sum over the samples whose model mask contains the ball. Samples
+# that drop the ball renormalise to f0=0, pinning f_sum at 1 and inflating the
+# map. The unconditioned map is always written as mean_fsumsamples_all.nii.gz.
+condition_fsum_on_ball: true

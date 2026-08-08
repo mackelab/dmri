@@ -1,0 +1,5 @@
+# @package predict.fixed_model
+# Compartment mask: [ball, stick1, stick2, stick3, noise].
+name: B3S
+description: ball + 3 sticks - complex crossings
+mask: [true, true, true, true, true]

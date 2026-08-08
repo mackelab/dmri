@@ -1,0 +1,14 @@
+# @package _global_
+# See very-fast.yaml for why `override` is needed on the corrector.
+defaults:
+  - override /evaluation/theta/corrector@evaluation.sampling.theta.corrector: none
+
+evaluation:
+  precision: fp16
+  sampling:
+    theta:
+      num_samples: 25
+      params:
+        num_steps: 20
+    mask:
+      n_samples: 25

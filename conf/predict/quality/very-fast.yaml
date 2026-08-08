@@ -1,0 +1,18 @@
+# @package _global_
+# Sampling preset. Network work is linear in num_steps x num_samples; precision
+# and the corrector add further quality/runtime trade-offs.
+#
+# `override` is required because evaluation/theta/default.yaml already selects a
+# corrector; without it the group appears twice in the defaults list.
+defaults:
+  - override /evaluation/theta/corrector@evaluation.sampling.theta.corrector: none
+
+evaluation:
+  precision: fp16
+  sampling:
+    theta:
+      num_samples: 10
+      params:
+        num_steps: 8
+    mask:
+      n_samples: 10

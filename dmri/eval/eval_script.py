@@ -559,6 +559,16 @@ def main():
 @hydra.main(config_path="../../conf", config_name="eval.yaml", version_base=None)
 def _main(cfg: DictConfig):
     """Evaluate score based inference"""
+    run_eval(cfg)
+
+
+def run_eval(cfg: DictConfig):
+    """Run the evaluation pipeline on an already-composed config.
+
+    Separate from :func:`_main` so that other entry points -- `dmri predict`
+    composes ``conf/predict.yaml`` rather than ``conf/eval.yaml`` -- can reuse
+    the pipeline without going through this module's Hydra decorator.
+    """
     cfg = runtime_config(cfg, "eval")
     log = logging.getLogger(__name__)
     log.info(OmegaConf.to_yaml(cfg))
