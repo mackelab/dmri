@@ -4,6 +4,8 @@
 .DS_Store
 outputs/
 data/
+!tests/data/
+!tests/data/simulator_reference.npz
 tmp/
 # Byte-compiled / optimized / DLL files
 __pycache__/
