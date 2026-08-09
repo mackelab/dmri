@@ -8,9 +8,7 @@ DMRI provides diffusion MRI simulators and tools for model selection and
 parameter inference. The project is pre-release software, and its API and CLI
 may change.
 
-> **Research use only.** DMRI has not been clinically validated and must not be
-> used for clinical decisions. Pretrained checkpoints are acquisition-specific;
-> verify compatibility with the input acquisition before interpreting results.
+> **Early development.** Expect rough edges and breaking changes in public API.
 
 ## Install
 
