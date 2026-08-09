@@ -35,7 +35,7 @@ dependencies = [
     "dipy>=1.7.0",
     "nibabel>=5.1.0",
     "pandas>=2.0.0",
-    "probjax @ git+https://github.com/mackelab/probjax.git",
+    "probjax @ git+https://github.com/mackelab/probjax.git@v0.1.1",
     "orbax-checkpoint>=0.11",
     "plotly>=6.4",
     "prompt-toolkit>=3.0",
@@ -43,6 +43,7 @@ dependencies = [
     "absl-py>=2.3",
     "huggingface-hub>=0.34",
     # probjax and dmri.utils.shm use APIs removed in jax 0.9. Supported Linux
+    # TODO: Fix and update to new probjax/jax versions.
     # platforms get JAX's bundled CUDA 13 runtime; other platforms stay CPU-only.
     "jax[cuda13]>=0.8,<0.9; sys_platform == 'linux' and platform_machine == 'x86_64'",
     "jax[cuda13]>=0.8,<0.9; sys_platform == 'linux' and platform_machine == 'aarch64'",
