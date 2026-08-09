@@ -19,7 +19,6 @@ nav = [
   { "Guides" = [
     { "Overview" = "guides/index.md" },
     { "Predict" = "guides/prediction.md" },
-    { "Example data" = "guides/example-data.md" },
     { "Train" = "guides/training.md" },
     { "Evaluate" = "guides/evaluation.md" },
     { "Simulators" = "guides/simulators.md" },
@@ -43,6 +42,7 @@ nav = [
     { "Multi-compartment model" = "examples/02_dmri_multicompartment_model.md" },
     { "Using pretrained models" = "examples/03_pretrained_models.md" },
     { "Train a small model" = "examples/04_train_standalone.md" },
+    { "Getting example data" = "examples/05_example_data.md" },
   ] },
   { "Reference" = [
     { "Overview" = "reference/index.md" },

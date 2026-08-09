@@ -24,9 +24,9 @@ measurement per b-value and b-vector.
 > particular acquisition distribution. Matching filenames and image dimensions
 > does not establish compatibility.
 
-If you do not have data in this layout, [Example data](example-data.md) walks
-through downloading two small open datasets and converting them with
-`scripts/make_fsl_dataset.py`.
+If you do not have data in this layout, the
+[Getting example data](../examples/05_example_data.md) example walks through
+downloading two small open datasets and converting them.
 
 ## Run prediction
 

@@ -33,12 +33,16 @@ Apply automatic fixes and formatting with `uv run ruff check --fix .` and
 
 ## Documentation
 
-Render the example notebooks before previewing the documentation:
+Execute and render the example notebooks before previewing the documentation:
 
 ```bash
-uv run python scripts/render_docs_notebooks.py
-uv run zensical serve
+uv run --extra docs python docs/render_examples.py
+uv run --extra docs zensical serve
 ```
+
+Every notebook is re-executed so its figures match the code in the tree. Pass
+`--no-execute` to render the committed outputs instead, which is much faster
+while you are editing prose.
 
 Keep changes focused, add tests for changed behavior, and update documentation
 when user-facing behavior changes.

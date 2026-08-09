@@ -47,9 +47,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[docs]"
 
-      - name: Render notebooks
+      - name: Execute and render notebooks
         run: |
-          python scripts/render_docs_notebooks.py
+          python docs/render_examples.py
 
       - name: Build Zensical site
         run: |
