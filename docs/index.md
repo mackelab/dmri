@@ -1,7 +1,5 @@
 # DMRI
 
-![DMRI logo: a stylized brain crossed by diffusion pathways](assets/logo.svg){ width="144" }
-
 DMRI provides diffusion MRI simulators and tools for model selection and
 parameter inference. Use it to apply a pretrained model, train a model on
 simulated data, or evaluate a trained run.
