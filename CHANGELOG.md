@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## 0.1.0 - 2026-08-09
+
 - Added the `dmri predict`, `dmri train`, and `dmri eval` command structure.
 - Added a predict-first workflow that downloads cached pretrained models from
   Hugging Face and writes results beside the input data.
@@ -23,8 +25,6 @@ All notable changes to this project will be documented in this file.
   default, with explicit precision and corrector flags taking precedence.
 - Changed supported Linux installations to include JAX's bundled CUDA 13
   runtime by default; other platforms continue to use CPU-only JAX.
-
-## 0.1.0
 
 - Added configurable diffusion MRI simulators and multicompartment models.
 - Added training and evaluation workflows for simulation-based model selection.

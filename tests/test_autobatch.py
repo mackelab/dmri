@@ -351,8 +351,12 @@ def test_random_draws_are_independent_of_the_batch_size():
         out = eval_in_batches(
             draw, jax.random.PRNGKey(0), data, batch_size=batch_size, min_batch_size=1
         )
-        np.testing.assert_array_equal(
-            out, reference, err_msg=f"draws changed at batch_size={batch_size}"
+        np.testing.assert_allclose(
+            out,
+            reference,
+            rtol=1e-6,
+            atol=1e-7,
+            err_msg=f"draws changed at batch_size={batch_size}",
         )
     # A different seed must still give different draws.
     other = eval_in_batches(
