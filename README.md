@@ -28,12 +28,8 @@ for driver requirements and the required input layout.
 
 ## Predict
 
-<video src="https://github.com/mackelab/dmri/raw/main/docs/assets/predict-demo.mp4"
-       poster="https://github.com/mackelab/dmri/raw/main/docs/assets/predict-demo-poster.jpg"
-       controls muted loop playsinline width="100%"></video>
-
-[Watch the interactive prediction run](https://github.com/mackelab/dmri/raw/main/docs/assets/predict-demo.mp4)
-if the video above does not play.
+![An interactive dmri predict run: selecting model, quality, model mode, and
+fixed model, then sampling and writing NIfTI maps](docs/assets/predict-demo.gif)
 
 ```bash
 dmri predict FOLDER --model msb3s_2_4_6_128 --quality balanced --non-interactive
