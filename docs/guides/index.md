@@ -4,6 +4,8 @@ Choose the workflow you need:
 
 - [Predict](prediction.md): apply a compatible pretrained or local checkpoint
   to a four-file diffusion MRI input folder.
+- [Example data](example-data.md): download two small open datasets, convert
+  them to the expected layout, and run a prediction end to end.
 - [Train](training.md): configure and run simulator-based training with Hydra.
 - [Evaluate](evaluation.md): evaluate trained runs, calculate metrics, and
   export maps.

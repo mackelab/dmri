@@ -1,6 +1,7 @@
 import base64
 import io
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 import jax
@@ -10,6 +11,7 @@ import numpy as np
 import plotly.graph_objects as go
 from dipy.data import get_sphere
 from matplotlib.patches import Circle
+from numpy.typing import ArrayLike
 from plotly.subplots import make_subplots
 
 from dmri.utils.dmriutils import cart2sph, sph2cart
@@ -1455,7 +1457,7 @@ def _to_png_uri(plane: np.ndarray, value_range: tuple[float, float] | None) -> s
     return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
 
 
-def direction_colour(vectors, weight=None):
+def direction_colour(vectors: ArrayLike, weight: ArrayLike | None = None) -> np.ndarray:
     """Direction-encoded colour for a field of unit vectors.
 
     The standard dMRI convention: the absolute x/y/z components of a fibre
@@ -1494,12 +1496,12 @@ def direction_colour(vectors, weight=None):
 
 
 def slice_viewer(
-    volumes,
+    volumes: ArrayLike | Mapping[str, ArrayLike],
     axis: int = 2,
     title: str | None = None,
     height: int = 520,
     width: int | None = None,
-):
+) -> go.Figure:
     """Browse volumes slice by slice, as a small self-contained figure.
 
     An alternative to :func:`orthoview` for looking at output maps. Each slice
@@ -1699,7 +1701,9 @@ _VIEWER_CONFIG = {
 }
 
 
-def save_viewer(figure, destination, title: str = "dmri viewer"):
+def save_viewer(
+    figure: go.Figure, destination: str | Path, title: str = "dmri viewer"
+) -> Path:
     """Write a slice viewer as a standalone dark HTML page.
 
     Args:
@@ -1710,8 +1714,6 @@ def save_viewer(figure, destination, title: str = "dmri viewer"):
     Returns:
         The path written, as a :class:`pathlib.Path`.
     """
-    from pathlib import Path
-
     destination = Path(destination)
     # A standalone page should fill the window rather than sit in a fixed-size
     # box; drop the figure's own sizing and let the page CSS drive it. Copy so

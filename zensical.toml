@@ -19,6 +19,7 @@ nav = [
   { "Guides" = [
     { "Overview" = "guides/index.md" },
     { "Predict" = "guides/prediction.md" },
+    { "Example data" = "guides/example-data.md" },
     { "Train" = "guides/training.md" },
     { "Evaluate" = "guides/evaluation.md" },
     { "Simulators" = "guides/simulators.md" },
