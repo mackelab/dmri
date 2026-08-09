@@ -1,5 +1,15 @@
 # Prediction
 
+<video controls muted loop playsinline preload="none"
+       poster="../../assets/predict-demo-poster.jpg"
+       style="width: 100%; border-radius: 4px;">
+  <source src="../assets/predict-demo.mp4" type="video/mp4">
+  <a href="../assets/predict-demo.mp4">Download the recording</a>.
+</video>
+
+*An interactive run: model, quality, model mode, and fixed model are selected,
+then sampling writes NIfTI maps.*
+
 `dmri predict` applies a pretrained checkpoint to diffusion MRI data in the
 standard FSL folder layout. It downloads or opens a checkpoint, samples model
 masks and parameters, and writes NIfTI maps. Use [`dmri eval`](evaluation.md)
