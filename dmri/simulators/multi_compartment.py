@@ -451,15 +451,20 @@ class MultiCompartment(SignalCompartment):
             fods = [m.to_fod() for m in self.model_compartments]
             fractions = self.model_fractions
             return MixtureOfFODs(fractions, fods)
-        else:
-            fods = [
-                m.to_fod()
-                for m in self.model_compartments
-                if not isinstance(m, Ball) or not isinstance(m, MultiShellStaticBall)
-            ]
-            fractions = self.model_fractions[1:]
-            fractions = fractions / jnp.sum(fractions)
-            return MixtureOfFODs(fractions, fods)
+
+        anisotropic = [
+            (fraction, compartment)
+            for fraction, compartment in zip(
+                self.model_fractions, self.model_compartments, strict=True
+            )
+            if not isinstance(compartment, (Ball, MultiShellStaticBall))
+        ]
+        if not anisotropic:
+            raise ValueError("Cannot create an FOD without anisotropic compartments")
+        fractions = jnp.stack([fraction for fraction, _ in anisotropic])
+        fractions = fractions / jnp.sum(fractions)
+        fods = [compartment.to_fod() for _, compartment in anisotropic]
+        return MixtureOfFODs(fractions, fods)
 
     def log_likelihood(self, acq, signal_observed):
         # Compute the signal for each compartment

@@ -26,7 +26,7 @@ def load_checkpoint(**kwargs):
 def load_pretrained(
     model_name=DEFAULT_MODEL_NAME,
     repo_id=DEFAULT_REPO_ID,
-    which="latest",
+    which="best",
     *,
     revision=None,
     cache_dir=None,

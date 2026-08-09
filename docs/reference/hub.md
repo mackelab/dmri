@@ -9,7 +9,7 @@ package root exposes `dmri.load_pretrained`, `dmri.list_pretrained_models`, and
 import dmri
 
 available = dmri.list_pretrained_models()
-bundle = dmri.load_pretrained("msb3s_2_4_6_128", which="latest")
+bundle = dmri.load_pretrained("msb3s_2_4_6_128")
 
 model = bundle.model
 simulator = bundle.simulator

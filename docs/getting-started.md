@@ -6,6 +6,8 @@
 - [uv](https://docs.astral.sh/uv/) or pip
 - Git and a clone of this repository
 - A supported GPU is strongly recommended for prediction
+- CUDA 13 requires an NVIDIA driver version of at least 580 and a GPU with
+  compute capability 7.5 or newer
 
 ## Install the runtime
 
@@ -21,9 +23,11 @@ uv pip install -e .
 
 With pip, replace the last command with `pip install -e .`.
 
-For a CUDA 12 installation, use `uv pip install -e '.[cuda]'`. For CUDA 13,
-use `uv pip install -e '.[cuda13]'`. Check that your driver and JAX CUDA
-requirements are compatible before selecting an extra.
+On Linux x86_64 and aarch64, the default installation includes JAX's bundled
+CUDA 13 runtime, so a separate CUDA toolkit is not required. On macOS, Windows,
+and other architectures, the default installation uses CPU-only JAX. Linux
+machines without an NVIDIA GPU can still use the CPU backend, but the default
+installation downloads the bundled CUDA packages.
 
 Development tools are not part of the default installation. Install them only
 when working on DMRI with `uv pip install -e '.[dev]'`.

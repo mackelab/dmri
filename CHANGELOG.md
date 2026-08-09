@@ -21,6 +21,8 @@ All notable changes to this project will be documented in this file.
   voxel, and fixed B1S/B2S/B3S models.
 - Changed the fast prediction preset to use fp16 and skip theta correction by
   default, with explicit precision and corrector flags taking precedence.
+- Changed supported Linux installations to include JAX's bundled CUDA 13
+  runtime by default; other platforms continue to use CPU-only JAX.
 
 ## 0.1.0
 

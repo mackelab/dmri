@@ -325,10 +325,11 @@ def test_fixed_model_masks_match_the_best_selection_group():
     ]
 
 
-def test_checkpoint_which_is_configurable_and_still_defaults_to_latest():
-    assert _composed(["folder"]).checkpoint.which == "latest"
+def test_checkpoint_which_is_configurable_and_still_defaults_to_best():
+    assert _composed(["folder"]).checkpoint.which == "best"
     assert (
-        _composed(["folder", "--checkpoint-which", "best"]).checkpoint.which == "best"
+        _composed(["folder", "--checkpoint-which", "latest"]).checkpoint.which
+        == "latest"
     )
 
 

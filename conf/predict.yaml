@@ -18,7 +18,6 @@ defaults:
   - _self_
 
 checkpoint:
-  # Which checkpoint to load; `--checkpoint-which` overrides it. Note the
-  # pretrained bundles on the Hub currently ship only `best`, so the default HF
-  # path needs `--checkpoint-which best`.
-  which: latest
+  # Which checkpoint to load; `--checkpoint-which` overrides it. The pretrained
+  # bundles on the Hub ship `best`, so the default is `best`.
+  which: best

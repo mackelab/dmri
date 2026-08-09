@@ -122,3 +122,28 @@ def test_nan_log_likelihood_is_not_silenced_to_a_perfect_fit():
     assert "nan_to_num" not in source, (
         "log_likelihood still silences NaN into a perfect score"
     )
+
+
+def test_to_fod_removes_isotropic_components_and_matching_fractions():
+    from dmri.simulators.local_signal_models import Ball, Stick
+    from dmri.simulators.multi_compartment import MultiCompartment
+
+    class MixedOrderModel(MultiCompartment):
+        model_types = [Stick, Ball, Stick]
+        noise_types = []
+        fraction_prior = jnp.ones(3)
+
+    model = MixedOrderModel(
+        model_fractions=jnp.asarray([0.2, 0.3, 0.5]),
+        model_compartments=[
+            Stick(jnp.asarray([0.0, 0.0]), 0.001),
+            Ball(0.001),
+            Stick(jnp.asarray([1.0, 0.0]), 0.001),
+        ],
+        noise_compartments=[],
+    )
+
+    fod = model.to_fod(no_isotropic=True)
+
+    assert len(fod.components) == 2
+    np.testing.assert_allclose(fod.fractions, jnp.asarray([2 / 7, 5 / 7]))

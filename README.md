@@ -22,8 +22,9 @@ source .venv/bin/activate
 uv pip install -e .
 ```
 
+Supported Linux installations include JAX's bundled CUDA 13 runtime by default.
 See the [installation and quickstart](https://www.mackelab.org/dmri/getting-started/)
-for CUDA options and the required input layout.
+for driver requirements and the required input layout.
 
 ## Predict
 

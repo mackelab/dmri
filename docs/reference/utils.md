@@ -35,16 +35,6 @@ Frequently used math, visualization, and export helpers pulled from their docstr
       show_root_heading: true
       show_root_full_path: false
 
-::: dmri.utils.eval
-    options:
-      show_root_heading: true
-      show_root_full_path: false
-
-::: dmri.utils.sample_fns
-    options:
-      show_root_heading: true
-      show_root_full_path: false
-
 ::: dmri.utils.shm
     options:
       show_root_heading: true

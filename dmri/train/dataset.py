@@ -64,6 +64,7 @@ class SimulationDataset:
         self._tree_def = None
         self._write_ptr = 0
         self._pending_refresh = 0
+        self._producer_exception: BaseException | None = None
 
         self._stats = {
             "batches_produced": 0,
@@ -90,6 +91,10 @@ class SimulationDataset:
     def __getitem__(self, index: Any) -> Any:
         idxs, squeeze = self._normalise_indices(index)
         with self._lock:
+            if self._producer_exception is not None:
+                raise RuntimeError(
+                    "Background simulation failed"
+                ) from self._producer_exception
             if self._buffer is None:
                 raise RuntimeError("Simulation buffer not initialised.")
             leaves = [leaf[idxs] for leaf in self._buffer_leaves]
@@ -278,6 +283,8 @@ class SimulationDataset:
     def _start_producer(self) -> None:
         if self._producer is not None and self._producer.is_alive():
             return
+        with self._lock:
+            self._producer_exception = None
         self._stop_event.clear()
         self._producer = threading.Thread(target=self._producer_main, daemon=True)
         self._producer.start()
@@ -303,9 +310,11 @@ class SimulationDataset:
                 self._pending_refresh -= self._batch_size
             try:
                 batch, duration = self._produce_batch()
-            except Exception:
+            except Exception as exc:
+                with self._lock:
+                    self._producer_exception = exc
                 self._stop_event.set()
-                raise
+                return
 
             batch_host = self._to_host(batch)
             with self._lock:

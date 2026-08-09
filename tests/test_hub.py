@@ -45,7 +45,7 @@ def test_load_pretrained_uses_defaults_and_ema(monkeypatch):
     assert calls["load"] == {
         "repo_id": DEFAULT_REPO_ID,
         "model_name": DEFAULT_MODEL_NAME,
-        "which": "latest",
+        "which": "best",
         "revision": None,
         "cache_dir": None,
         "token": None,

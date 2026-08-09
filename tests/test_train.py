@@ -1,13 +1,16 @@
 import logging
+import time
 from pathlib import Path
 
 import jax
 import jax.numpy as jnp
 import optax
+import pytest
 from omegaconf import OmegaConf
 
 from dmri.train.build_simulator import build_simulator
 from dmri.train.checkpointing import CheckpointManager
+from dmri.train.dataset import SimulationDataset
 from dmri.train.train_script import TrainState, apply_checkpoint_to_state
 from dmri.train.utils import (
     bundle_checkpoint,
@@ -123,6 +126,42 @@ def test_simulator_accepts_explicit_mask_and_prior():
 
     assert jnp.array_equal(result["model_mask"], model_mask)
     assert jnp.array_equal(result["mask_prior"], prior)
+
+
+def test_simulation_dataset_surfaces_background_failure():
+    def simulator(key):
+        return jnp.asarray([1.0], dtype=jnp.float32)
+
+    dataset = SimulationDataset(
+        simulator,
+        simulation_batch_size=1,
+        rng=jax.random.key(0),
+        simulation_device=jax.devices("cpu")[0],
+        jit_simulator=False,
+        buffer_size=1,
+    )
+    try:
+        dataset._stop_producer()
+
+        def fail_batch():
+            raise ValueError("simulator failed")
+
+        dataset._produce_batch = fail_batch
+        with dataset._condition:
+            dataset._pending_refresh = dataset._batch_size
+        dataset._start_producer()
+
+        deadline = time.monotonic() + 5
+        while dataset._producer_exception is None and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+        with pytest.raises(
+            RuntimeError, match="Background simulation failed"
+        ) as exc_info:
+            dataset[0]
+        assert isinstance(exc_info.value.__cause__, ValueError)
+    finally:
+        dataset.close()
 
 
 def test_new_simulator_config_builds_direct_class_and_acquisition():

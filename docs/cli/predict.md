@@ -66,8 +66,8 @@ arrow keys or `j`/`k`, Enter, or number keys.
 ## Checkpoint and configuration
 
 - `--checkpoint-which {latest,best,STEP}`: which checkpoint to load. Default:
-  `latest`. The pretrained bundles on the Hub currently ship only `best`, so the
-  Hub path needs `--checkpoint-which best`.
+  `best`. Use `latest` or a numeric step for bundles that provide those
+  checkpoints.
 - `--set KEY=VALUE`: set any configuration key directly. Repeatable, and applied
   last so it overrides both `--quality` and the other flags.
 

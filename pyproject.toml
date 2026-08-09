@@ -42,8 +42,11 @@ dependencies = [
     "optax>=0.2",
     "absl-py>=2.3",
     "huggingface-hub>=0.34",
-    # probjax and dmri.utils.shm use APIs removed in jax 0.9
-    "jax>=0.8,<0.9"
+    # probjax and dmri.utils.shm use APIs removed in jax 0.9. Supported Linux
+    # platforms get JAX's bundled CUDA 13 runtime; other platforms stay CPU-only.
+    "jax[cuda13]>=0.8,<0.9; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "jax[cuda13]>=0.8,<0.9; sys_platform == 'linux' and platform_machine == 'aarch64'",
+    "jax>=0.8,<0.9; sys_platform != 'linux' or (platform_machine != 'x86_64' and platform_machine != 'aarch64')"
 ]
 
 [project.urls]
@@ -60,14 +63,6 @@ dev = [
     "ruff>=0.0.280,<1.0.0",
     "mypy>=1.4.1,<2.0.0",
     "pre-commit>=3.3.3,<4.0.0"
-]
-cuda = [
-    "jax[cuda12]"
-]
-# For CUDA 13 drivers. The plugin version must match jaxlib exactly; the extra
-# pins it, so install this rather than the plugin on its own.
-cuda13 = [
-    "jax[cuda13]"
 ]
 docs = [
     "zensical>=0.0.51,<0.1",
@@ -109,7 +104,7 @@ venv = ".venv"
 testpaths = ["tests"]
 
 [tool.setuptools.packages.find]
-include = ["dmri*", "conf"]
+include = ["dmri*", "conf*"]
 
 [tool.setuptools.package-data]
 "conf" = ["**/*.yaml"]

@@ -12,6 +12,11 @@ from jax.typing import ArrayLike
 from dmri.simulators.base import Compartment
 from dmri.utils.dmriutils import rotation_matrix_100_to_theta_phi_psi, sph2cart
 from dmri.utils.shm import real_sh
+from dmri.utils.viz import (
+    plot_spherical_distribution_cartesian,
+    plot_spherical_distribution_fod,
+    plot_spherical_distribution_polar,
+)
 
 
 def sample_watson_ar_1(key, mu, kappa):
@@ -55,12 +60,6 @@ def sample_watson_ar_1(key, mu, kappa):
 
     return x_accepted
 
-
-from dmri.utils.viz import (
-    plot_spherical_distribution_cartesian,
-    plot_spherical_distribution_fod,
-    plot_spherical_distribution_polar,
-)
 
 sphere_default = get_sphere(name="symmetric724")
 hemisphere_default = HemiSphere(phi=sphere_default.phi, theta=sphere_default.theta)
