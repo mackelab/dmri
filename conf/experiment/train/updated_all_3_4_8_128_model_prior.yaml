@@ -1,0 +1,69 @@
+# @package _global_
+
+defaults:
+  - override /infrastructure/partition: h100_long
+  - override /simulator/acquisition: multi
+  - override /model: dmri
+  - _self_
+
+run:
+  name: updated_all_3_6_8_128_model_prior_rician_fixed_continued
+
+tracking:
+  enabled: true
+  wandb:
+    project: all
+
+simulator:
+  model_class: dmri.simulators.models.AllGaussianModelsParamCountPrior
+  posterior_score: false
+
+model:
+  name: DMRIInferenceModelConfigMaskPriorAmortizedPPP
+  model_dim: 128
+  embedding_net:
+    params:
+      num_layers: 3
+  model_selection_net:
+    params:
+      num_layers: 6
+      outnorm: false
+      outlayer: mlp
+  inference_net:
+    params:
+      num_layers: 8
+
+training:
+  continue_training: true
+  partial_restore: false
+  restart_optimizer: false
+  inner_steps: 500
+  checkpoint_freq: 20_000
+  eval_freq: 40_000
+  max_train_hours: 72
+  model_selection_weight: 1.0
+  model_inference_loss_weight: 1.0
+  weight_by_complexity: false
+  track_ema: true
+  ema_decay: 0.999
+  cut_off_tsm: 0.0
+  label_smoothing: 0.0
+  use_loss_mask: true
+  recovery_threshold: 5.0
+  permute_order: false
+  optimizer:
+    scheduler_params:
+      transition_steps: 2_000_000
+    learning_rate: 5e-4
+    gradient_clip_value: 1.0
+  eval:
+    nnl_theta:
+      iters: 5
+    nnl_mask:
+      iters: 5
+    ksd:
+      iters: 1
+      num_samples: 16
+      bandwidths: [0.05, 0.1, 0.5]
+      n_bootstrap: 128
+      seed: null

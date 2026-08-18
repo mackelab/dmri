@@ -71,6 +71,109 @@ def test_training_experiments_compose(preset):
     assert cfg.run.name
 
 
+def test_all_model_rician_continuation_matches_legacy_architecture():
+    cfg = compose_config(
+        "train", ["+experiment/train=all_3_4_8_128_model_prior"]
+    )
+
+    assert cfg.run.name == "all_3_4_8_128_model_prior_rician_fixed"
+    assert cfg.tracking.enabled is True
+    assert cfg.tracking.wandb.project == "all"
+    assert resolve_simulator_model(cfg).__name__ == "AllGaussianModelsParamCountPrior"
+    assert len(resolve_acquisition_factories(cfg)) == 2
+    assert cfg.model.model_dim == 128
+    assert cfg.model.embedding_net.params.num_layers == 3
+    assert cfg.model.model_selection_net.params.num_layers == 4
+    assert cfg.model.inference_net.params.num_layers == 8
+    assert cfg.training.continue_training is True
+    assert cfg.training.partial_restore is False
+    assert cfg.training.restart_optimizer is False
+    assert cfg.training.optimizer.optimizer == "radam"
+    assert cfg.training.optimizer.learning_rate == 1e-4
+    assert cfg.training.ema_decay == 0.999
+    assert cfg.training.eval.ksd is None
+
+
+def test_convolved_two_gpu_continuation_matches_legacy_architecture():
+    cfg = compose_config(
+        "train",
+        ["+experiment/train=all_3_6_8_128_model_prior_with_convs_2gpus"],
+    )
+
+    assert (
+        cfg.run.name
+        == "all_3_6_8_128_model_prior_with_convs_2gpus_rician_fixed"
+    )
+    assert cfg.tracking.enabled is True
+    assert cfg.tracking.wandb.project == "all_conv"
+    assert resolve_simulator_model(cfg).__name__ == "AllGaussianAndConvolvedModels"
+    assert cfg.simulator.mask_prior.u_alpha == 1.0
+    assert cfg.simulator.mask_prior.u_beta == 1.0
+    assert len(resolve_acquisition_factories(cfg)) == 2
+    assert cfg.model.model_dim == 128
+    assert cfg.model.embedding_net.params.num_layers == 3
+    assert cfg.model.model_selection_net.params.num_layers == 6
+    assert cfg.model.inference_net.params.num_layers == 8
+    assert cfg.training.continue_training is True
+    assert cfg.training.partial_restore is False
+    assert cfg.training.restart_optimizer is False
+    assert cfg.training.dataloader.dataset.simulation_device.index == 1
+    assert cfg.training.dataloader.train_loader.devices[0].index == 0
+    assert cfg.training.optimizer.optimizer == "radam"
+    assert cfg.training.optimizer.learning_rate == 1e-4
+    assert cfg.training.ema_decay == 0.999
+    assert cfg.training.eval.ksd is None
+
+
+def test_updated_convolved_two_gpu_continuation_matches_frozen_run():
+    cfg = compose_config(
+        "train",
+        [
+            "+experiment/train="
+            "updated_all_3_6_8_128_model_prior_with_convs_2gpus"
+        ],
+    )
+
+    assert cfg.run.name.endswith("with_convs_2gpus_rician_fixed_continued")
+    assert cfg.tracking.wandb.project == "all_conv"
+    assert resolve_simulator_model(cfg).__name__ == "AllGaussianAndConvolvedModels"
+    assert cfg.model.name == "DMRIInferenceModelConfigMaskPriorAmortizedPPP"
+    assert cfg.model.embedding_net.params.num_layers == 3
+    assert cfg.model.model_selection_net.params.num_layers == 6
+    assert cfg.model.model_selection_net.params.outnorm is False
+    assert cfg.model.model_selection_net.params.outlayer == "mlp"
+    assert cfg.model.inference_net.params.num_layers == 8
+    assert cfg.training.restart_optimizer is False
+    assert cfg.training.optimizer.gradient_clip_value == 1.0
+    assert cfg.training.dataloader.dataset.simulation_batch_size == 2048
+    assert cfg.training.dataloader.dataset.buffer_size == 4_194_304
+    assert cfg.training.cut_off_tsm == 0.0
+    assert cfg.training.label_smoothing == 0.0
+    assert cfg.training.eval.ksd.iters == 1
+
+
+def test_updated_all_model_continuation_matches_frozen_run():
+    cfg = compose_config(
+        "train", ["+experiment/train=updated_all_3_4_8_128_model_prior"]
+    )
+
+    assert cfg.run.name == "updated_all_3_6_8_128_model_prior_rician_fixed_continued"
+    assert cfg.tracking.wandb.project == "all"
+    assert resolve_simulator_model(cfg).__name__ == "AllGaussianModelsParamCountPrior"
+    assert cfg.model.name == "DMRIInferenceModelConfigMaskPriorAmortizedPPP"
+    assert cfg.model.embedding_net.params.num_layers == 3
+    assert cfg.model.model_selection_net.params.num_layers == 6
+    assert cfg.model.model_selection_net.params.outnorm is False
+    assert cfg.model.model_selection_net.params.outlayer == "mlp"
+    assert cfg.model.inference_net.params.num_layers == 8
+    assert cfg.training.restart_optimizer is False
+    assert cfg.training.optimizer.learning_rate == 5e-4
+    assert cfg.training.optimizer.gradient_clip_value == 1.0
+    assert cfg.training.cut_off_tsm == 0.0
+    assert cfg.training.label_smoothing == 0.0
+    assert cfg.training.eval.ksd.iters == 1
+
+
 @pytest.mark.parametrize(
     "preset",
     sorted(path.stem for path in (ROOT / "experiment" / "eval").glob("*.yaml")),

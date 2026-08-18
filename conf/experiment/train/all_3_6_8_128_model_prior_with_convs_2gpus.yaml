@@ -1,0 +1,60 @@
+# @package _global_
+
+defaults:
+  - override /infrastructure/partition: 2h100_long
+  - override /simulator/acquisition: multi
+  - override /model: dmri
+  - override /training/dataloader: datastream_multigpu
+  - _self_
+
+run:
+  name: all_3_6_8_128_model_prior_with_convs_2gpus_rician_fixed
+
+tracking:
+  enabled: true
+  wandb:
+    project: all_conv
+
+simulator:
+  model_class: dmri.simulators.models.AllGaussianAndConvolvedModels
+  posterior_score: false
+  mask_prior:
+    u_alpha: 1.0
+    u_beta: 1.0
+
+model:
+  model_dim: 128
+  embedding_net:
+    params:
+      num_layers: 3
+  model_selection_net:
+    params:
+      num_layers: 6
+  inference_net:
+    params:
+      num_layers: 8
+
+training:
+  continue_training: true
+  partial_restore: false
+  restart_optimizer: false
+  inner_steps: 500
+  checkpoint_freq: 20_000
+  eval_freq: 40_000
+  max_train_hours: 72
+  model_selection_weight: 1.0
+  model_inference_loss_weight: 1.0
+  weight_by_complexity: false
+  track_ema: true
+  ema_decay: 0.999
+  cut_off_tsm: 0.1
+  label_smoothing: 0.01
+  use_loss_mask: true
+  recovery_threshold: 5.0
+  permute_order: false
+  eval:
+    nnl_theta:
+      iters: 5
+    nnl_mask:
+      iters: 5
+    ksd: null
