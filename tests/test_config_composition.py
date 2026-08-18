@@ -72,9 +72,7 @@ def test_training_experiments_compose(preset):
 
 
 def test_all_model_rician_continuation_matches_legacy_architecture():
-    cfg = compose_config(
-        "train", ["+experiment/train=all_3_4_8_128_model_prior"]
-    )
+    cfg = compose_config("train", ["+experiment/train=all_3_4_8_128_model_prior"])
 
     assert cfg.run.name == "all_3_4_8_128_model_prior_rician_fixed"
     assert cfg.tracking.enabled is True
@@ -100,10 +98,7 @@ def test_convolved_two_gpu_continuation_matches_legacy_architecture():
         ["+experiment/train=all_3_6_8_128_model_prior_with_convs_2gpus"],
     )
 
-    assert (
-        cfg.run.name
-        == "all_3_6_8_128_model_prior_with_convs_2gpus_rician_fixed"
-    )
+    assert cfg.run.name == "all_3_6_8_128_model_prior_with_convs_2gpus_rician_fixed"
     assert cfg.tracking.enabled is True
     assert cfg.tracking.wandb.project == "all_conv"
     assert resolve_simulator_model(cfg).__name__ == "AllGaussianAndConvolvedModels"
@@ -128,10 +123,7 @@ def test_convolved_two_gpu_continuation_matches_legacy_architecture():
 def test_updated_convolved_two_gpu_continuation_matches_frozen_run():
     cfg = compose_config(
         "train",
-        [
-            "+experiment/train="
-            "updated_all_3_6_8_128_model_prior_with_convs_2gpus"
-        ],
+        ["+experiment/train=updated_all_3_6_8_128_model_prior_with_convs_2gpus"],
     )
 
     assert cfg.run.name.endswith("with_convs_2gpus_rician_fixed_continued")
