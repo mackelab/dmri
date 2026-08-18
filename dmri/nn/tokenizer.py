@@ -829,6 +829,49 @@ class DMRITokenizerPPP(DMRITokenizerPP):
             token_dim, token_dim - token_dim // 2, rngs=rngs, **self._linear_kwargs
         )
 
+    def embed_cfgs(
+        self,
+        model_mask: Array,
+        alpha_prior: ArrayLike | None = None,
+        model_idx: Sequence[int] | None = None,
+        noise_idx: Sequence[int] | None = None,
+    ) -> Array:
+        """Embed the component configuration *without* masking the index tokens.
+
+        Unlike the base tokenizer, this variant must not zero the index token of
+        inactive components: ``embed_model_mask`` packs cfg token ``j`` into
+        decoder position ``j``, which is exactly the position that predicts bit
+        ``j``. Masking here would leak the target into its own input. The mask
+        enters only through ``embed_model_mask``, shifted by one position.
+        """
+        if model_idx is None:
+            model_idx = self.model_indices
+        if noise_idx is None:
+            noise_idx = self.noise_indices
+        if alpha_prior is None:
+            alpha_prior = self.simulator.fraction_prior
+
+        idx = tuple(int(i) for i in model_idx) + tuple(
+            self.num_models + int(i) for i in noise_idx
+        )
+        assert len(idx) == model_mask.shape[-1], (
+            f"model_mask shape last axis {model_mask.shape} does not match the number of model components {len(idx)}"
+        )
+
+        *batch_dims, T = model_mask.shape
+        alpha_prior = jnp.broadcast_to(alpha_prior, batch_dims + [self.num_models])
+
+        alpha_token = self.embed_fraction(alpha_prior)[..., None, :]
+
+        idx = jnp.array(idx, dtype=jnp.int32)
+        idx_tokens = self.embed_idx(idx)
+        for _ in range(len(batch_dims)):
+            idx_tokens = idx_tokens[None, ...]
+        idx_tokens = jnp.broadcast_to(
+            idx_tokens, batch_dims + [T, idx_tokens.shape[-1]]
+        )
+        return jnp.concatenate([alpha_token, idx_tokens], axis=-2)
+
     def embed_model_mask(self, tokens_cfg: Array, model_mask: Array) -> Array:
         tokens_cfg = self.cfg_emb(tokens_cfg[..., 1:, :])
         batch_shape = tokens_cfg.shape[:-2]
