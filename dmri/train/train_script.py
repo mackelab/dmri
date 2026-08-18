@@ -867,7 +867,7 @@ def build_optimizer(optimizer_cfg):
 @hydra.main(config_path="../../conf", config_name="train.yaml", version_base=None)
 def _main(cfg: DictConfig):
     cfg = runtime_config(cfg, "train")
-    log, output_dir, _ = configure_environment(cfg)
+    log, output_dir, output_super_dir = configure_environment(cfg)
     OmegaConf.save(
         build_artifact_config(cfg), os.path.join(output_dir, "artifact.yaml")
     )
@@ -888,7 +888,10 @@ def _main(cfg: DictConfig):
 
     evaluator = build_pure_eval_fns(graphdef, sim_type)
 
-    checkpoint_dir = os.path.join(output_dir, "checkpoints")
+    # Checkpoints live under results/<run name>/, not under the per-launch
+    # timestamped directory: continue_training must find the previous run's
+    # checkpoints, and every relaunch gets a fresh timestamp.
+    checkpoint_dir = os.path.join(output_super_dir, "checkpoints")
     os.makedirs(checkpoint_dir, exist_ok=True)
     log.info(f"Checkpoint directory: {checkpoint_dir}")
     checkpoint_manager = CheckpointManager(
