@@ -186,6 +186,9 @@ class BinaryAutoregressiveDecoder(nnx.Module):
             decode=decode,
             deterministic=deterministic,
         )
+        # Do not apply out_norm here: training loss_fn bypasses it, so
+        # applying it in __call__ would make inference/log_prob mismatch
+        # the logits used during training. See icml branch fix c929979.
         # Reduce to logits
         logits = self.output(output_tokens)
         # Remove the first "padding" token output

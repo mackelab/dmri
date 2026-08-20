@@ -121,7 +121,11 @@ class CheckpointManager:
         if ema_state is not None:
             items["ema_state"] = pytree_restore(ema_state)
         if rng is not None:
-            items["rng"] = ocp.args.ArrayRestore(rng)  # type: ignore
+            restore_args = ocp.ArrayRestoreArgs(sharding=rng.sharding)
+            items["rng"] = ocp.args.ArrayRestore(  # type: ignore
+                item=rng,
+                restore_args=restore_args,
+            )
         return ocp.args.Composite(**items)
 
     def save(

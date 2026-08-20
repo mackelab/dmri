@@ -64,6 +64,19 @@ def test_checkpoint_save_builds_args_without_persisting():
     )
 
 
+def test_checkpoint_restore_targets_rng_to_current_device():
+    manager = CheckpointManager.__new__(CheckpointManager)
+    rng = jax.random.key(0)
+
+    args = manager._build_restore_args(
+        params={"weight": jnp.array([1.0])},
+        optimizer_state=None,
+        rng=rng,
+    )
+
+    assert args.rng.restore_args.sharding == rng.sharding
+
+
 def test_missing_optimizer_state_is_reinitialized():
     params = {"weight": jnp.array([1.0])}
     optimizer = optax.sgd(0.1)

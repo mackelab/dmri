@@ -94,6 +94,43 @@ def test_legacy_ppp_checkpoint_architecture_still_builds(rng):
     assert type(model.model_decoder.output).__name__ == "MLP"
 
 
+def test_ppp_decoder_inputs_do_not_leak_their_own_target_bit(rng):
+    """`logits[i]` predicts `model_mask[i]`, so decoder position `i` must depend
+    only on bits `< i`.
+
+    `DMRITokenizerPPP` therefore overrides `embed_cfgs` to skip the base class's
+    ``idx_tokens * model_mask`` masking: `embed_model_mask` packs cfg token `j`
+    into position `j`, so masking there would write bit `j` into the very
+    position that has to predict it. Without the override the model-selection
+    head can read the answer off its own input.
+    """
+    cfg = DMRIInferenceModelConfigMaskPriorAmortizedPPP(
+        simulator=Ball3Stick,
+        model_dim=64,
+        embedding_cfg=DMRIEmbeddingConfig(),
+        model_selection_cfg=DMRIModelSelectionAmortizedPriorConfig(
+            outlayer="mlp", outnorm=False
+        ),
+        theta_inference_cfg=DMRIThetaInferenceConfig(),
+    )
+    model = DMRIInferenceModel(cfg, rng)
+    tokenizer, decoder = model.tokenizer, model.model_decoder
+
+    num_components = len(Ball3Stick.model_types) + len(Ball3Stick.noise_types)
+    ones = jnp.ones((1, num_components), dtype=jnp.bool_)
+    base = decoder._encode_model_mask(ones, tokenizer)
+
+    for bit in range(num_components):
+        flipped = ones.at[0, bit].set(False)
+        delta = jnp.abs(decoder._encode_model_mask(flipped, tokenizer) - base)
+        touched = jnp.where(delta.max(axis=-1)[0] > 1e-8)[0]
+        assert touched.size > 0, f"bit {bit} does not reach the decoder at all"
+        assert int(touched.min()) > bit, (
+            f"mask bit {bit} leaks into position(s) {touched.tolist()}; "
+            f"position {bit} predicts bit {bit} and must not see it"
+        )
+
+
 def test_binary_decoder_requires_mask_prior(simulator):
     """Decoder should enforce mask prior when the config requests it."""
     decoder = BinaryAutoregressiveDecoder(
